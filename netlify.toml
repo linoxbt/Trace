@@ -1,0 +1,14 @@
+# Netlify: the Next.js app (apps/web) through Netlify's Next.js runtime, plus
+# the worker's periodic jobs as a scheduled function (netlify/functions/tick.mts).
+# Secrets are set in the Netlify UI, never here.
+
+[build]
+  # Migrations run when the build can reach the database.
+  command = "if [ -n \"$DATABASE_URL\" ]; then pnpm db:migrate; fi && pnpm --filter @trace/web build"
+  publish = "apps/web/.next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"

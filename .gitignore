@@ -9,3 +9,4 @@ coverage/
 eval/photos/
 scripts/evidence/*.png
 *.tsbuildinfo
+.netlify

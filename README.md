@@ -93,6 +93,21 @@ The engine tests drive the demo bathroom job ($420 across four lines) through th
 - Judge-mode sample photos.
 - Webhook verification, de-duplication, denied captures and disputes.
 
+## Deploy on Netlify
+
+`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `netlify/functions/tick.mts`, once a minute: Netlify has no always-on processes, and a minute is its finest schedule. The build runs the database migrations whenever `DATABASE_URL` is available to it.
+
+Set these in Netlify under **Site configuration > Environment variables**, then trigger a new deploy, because values are fixed at build time:
+
+| Variable | Scopes |
+| --- | --- |
+| `DATABASE_URL` | Builds, Functions |
+| `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | Builds, Functions |
+| `SUPABASE_SERVICE_ROLE_KEY`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `ANTHROPIC_API_KEY` | Functions (mark as secret) |
+| `APP_URL`, `PAYPAL_API_BASE`, `DEMO_MODE` | Builds, Functions |
+
+`render.yaml` and `apps/worker` remain for hosting on Render instead.
+
 ## Known limits
 
 - One authorization per job. Change orders (their own order and authorization) aren't built yet.

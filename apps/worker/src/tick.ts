@@ -1,4 +1,4 @@
-import { autoRelease, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine";
+import { autoRelease, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
 
 export interface TickReport {
   approved: number;
