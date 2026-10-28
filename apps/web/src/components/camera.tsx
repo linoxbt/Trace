@@ -94,7 +94,7 @@ export function Camera(props: {
     }
   }
 
-  const gpsTone = gps ? (gps.accuracy <= 100 ? "bg-mint" : "bg-[#ffd27a]") : "bg-white/30";
+  const gpsTone = gps ? (gps.accuracy <= 100 ? "bg-lilac" : "bg-[#ffd27a]") : "bg-white/30";
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-night text-white" role="dialog" aria-modal="true" aria-label={`Camera: ${props.title}`}>
       <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
@@ -111,7 +111,7 @@ export function Camera(props: {
         </div>
       </div>
 
-      <div className="relative mx-3 flex-1 overflow-hidden rounded-[28px] bg-black" style={{ "--bracket": "#9ef0d8" } as React.CSSProperties}>
+      <div className="relative mx-3 flex-1 overflow-hidden rounded-[28px] bg-black" style={{ "--bracket": "#c6b5ff" } as React.CSSProperties}>
         <video ref={video} playsInline muted className="h-full w-full object-cover" />
         {props.ghostUrl && (
           // eslint-disable-next-line @next/next/no-img-element
@@ -132,7 +132,7 @@ export function Camera(props: {
         {status === "sending" && (
           <div className="absolute inset-0 grid place-items-center bg-black/55 backdrop-blur-[2px]">
             <div className="overflow-hidden">
-              <div className="absolute inset-x-0 top-0 h-full animate-scan bg-gradient-to-b from-transparent via-mint/25 to-transparent" />
+              <div className="absolute inset-x-0 top-0 h-full animate-scan bg-gradient-to-b from-transparent via-lilac/25 to-transparent" />
               <div className="relative text-center">
                 <div className="text-[16px] font-medium">Checking the photo</div>
                 <div className="mt-1 text-[13px] text-white/60">Location, freshness, then the work itself</div>

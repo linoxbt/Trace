@@ -7,6 +7,7 @@ const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
 const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-serif" });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.APP_URL ?? "https://trace-proof.netlify.app"),
   title: { default: "Trace — Payment that follows proof", template: "%s · Trace" },
   description:
     "Trace holds a homeowner's payment with PayPal and releases it line by line, only when AI confirms the work from photos taken on site.",
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f6f6f2" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f5f0e6" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

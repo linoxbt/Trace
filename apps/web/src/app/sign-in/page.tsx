@@ -34,18 +34,18 @@ function SignInForm() {
       {/* Brand panel */}
       <aside className="grain relative hidden overflow-hidden bg-night p-12 text-white lg:flex lg:flex-col lg:justify-between">
         <div className="gridlines-dark pointer-events-none absolute inset-0" />
-        <div className="pointer-events-none absolute -bottom-40 -left-20 h-[520px] w-[520px] rounded-full bg-[radial-gradient(closest-side,rgba(13,138,123,0.5),transparent)] blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-40 -left-20 h-[520px] w-[520px] rounded-full bg-[radial-gradient(closest-side,rgba(91,47,214,0.5),transparent)] blur-2xl" />
         <div className="relative">
           <Logo dark />
         </div>
         <div className="relative">
-          <p className="max-w-md text-[40px] font-semibold leading-[1.05] tracking-[-0.03em]">
-            Money that moves <span className="display italic text-mint">when the work does.</span>
+          <p className="display max-w-md text-[56px] leading-[0.98]">
+            Money that moves <span className="italic text-lilac">when the work does.</span>
           </p>
           <div className="surface-dark mt-10 max-w-sm rounded-2xl p-5">
             {[
               ["Authorized", "$420.00", "text-white"],
-              ["Captured · 3 lines verified", "$310.00", "text-mint"],
+              ["Captured · 3 lines verified", "$310.00", "text-lilac"],
               ["Still held · grout to redo", "$110.00", "text-white/70"],
             ].map(([k, v, c]) => (
               <div key={k} className="flex items-center justify-between border-b border-white/10 py-3 last:border-0">
@@ -60,14 +60,14 @@ function SignInForm() {
 
       {/* Form */}
       <main className="relative flex flex-col px-5 py-8 sm:px-10">
-        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 bg-[radial-gradient(ellipse_70%_80%_at_50%_-10%,rgba(158,240,216,0.4),transparent)] lg:hidden" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 bg-[radial-gradient(ellipse_70%_80%_at_50%_-10%,rgba(198,181,255,0.4),transparent)] lg:hidden" />
         <div className="lg:hidden">
           <Logo />
         </div>
         <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-12">
           {state === "sent" ? (
             <div className="rise text-center">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-teal-soft text-teal">
+              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-violet-soft text-violet">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
                   <rect x="3" y="5.5" width="18" height="13" rx="2" />
                   <path d="m3.5 7 8.5 6 8.5-6" />
@@ -77,13 +77,13 @@ function SignInForm() {
               <p className="mt-2 text-muted">
                 We sent a sign-in link to <span className="font-medium text-ink">{email}</span>. It works once and expires soon.
               </p>
-              <button onClick={() => setState("idle")} className="press mt-8 text-[14px] font-medium text-teal">
+              <button onClick={() => setState("idle")} className="press mt-8 text-[14px] font-medium text-violet">
                 Use a different email
               </button>
             </div>
           ) : (
             <div className="rise">
-              <h1 className="text-[32px] font-semibold tracking-[-0.025em]">Sign in to Trace</h1>
+              <h1 className="display text-[44px] leading-none">Sign in to Trace</h1>
               <p className="mt-2 text-muted">We&apos;ll email you a link. No password to remember.</p>
               <form onSubmit={send} className="mt-10">
                 <label className="text-[13px] font-medium text-ink-2" htmlFor="email">

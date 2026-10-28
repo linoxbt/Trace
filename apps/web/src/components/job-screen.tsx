@@ -222,7 +222,7 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
           >
             <span
               className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-bold ${
-                t.tone === "ok" ? "bg-mint text-ink" : t.tone === "bad" ? "bg-[#ff8a7a] text-ink" : "bg-[#ffd27a] text-ink"
+                t.tone === "ok" ? "bg-lilac text-ink" : t.tone === "bad" ? "bg-[#ff8a7a] text-ink" : "bg-[#ffd27a] text-ink"
               }`}
               aria-hidden
             >
@@ -340,7 +340,7 @@ function LineCard(props: {
         )}
 
         {settled && (l.afterUrl || l.verdict) && (
-          <button onClick={() => setProof((x) => !x)} aria-expanded={proof} className="press mt-3 inline-flex h-8 items-center gap-1 text-[13px] font-medium text-teal">
+          <button onClick={() => setProof((x) => !x)} aria-expanded={proof} className="press mt-3 inline-flex h-8 items-center gap-1 text-[13px] font-medium text-violet">
             {proof ? "Hide proof" : "View proof"}
             <span className={`transition-transform duration-300 ${proof ? "rotate-180" : ""}`} aria-hidden>
               ⌄
@@ -353,7 +353,7 @@ function LineCard(props: {
             <p className="text-[14px] leading-relaxed text-ink-2">{l.verdict.homeownerReason || l.verdict.reasons[0]}</p>
             {l.verdict.reasons.length > 0 && (
               <>
-                <button onClick={() => setWhy((w) => !w)} aria-expanded={why} className="press mt-1.5 inline-flex h-8 items-center gap-1 text-[13px] font-medium text-teal">
+                <button onClick={() => setWhy((w) => !w)} aria-expanded={why} className="press mt-1.5 inline-flex h-8 items-center gap-1 text-[13px] font-medium text-violet">
                   Why?
                   <span className={`transition-transform duration-300 ${why ? "rotate-180" : ""}`} aria-hidden>
                     ⌄
@@ -485,7 +485,7 @@ function label(e: JobView["events"][number]): string {
 }
 
 function dot(e: JobView["events"][number]): string {
-  if (e.type === "CAPTURED" || e.type === "AUTHORIZED") return "bg-teal";
+  if (e.type === "CAPTURED" || e.type === "AUTHORIZED") return "bg-violet";
   if (e.type.includes("FAILED") || e.type.includes("DENIED") || e.type.startsWith("DISPUTE")) return "bg-bad";
   if (e.type === "VERDICT") return e.data?.verdict === "VERIFIED" ? "bg-ok" : e.data?.verdict === "FAILED" ? "bg-bad" : "bg-warn";
   return "bg-line-2";
@@ -513,7 +513,7 @@ function Timeline({ events }: { events: JobView["events"] }) {
         ))}
       </ol>
       {list.length > 8 && (
-        <button onClick={() => setAll((a) => !a)} className="press mt-3 text-[13px] font-medium text-teal">
+        <button onClick={() => setAll((a) => !a)} className="press mt-3 text-[13px] font-medium text-violet">
           {all ? "Show less" : `Show all ${list.length}`}
         </button>
       )}

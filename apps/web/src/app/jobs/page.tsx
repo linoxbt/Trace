@@ -20,8 +20,8 @@ export default async function Jobs() {
     <AppShell email={user.email}>
       <div className="rise flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-[13px] font-medium text-teal">Your jobs</p>
-          <h1 className="mt-1 text-[32px] font-semibold tracking-[-0.03em] sm:text-[40px]">
+          <p className="text-[13px] font-medium text-violet">Your jobs</p>
+          <h1 className="display mt-1 text-[40px] leading-[1] sm:text-[52px]">
             {jobs.length ? "Everything in one place." : "Nothing here yet."}
           </h1>
         </div>
@@ -40,14 +40,14 @@ export default async function Jobs() {
           </div>
           <div className="surface rounded-2xl p-4">
             <div className="text-[12px] text-muted">Released so far</div>
-            <div className="num mt-1 text-[22px] font-semibold tracking-tight text-teal">{money(released)}</div>
+            <div className="num mt-1 text-[22px] font-semibold tracking-tight text-violet">{money(released)}</div>
           </div>
         </div>
       )}
 
       {jobs.length === 0 ? (
         <div className="rise surface mt-10 rounded-[28px] p-8 text-center sm:p-12" style={{ "--delay": "100ms" } as React.CSSProperties}>
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-teal-soft text-teal">
+          <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-violet-soft text-violet">
             <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
               <path d="M7 4v4H3M17 4v4h4M21 16h-4v4M3 16h4v4" />
             </svg>
@@ -84,7 +84,7 @@ export default async function Jobs() {
                   <div className="mt-5 flex items-end justify-between gap-4">
                     <div className="flex-1">
                       <div className="h-1.5 overflow-hidden rounded-full bg-paper-2">
-                        <div className="h-full rounded-full bg-gradient-to-r from-teal to-[#19b39f]" style={{ width: `${pct}%` }} />
+                        <div className="h-full rounded-full bg-gradient-to-r from-violet to-[#8a63ff]" style={{ width: `${pct}%` }} />
                       </div>
                       <div className="mt-2 text-[12px] text-faint">
                         {j.paid} of {j.lines} lines paid
@@ -92,7 +92,7 @@ export default async function Jobs() {
                     </div>
                     <div className="text-right">
                       <div className="num text-[17px] font-semibold">{money(j.totalCents)}</div>
-                      <div className="num text-[12px] text-teal">{money(j.releasedCents)} released</div>
+                      <div className="num text-[12px] text-violet">{money(j.releasedCents)} released</div>
                     </div>
                   </div>
                 </Link>

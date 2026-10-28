@@ -121,7 +121,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
               </span>
               <span className="relative inline-flex">
                 <input type="checkbox" className="peer sr-only" checked={l.verifiableByPhoto} onChange={(e) => set(i, { verifiableByPhoto: e.target.checked })} />
-                <span className="h-6 w-10 rounded-full bg-line-2 transition-colors duration-300 peer-checked:bg-teal" />
+                <span className="h-6 w-10 rounded-full bg-line-2 transition-colors duration-300 peer-checked:bg-violet" />
                 <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-300 ease-[var(--ease-spring)] peer-checked:translate-x-4" />
               </span>
             </label>
@@ -130,7 +130,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
       </div>
 
       {lines.length < 8 && (
-        <button onClick={() => setLines((ls) => [...ls, blank()])} className="press mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-line-2 text-[14px] font-medium text-muted hover:border-teal hover:text-teal">
+        <button onClick={() => setLines((ls) => [...ls, blank()])} className="press mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-line-2 text-[14px] font-medium text-muted hover:border-violet hover:text-violet">
           <span className="text-[18px] leading-none">+</span> Add a line
         </button>
       )}

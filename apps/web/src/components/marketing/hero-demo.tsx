@@ -78,10 +78,10 @@ function useScript(): Frame {
 
 const CHIP: Record<S, { label: string; cls: string; icon: string }> = {
   PENDING: { label: "Pending", cls: "bg-paper-2 text-muted", icon: "○" },
-  PROVING: { label: "Checking", cls: "bg-teal-soft text-teal", icon: "◌" },
+  PROVING: { label: "Checking", cls: "bg-violet-soft text-violet", icon: "◌" },
   VERIFIED: { label: "Verified", cls: "bg-ok-soft text-ok", icon: "✓" },
   FAILED: { label: "Failed", cls: "bg-bad-soft text-bad", icon: "✕" },
-  PAID: { label: "Paid", cls: "bg-ink text-white", icon: "●" },
+  PAID: { label: "Paid", cls: "bg-violet text-white", icon: "●" },
 };
 
 function Chip({ s }: { s: S }) {
@@ -103,19 +103,42 @@ export function HeroDemo() {
   const pct = (f.released / held) * 100;
 
   return (
-    <div className="relative mx-auto w-full max-w-[640px]" aria-label="Animated demo: $310 released for verified work while $110 stays held">
-      {/* Soft light behind the device. */}
-      <div className="pointer-events-none absolute -inset-10 -z-10 rounded-[60px] bg-[radial-gradient(closest-side,rgba(13,138,123,0.22),transparent)] blur-2xl" />
+    <div
+      className="relative mx-auto grid w-full items-center justify-items-center gap-6 lg:grid-cols-[1fr_auto_1fr] lg:gap-10"
+      aria-label="Animated demo: $310 released for verified work while $110 stays held"
+    >
+      {/* Photo check on L4 */}
+      <div className="surface hidden w-[248px] -rotate-2 rounded-2xl p-3.5 lg:block lg:justify-self-end">
+        <div className="flex items-center justify-between text-[11.5px]">
+          <span className="font-semibold">L4 · Grout check</span>
+          <span
+            className={`rounded-full px-2 py-[2px] text-[10.5px] font-medium transition-colors duration-500 ${
+              f.grout === "verified" ? "bg-ok-soft text-ok" : f.grout === "failed" ? "bg-bad-soft text-bad" : "bg-violet-soft text-violet"
+            }`}
+          >
+            {f.grout === "verified" ? "Verified" : f.grout === "failed" ? "Failed" : f.grout === "scanning" ? "Inspecting" : "Waiting"}
+          </span>
+        </div>
+        <div className="bracket mt-2.5 overflow-hidden rounded-lg">
+          <div className="relative">
+            <TileArt state={f.grout === "verified" ? "after" : "before"} highlight={f.grout === "failed"} className="block aspect-[4/3] w-full" />
+            {f.grout === "scanning" && <div className="absolute inset-0 animate-scan bg-gradient-to-b from-transparent via-lilac/50 to-transparent" />}
+          </div>
+        </div>
+        <ul className="mt-2.5 space-y-1.5 text-[11px]">
+          <Check ok={f.grout !== "failed"} pending={f.grout === "idle" || f.grout === "scanning"} text={f.grout === "failed" ? "Crack above the soap dish" : "No visible cracks"} />
+          <Check ok pending={f.grout === "idle"} text="Same wall, 12 m from the job" />
+          <Check ok pending={f.grout === "idle"} text="Fresh photo, one-time token" />
+        </ul>
+      </div>
 
       {/* Phone */}
-      <div className="relative mx-auto w-[300px] rounded-[46px] bg-[#0b0f0e] p-[10px] shadow-[0_50px_100px_-30px_rgba(6,16,14,0.55),0_0_0_1px_rgba(255,255,255,0.06)_inset] sm:w-[320px]">
+      <div className="relative w-[300px] rounded-[46px] bg-[#0d0a12] p-[10px] shadow-[0_60px_120px_-30px_rgba(10,4,30,0.8),0_0_0_1px_rgba(255,255,255,0.08)_inset] sm:w-[320px]">
         <div className="relative overflow-hidden rounded-[37px] bg-paper">
           <div className="flex items-center justify-between px-6 pb-1 pt-3 text-[11px] font-semibold text-ink">
             <span className="num">9:41</span>
-            <span className="h-[22px] w-[86px] rounded-full bg-[#0b0f0e]" />
-            <span className="flex items-center gap-1 text-[10px]">
-              <span className="h-2 w-3 rounded-[2px] border border-ink" />
-            </span>
+            <span className="h-[22px] w-[86px] rounded-full bg-[#0d0a12]" />
+            <span className="h-2 w-3.5 rounded-[2px] border border-ink" />
           </div>
 
           <div className="px-4 pb-3 pt-2">
@@ -124,24 +147,22 @@ export function HeroDemo() {
                 <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-faint">Bathroom repair</div>
                 <div className="mt-0.5 text-[15px] font-semibold tracking-tight">12 Admiralty Way</div>
               </div>
-              <span className="rounded-full bg-teal-soft px-2 py-[3px] text-[10px] font-medium text-teal">
+              <span className="rounded-full bg-violet-soft px-2 py-[3px] text-[10px] font-medium text-violet">
                 {f.released === held ? "Complete" : f.released ? "Part released" : "Money held"}
               </span>
             </div>
 
-            {/* Money bar */}
-            <div className="surface mt-3 rounded-2xl p-3">
+            <div className="mt-3 rounded-2xl bg-night p-3 text-white">
               <div className="grid grid-cols-3 gap-1">
                 <Fig label="Held" cents={held} />
                 <Fig label="Released" cents={f.released} accent />
                 <Fig label="Still held" cents={still} />
               </div>
-              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-paper-2">
-                <div className="h-full rounded-full bg-gradient-to-r from-teal to-[#19b39f] transition-[width] duration-[1200ms] ease-[var(--ease-out-expo)]" style={{ width: `${pct}%` }} />
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#8a63ff] to-lilac transition-[width] duration-[1200ms] ease-[var(--ease-out-expo)]" style={{ width: `${pct}%` }} />
               </div>
             </div>
 
-            {/* Lines */}
             <div className="mt-3 space-y-1.5">
               {LINES.map((l, i) => {
                 const s = f.lines[i]!;
@@ -149,10 +170,10 @@ export function HeroDemo() {
                   <div
                     key={l.code}
                     className={`relative flex items-center justify-between overflow-hidden rounded-xl border bg-card px-3 py-2.5 transition-colors duration-500 ${
-                      s === "FAILED" ? "border-bad/30" : s === "PROVING" ? "border-teal/40" : "border-line"
+                      s === "FAILED" ? "border-bad/30" : s === "PROVING" ? "border-violet/40" : "border-line"
                     }`}
                   >
-                    {s === "PROVING" && <div className="pointer-events-none absolute inset-x-0 top-0 h-full animate-scan bg-gradient-to-b from-transparent via-teal/10 to-transparent" />}
+                    {s === "PROVING" && <div className="pointer-events-none absolute inset-x-0 top-0 h-full animate-scan bg-gradient-to-b from-transparent via-violet/10 to-transparent" />}
                     <div className="min-w-0">
                       <div className="truncate text-[12px] font-medium">
                         <span className="num mr-1 text-[10px] text-faint">{l.code}</span>
@@ -167,11 +188,10 @@ export function HeroDemo() {
             </div>
           </div>
 
-          {/* Toast */}
           <div className="pointer-events-none absolute inset-x-3 bottom-3 h-12">
             {f.toast && (
               <div key={f.toast} className="toast-in flex h-full items-center gap-2 rounded-2xl bg-ink px-3.5 text-[11px] font-medium text-white shadow-lg">
-                <span className="grid h-5 w-5 place-items-center rounded-full bg-mint text-[10px] text-ink">✓</span>
+                <span className="grid h-5 w-5 place-items-center rounded-full bg-lilac text-[10px] text-ink">✓</span>
                 {f.toast}
               </div>
             )}
@@ -180,37 +200,12 @@ export function HeroDemo() {
         </div>
       </div>
 
-      {/* Floating: the photo check on L4 */}
-      <div className="surface absolute top-16 hidden w-[220px] rounded-2xl p-3 md:-left-12 md:block lg:-left-28 xl:-left-24">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="font-semibold">L4 · Grout check</span>
-          <span
-            className={`rounded-full px-2 py-[2px] text-[10px] font-medium transition-colors duration-500 ${
-              f.grout === "verified" ? "bg-ok-soft text-ok" : f.grout === "failed" ? "bg-bad-soft text-bad" : "bg-teal-soft text-teal"
-            }`}
-          >
-            {f.grout === "verified" ? "Verified" : f.grout === "failed" ? "Failed" : f.grout === "scanning" ? "Inspecting" : "Waiting"}
-          </span>
-        </div>
-        <div className="bracket mt-2 overflow-hidden rounded-lg">
-          <div className="relative">
-            <TileArt state={f.grout === "verified" ? "after" : "before"} highlight={f.grout === "failed"} className="block aspect-[4/3] w-full transition-opacity duration-500" />
-            {f.grout === "scanning" && <div className="absolute inset-0 animate-scan bg-gradient-to-b from-transparent via-mint/40 to-transparent" />}
-          </div>
-        </div>
-        <ul className="mt-2 space-y-1 text-[10.5px]">
-          <Check ok={f.grout !== "failed"} pending={f.grout === "idle" || f.grout === "scanning"} text={f.grout === "failed" ? "Crack above the soap dish" : "No visible cracks"} />
-          <Check ok pending={f.grout === "idle"} text="Same wall, 12 m from the job" />
-          <Check ok pending={f.grout === "idle"} text="Fresh photo, one-time token" />
-        </ul>
-      </div>
-
-      {/* Floating: the PayPal ledger */}
-      <div className="surface-dark absolute bottom-24 hidden w-[230px] rounded-2xl p-3.5 text-white md:-right-12 md:block lg:-right-28 xl:hidden wide:-right-32 wide:bottom-28 wide:block">
+      {/* PayPal ledger */}
+      <div className="hidden w-[248px] rotate-2 rounded-2xl border border-white/15 bg-night/80 p-4 text-white shadow-[0_30px_60px_-20px_rgba(0,0,0,0.6)] backdrop-blur lg:block lg:justify-self-start">
         <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/50">
           <span>PayPal ledger</span>
-          <span className="flex items-center gap-1 normal-case tracking-normal text-mint">
-            <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-mint" /> live
+          <span className="flex items-center gap-1 normal-case tracking-normal text-lilac">
+            <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-lilac" /> live
           </span>
         </div>
         <Row k="Authorization" v="$420.00" sub="held, not charged" />
@@ -219,7 +214,7 @@ export function HeroDemo() {
             <Row k={`Capture ${i + 1}`} v={`$${(c.cents / 100).toFixed(2)}`} sub={c.final ? "final_capture: true" : "final_capture: false"} accent />
           </div>
         ))}
-        <div className="mt-2 border-t border-white/10 pt-2 text-[10.5px] text-white/60">
+        <div className="mt-3 border-t border-white/10 pt-2.5 text-[11px] text-white/60">
           Still held <Money cents={still} className="ml-1 text-white" />
         </div>
       </div>
@@ -230,8 +225,8 @@ export function HeroDemo() {
 function Fig({ label, cents, accent }: { label: string; cents: number; accent?: boolean }) {
   return (
     <div>
-      <div className="text-[9px] font-medium uppercase tracking-[0.1em] text-faint">{label}</div>
-      <Money cents={cents} className={`mt-0.5 block text-[13px] font-semibold ${accent ? "text-teal" : "text-ink"}`} />
+      <div className="text-[9px] font-medium uppercase tracking-[0.1em] text-white/45">{label}</div>
+      <Money cents={cents} className={`mt-0.5 block text-[13px] font-semibold ${accent ? "text-lilac" : "text-white"}`} />
     </div>
   );
 }
@@ -259,7 +254,7 @@ function Row({ k, v, sub, accent }: { k: string; v: string; sub: string; accent?
         <div className="text-[11.5px] font-medium">{k}</div>
         <div className="num text-[9.5px] text-white/45">{sub}</div>
       </div>
-      <div className={`num text-[12px] font-semibold ${accent ? "text-mint" : ""}`}>{v}</div>
+      <div className={`num text-[12px] font-semibold ${accent ? "text-lilac" : ""}`}>{v}</div>
     </div>
   );
 }

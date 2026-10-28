@@ -21,6 +21,10 @@ This repository holds the backend core and the first cut of the Next.js app. The
 
 The PayPal client is written by hand. The spec plans to generate it with the APIMatic Context Plugin for the sponsor prize; that has not been done yet.
 
+## Brand
+
+The mark is a T whose stem lands in a check: the hold over the proof, on a violet squircle. Logo files, colours and type are in [`brand/`](brand/README.md).
+
 ## How the money moves
 
 1. The homeowner approves a PayPal order with `intent: AUTHORIZE`. Trace authorizes it on the server and checks the authorized amount against the frozen scope.

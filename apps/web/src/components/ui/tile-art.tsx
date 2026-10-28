@@ -9,18 +9,18 @@ export function TileArt({ state, className = "", highlight = false }: { state: "
   const tw = w / cols;
   const th = h / rows;
   return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={className} role="img" aria-label={state === "before" ? "Cracked grout before the repair" : "Clean grout after the repair"}>
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="xMidYMid slice" className={className} role="img" aria-label={state === "before" ? "Cracked grout before the repair" : "Clean grout after the repair"}>
       <defs>
         <linearGradient id={`light-${state}`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#ffffff" stopOpacity="0.55" />
           <stop offset="0.6" stopColor="#ffffff" stopOpacity="0" />
         </linearGradient>
         <linearGradient id={`tile-${state}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor={state === "before" ? "#dfe5e2" : "#e9efec"} />
-          <stop offset="1" stopColor={state === "before" ? "#cfd7d3" : "#dce4e0"} />
+          <stop offset="0" stopColor={state === "before" ? "#dfe5e2" : "#e2e9e5"} />
+          <stop offset="1" stopColor={state === "before" ? "#cfd7d3" : "#c9d3ce"} />
         </linearGradient>
       </defs>
-      <rect width={w} height={h} fill={state === "before" ? "#a9b2ad" : "#f4f6f4"} />
+      <rect width={w} height={h} fill={state === "before" ? "#a9b2ad" : "#fbfbf8"} />
       {Array.from({ length: rows }).map((_, r) =>
         Array.from({ length: cols }).map((__, c) => (
           <rect key={`${r}-${c}`} x={c * tw + 2} y={r * th + 2} width={tw - 4} height={th - 4} rx="2" fill={`url(#tile-${state})`} />

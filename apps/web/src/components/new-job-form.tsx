@@ -37,7 +37,7 @@ export function NewJobForm() {
           </li>
         ))}
       </ol>
-      <h1 className="mt-6 text-[32px] font-semibold tracking-[-0.03em] sm:text-[40px]">Start a job</h1>
+      <h1 className="display mt-6 text-[44px] leading-none sm:text-[56px]">Start a job</h1>
       <p className="mt-2 max-w-lg text-muted">Next you&apos;ll photograph the problem and write the lines a camera can check. The homeowner gets a link to approve.</p>
       <form onSubmit={create} className="surface mt-8 rounded-[28px] p-5 sm:p-8">
         <div className="grid gap-5">
