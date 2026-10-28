@@ -16,3 +16,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+# Sites created through the API don't get the Next.js runtime added
+# automatically, so it is named here. Netlify installs its current version.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
