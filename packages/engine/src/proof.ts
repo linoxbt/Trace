@@ -149,6 +149,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   }
 
   await e.db.tx(async (q) => {
+    const j = await store.mustGetJob(q, job.id, { lock: true });
     const locked = await store.getLine(q, line.id, { lock: true });
     if (!locked || locked.status !== "PROVING") throw conflict("not_proving", `${line.code} changed while it was being checked`);
     const event = decision.verdict === "VERIFIED" ? "VERDICT_VERIFIED" : decision.verdict === "FAILED" ? "VERDICT_FAILED" : "VERDICT_NEEDS_REVIEW";
@@ -175,7 +176,6 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
         pass: 0,
       });
     }
-    const j = await store.mustGetJob(q, job.id, { lock: true });
     if (j.status === "AUTHORIZED") await store.updateJob(q, job.id, { status: nextJobStatus(j.status, "FIRST_PROOF") });
     await store.appendEvent(q, {
       jobId: job.id,

@@ -55,8 +55,8 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
       await e.db.tx(async (q) => {
         await store.appendEvent(q, { jobId: auth.job_id, actor: "paypal", type: type === "PAYMENT.AUTHORIZATION.VOIDED" ? "WEBHOOK_AUTHORIZATION_VOIDED" : "WEBHOOK_AUTHORIZATION_CREATED", data: { authorization_id: auth.paypal_auth_id } });
         if (type === "PAYMENT.AUTHORIZATION.VOIDED" && auth.status !== "VOIDED") {
-          await store.updateAuthorization(q, auth.id, { status: "VOIDED" });
           const job = await store.mustGetJob(q, auth.job_id, { lock: true });
+          await store.updateAuthorization(q, auth.id, { status: "VOIDED" });
           if (["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"].includes(job.status)) {
             await store.updateJob(q, job.id, { status: "CLOSED_VOIDED" });
             await store.appendEvent(q, { jobId: job.id, actor: "paypal", type: "VOIDED", data: { by: "paypal", alert: "both" } });

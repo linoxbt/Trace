@@ -10,9 +10,11 @@ import {
   release,
   requestRelease,
   retrySendingCaptures,
+  settleCapture,
   submitProof,
   TokenRejected,
 } from "../src/index.ts";
+import type { Capture } from "@trace/paypal";
 import { testEngine, testPhoto, type TestEngine } from "../src/testing.ts";
 import { ANCHOR, DEVICE, failing, heldJob, lineStatus, prove } from "./helpers.ts";
 
@@ -122,6 +124,28 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     const out = await Promise.all([release(e, h.jobId), release(e, h.jobId)]);
     expect(out.map((o) => o.kind).sort()).toEqual(["captured", "nothing"]);
     expect(e.paypal.capturedOn(h.authId)).toBe(21000);
+  });
+
+  it("settles a capture behind the job lock, so it can't deadlock with a release", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.loseNextResponse("captureAuthorization");
+    const r = await release(e, h.jobId);
+    if (r.kind !== "sending") throw new Error(`expected a capture in flight, got ${r.kind}`);
+    const paypalId = [...e.paypal.captures.keys()][0]!;
+
+    // Hold the job row the way a release does, then let the settle start.
+    let settle!: Promise<unknown>;
+    await e.db.tx(async (q) => {
+      await store.mustGetJob(q, h.jobId, { lock: true });
+      settle = settleCapture(e, r.captureId, { id: paypalId, status: "COMPLETED" } as Capture);
+      await q.query("select pg_sleep(0.3)");
+      // A release takes the authorization next. The settle must not be holding it.
+      await q.query("select 1 from authorizations where id = (select authorization_id from captures where id = $1) for update nowait", [r.captureId]);
+    });
+    await settle;
+    expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
   });
 
   it("says nothing was charged when PayPal refuses, and lets the lines go again", async () => {

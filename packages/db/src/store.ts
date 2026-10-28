@@ -330,6 +330,15 @@ export async function getCapture(q: Queryable, id: string, opts: { lock?: boolea
   return rows[0] ?? null;
 }
 
+/** The job a capture belongs to, so a transaction can lock the job before the capture. */
+export async function jobIdOfCapture(q: Queryable, captureId: string): Promise<string | null> {
+  const { rows } = await q.query<{ job_id: string }>(
+    "select a.job_id from captures c join authorizations a on a.id = c.authorization_id where c.id = $1",
+    [captureId],
+  );
+  return rows[0]?.job_id ?? null;
+}
+
 export async function getCaptureByPayPalId(q: Queryable, paypalCaptureId: string): Promise<CaptureRow | null> {
   const { rows } = await q.query<CaptureRow>("select * from captures where paypal_capture_id = $1", [paypalCaptureId]);
   return rows[0] ?? null;

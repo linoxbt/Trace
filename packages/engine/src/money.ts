@@ -2,6 +2,8 @@
 // recomputed from line states inside a locked transaction; a capture is put on
 // record (SENDING, with its PayPal-Request-Id) before it is sent, so a lost
 // response is retried with the same ID and never becomes a second capture.
+// Every transaction here locks the job row first, then authorization, lines
+// and captures, so two of them on one job queue instead of deadlocking.
 
 import { randomUUID } from "node:crypto";
 import {
@@ -139,7 +141,9 @@ function settledResult(cap: store.CaptureRow): ReleaseResult {
 
 /** PayPal refused the capture: nothing was charged. Its lines go back to releasable. */
 async function failCapture(e: Engine, cap: store.CaptureRow, reason: string): Promise<ReleaseResult> {
+  const jobId = await store.jobIdOfCapture(e.db, cap.id);
   const out = await e.db.tx(async (q) => {
+    if (jobId) await store.mustGetJob(q, jobId, { lock: true });
     const locked = await store.getCapture(q, cap.id, { lock: true });
     if (!locked || locked.status !== "SENDING") return locked!;
     const failed = await store.updateCapture(q, cap.id, { status: "FAILED", last_error: reason });
@@ -162,11 +166,12 @@ async function failCapture(e: Engine, cap: store.CaptureRow, reason: string): Pr
  * retry path and the capture webhooks, so it is idempotent.
  */
 export async function settleCapture(e: Engine, captureRowId: string, pp: Capture): Promise<ReleaseResult> {
+  const jobId = await store.jobIdOfCapture(e.db, captureRowId);
+  if (!jobId) throw new EngineError("not_found", `capture ${captureRowId} not found`, 404);
   const settled = await e.db.tx(async (q) => {
-    const cap = await store.getCapture(q, captureRowId, { lock: true });
-    if (!cap) throw new EngineError("not_found", `capture ${captureRowId} not found`, 404);
+    const job = await store.mustGetJob(q, jobId, { lock: true });
+    const cap = (await store.getCapture(q, captureRowId, { lock: true }))!;
     const auth = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 for update", [cap.authorization_id])).rows[0]!;
-    const job = await store.mustGetJob(q, auth.job_id, { lock: true });
     const lines = await store.getLines(q, auth.job_id, { lock: true });
     const mine = lines.filter((l) => cap.line_ids.includes(l.id));
 
@@ -251,11 +256,11 @@ async function voidAuthorization(e: Engine, auth: store.AuthorizationRow, actor:
     if (!(err instanceof PayPalError && err.has("PREVIOUSLY_VOIDED"))) throw err;
   }
   await e.db.tx(async (q) => {
+    const job = await store.mustGetJob(q, auth.job_id, { lock: true });
     const locked = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 for update", [auth.id])).rows[0]!;
     if (locked.status === "VOIDED") return;
     const captured = await store.capturedCents(q, auth.id);
     await store.updateAuthorization(q, auth.id, { status: "VOIDED" });
-    const job = await store.mustGetJob(q, auth.job_id, { lock: true });
     if (job.status !== "COMPLETED" && job.status !== "CLOSED_VOIDED") {
       await store.updateJob(q, job.id, { status: captured > 0 ? nextJobStatus(job.status, "COMPLETED") : nextJobStatus(job.status, "VOIDED") });
     }
