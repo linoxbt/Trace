@@ -1,14 +1,18 @@
 # Netlify: the Next.js app (apps/web) through Netlify's Next.js runtime, plus
-# the worker's periodic jobs as a scheduled function (netlify/functions/tick.mts).
+# the worker's periodic jobs as a scheduled function
+# (apps/web/netlify/functions/tick.mts). The base is the app's folder so
+# Netlify detects Next.js; pnpm still installs the whole workspace.
 # Secrets are set in the Netlify UI, never here.
 
 [build]
+  base = "apps/web"
   # Migrations run when the build can reach the database.
-  command = "if [ -n \"$DATABASE_URL\" ]; then pnpm db:migrate; fi && pnpm --filter @trace/web build"
-  publish = "apps/web/.next"
+  command = "if [ -n \"$DATABASE_URL\" ]; then pnpm --workspace-root db:migrate; fi && pnpm build"
+  publish = ".next"
 
 [build.environment]
   NODE_VERSION = "22"
 
 [functions]
+  directory = "netlify/functions"
   node_bundler = "esbuild"

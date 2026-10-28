@@ -16,7 +16,6 @@
     "build:web": "pnpm --filter @trace/web build"
   },
   "devDependencies": {
-    "@netlify/functions": "6.0.3",
     "@trace/db": "workspace:*",
     "@trace/engine": "workspace:*",
     "@trace/paypal": "workspace:*",

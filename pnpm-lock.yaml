@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@netlify/functions':
-        specifier: 6.0.3
-        version: 6.0.3
       '@trace/db':
         specifier: workspace:*
         version: link:packages/db
@@ -81,6 +78,9 @@ importers:
         specifier: 4.1.13
         version: 4.1.13
     devDependencies:
+      '@netlify/functions':
+        specifier: 6.0.3
+        version: 6.0.3
       '@tailwindcss/postcss':
         specifier: 4.1.14
         version: 4.1.14

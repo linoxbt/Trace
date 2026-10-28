@@ -28,7 +28,6 @@
     "apps/worker/src",
     "apps/worker/test",
     "scripts",
-    "vitest.config.ts",
-    "netlify/functions"
+    "vitest.config.ts"
   ]
 }

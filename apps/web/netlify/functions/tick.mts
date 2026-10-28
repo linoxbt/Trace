@@ -8,7 +8,7 @@ import type { Config } from "@netlify/functions";
 import { Db } from "@trace/db";
 import { consoleLogger, type Engine } from "@trace/engine/worker";
 import { PayPalClient } from "@trace/paypal";
-import { tick } from "../../apps/worker/src/tick.ts";
+import { tick } from "../../../worker/src/tick.ts";
 
 const REQUIRED = ["DATABASE_URL", "PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"] as const;
 
