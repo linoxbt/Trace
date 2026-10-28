@@ -7,3 +7,4 @@ export * from "./jobs.ts";
 export * from "./proof.ts";
 export * from "./money.ts";
 export * from "./webhooks.ts";
+export * from "./claude-verifier.ts";

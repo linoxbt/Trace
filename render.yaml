@@ -16,8 +16,6 @@ services:
         sync: false
       - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
         sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
       - key: PAYPAL_CLIENT_ID
         sync: false
       - key: NEXT_PUBLIC_PAYPAL_CLIENT_ID

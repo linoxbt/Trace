@@ -9,9 +9,11 @@
     "./testing": "./src/testing.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.133.0",
     "@trace/core": "workspace:*",
     "@trace/db": "workspace:*",
     "@trace/paypal": "workspace:*",
-    "sharp": "0.34.5"
+    "sharp": "0.34.5",
+    "zod": "4.1.13"
   }
 }

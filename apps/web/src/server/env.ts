@@ -6,11 +6,12 @@ const Env = z.object({
   DATABASE_CA_CERT: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
   PAYPAL_CLIENT_ID: z.string().min(1),
   PAYPAL_CLIENT_SECRET: z.string().min(1),
   PAYPAL_WEBHOOK_ID: z.string().min(1),
   PAYPAL_API_BASE: z.url().default("https://api-m.sandbox.paypal.com"),
+  ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  VERIFIER_MODEL: z.string().min(1).optional(),
   DEMO_MODE: z.enum(["true", "false"]).default("false"),
   APP_URL: z.url(),
 });

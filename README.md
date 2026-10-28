@@ -107,7 +107,7 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 | --- | --- |
 | `DATABASE_URL` | Builds, Functions |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | Builds, Functions |
-| `SUPABASE_SERVICE_ROLE_KEY`, `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `ANTHROPIC_API_KEY` | Functions (mark as secret) |
+| `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `ANTHROPIC_API_KEY` | Functions (mark as secret) |
 | `APP_URL`, `PAYPAL_API_BASE`, `DEMO_MODE` | Builds, Functions |
 
 `render.yaml` and `apps/worker` remain for hosting on Render instead.

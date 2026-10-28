@@ -1,4 +1,8 @@
-// Photos live in a private Supabase Storage bucket, served by 10-minute signed URLs.
+// Photos live in a private store. In production that is the photo_blobs table,
+// served to a job's parties by the app's /api/photos route; Supabase Storage
+// with signed URLs is kept for deployments that have a service key.
+
+import type { Queryable } from "@trace/db";
 
 export interface PhotoStorage {
   put(path: string, bytes: Uint8Array, contentType: string): Promise<void>;
@@ -50,6 +54,30 @@ export class SupabaseStorage implements PhotoStorage {
     if (!res.ok) throw new Error(`storage sign ${path}: ${res.status}`);
     const { signedURL } = (await res.json()) as { signedURL: string };
     return `${base}/storage/v1${signedURL}`;
+  }
+}
+
+export class PostgresStorage implements PhotoStorage {
+  constructor(
+    private readonly db: Queryable,
+    private readonly urlBase = "/api/photos",
+  ) {}
+
+  async put(path: string, bytes: Uint8Array, contentType: string): Promise<void> {
+    // A path is written once; a second write is a bug, not an update.
+    const res = await this.db.query("insert into photo_blobs (path, content_type, bytes) values ($1, $2, $3) on conflict (path) do nothing", [path, contentType, Buffer.from(bytes)]);
+    if (res.rowCount === 0) throw new Error(`storage put ${path}: exists`);
+  }
+
+  async get(path: string): Promise<Uint8Array> {
+    const { rows } = await this.db.query<{ bytes: Buffer }>("select bytes from photo_blobs where path = $1", [path]);
+    if (!rows[0]) throw new Error(`storage get ${path}: 404`);
+    return new Uint8Array(rows[0].bytes);
+  }
+
+  /** Not signed: the route behind it checks the viewer is one of the job's parties. */
+  async signedUrl(path: string): Promise<string> {
+    return `${this.urlBase}/${path.split("/").map(encodeURIComponent).join("/")}`;
   }
 }
 
