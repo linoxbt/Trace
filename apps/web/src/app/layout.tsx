@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
+import { Figtree, JetBrains_Mono, Outfit } from "next/font/google";
 import "./globals.css";
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-geist" });
-const mono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" });
-const serif = Instrument_Serif({ subsets: ["latin"], weight: "400", style: ["normal", "italic"], variable: "--font-serif" });
+const outfit = Outfit({ subsets: ["latin"], weight: ["500", "600", "700", "800"], variable: "--font-outfit" });
+const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree" });
+const mono = JetBrains_Mono({ subsets: ["latin"], weight: ["400", "500"], variable: "--font-jetbrains" });
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL ?? "https://trace-proof.netlify.app"),
@@ -18,11 +18,11 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f5f0e6" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#f0eff4" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${geist.variable} ${mono.variable} ${serif.variable}`}>
+    <html lang="en" className={`${outfit.variable} ${figtree.variable} ${mono.variable}`}>
       <body className="min-h-dvh bg-paper font-sans text-ink antialiased">{children}</body>
     </html>
   );

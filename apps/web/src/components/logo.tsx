@@ -40,7 +40,7 @@ export function Mark({ size = 28, tone = "violet", className = "" }: { size?: nu
 }
 
 export function Wordmark({ dark = false, className = "" }: { dark?: boolean; className?: string }) {
-  return <span className={`font-semibold tracking-[-0.05em] ${dark ? "text-white" : "text-ink"} ${className}`}>trace</span>;
+  return <span className={`font-display font-bold tracking-[-0.06em] ${dark ? "text-white" : "text-ink"} ${className}`}>trace</span>;
 }
 
 export function Logo({ href = "/", dark = false, size = 28 }: { href?: string; dark?: boolean; size?: number }) {

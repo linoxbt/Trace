@@ -3,6 +3,8 @@
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Logo } from "@/components/logo";
+import { ArrowDisc, Eyebrow, FloatDots } from "@/components/marketing/blocks";
+import { ParticleHero } from "@/components/marketing/particle-hero";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 function SignInForm() {
@@ -31,89 +33,86 @@ function SignInForm() {
 
   return (
     <div className="grid min-h-dvh lg:grid-cols-[1.1fr_1fr]">
-      {/* Brand panel */}
-      <aside className="grain relative hidden overflow-hidden bg-night p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="gridlines-dark pointer-events-none absolute inset-0" />
-        <div className="pointer-events-none absolute -bottom-40 -left-20 h-[520px] w-[520px] rounded-full bg-[radial-gradient(closest-side,rgba(91,47,214,0.5),transparent)] blur-2xl" />
+      {/* Brand panel: the hero's dot field, telling the job's story while you sign in. */}
+      <aside className="relative hidden overflow-hidden p-12 lg:flex lg:flex-col lg:justify-between">
+        <FloatDots count={20} />
         <div className="relative">
-          <Logo dark />
+          <Logo />
         </div>
         <div className="relative">
-          <p className="display max-w-md text-[56px] leading-[0.98]">
-            Money that moves <span className="italic text-lilac">when the work does.</span>
+          <Eyebrow>Payment that follows proof</Eyebrow>
+          <p className="display mt-5 max-w-lg text-[60px] leading-[0.95]">
+            Money that moves <span className="text-violet">when the work does.</span>
           </p>
-          <div className="surface-dark mt-10 max-w-sm rounded-2xl p-5">
-            {[
-              ["Authorized", "$420.00", "text-white"],
-              ["Captured · 3 lines verified", "$310.00", "text-lilac"],
-              ["Still held · grout to redo", "$110.00", "text-white/70"],
-            ].map(([k, v, c]) => (
-              <div key={k} className="flex items-center justify-between border-b border-white/10 py-3 last:border-0">
-                <span className="text-[14px] text-white/65">{k}</span>
-                <span className={`num text-[15px] font-semibold ${c}`}>{v}</span>
-              </div>
-            ))}
+          <div className="mt-6 max-w-[400px]">
+            <ParticleHero />
           </div>
         </div>
-        <p className="relative text-[13px] text-white/40">Sandbox demo. No real money moves.</p>
+        <p className="relative font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Sandbox demo · no real money moves</p>
       </aside>
 
       {/* Form */}
-      <main className="relative flex flex-col px-5 py-8 sm:px-10">
-        <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-80 bg-[radial-gradient(ellipse_70%_80%_at_50%_-10%,rgba(198,181,255,0.4),transparent)] lg:hidden" />
+      <main className="relative flex flex-col px-5 py-6 sm:px-10 lg:py-3 lg:pr-3">
         <div className="lg:hidden">
           <Logo />
         </div>
-        <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-12">
-          {state === "sent" ? (
-            <div className="rise text-center">
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-violet-soft text-violet">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
-                  <rect x="3" y="5.5" width="18" height="13" rx="2" />
-                  <path d="m3.5 7 8.5 6 8.5-6" />
-                </svg>
-              </div>
-              <h1 className="mt-6 text-[28px] font-semibold tracking-tight">Check your inbox</h1>
-              <p className="mt-2 text-muted">
-                We sent a sign-in link to <span className="font-medium text-ink">{email}</span>. It works once and expires soon.
-              </p>
-              <button onClick={() => setState("idle")} className="press mt-8 text-[14px] font-medium text-violet">
-                Use a different email
-              </button>
-            </div>
-          ) : (
-            <div className="rise">
-              <h1 className="display text-[44px] leading-none">Sign in to Trace</h1>
-              <p className="mt-2 text-muted">We&apos;ll email you a link. No password to remember.</p>
-              <form onSubmit={send} className="mt-10">
-                <label className="text-[13px] font-medium text-ink-2" htmlFor="email">
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  required
-                  autoFocus
-                  autoComplete="email"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="field mt-2"
-                />
-                {state === "error" && (
-                  <p className="mt-3 rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad" role="alert">
-                    {message}
-                  </p>
-                )}
-                <button disabled={state === "sending"} className="press btn-primary mt-5 flex h-12 w-full items-center justify-center rounded-full font-medium disabled:opacity-70">
-                  {state === "sending" ? <Spinner /> : "Email me a link"}
+        <div className="flex flex-1 flex-col items-center justify-center py-10 lg:rounded-[36px] lg:bg-white/50">
+          <div className="clay w-full max-w-[420px] rounded-[30px] p-7 sm:p-9">
+            {state === "sent" ? (
+              <div className="rise text-center">
+                <div className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-violet text-white shadow-[0_12px_24px_-10px_rgb(91_47_214/0.6)]">
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                    <rect x="3" y="5.5" width="18" height="13" rx="2" />
+                    <path d="m3.5 7 8.5 6 8.5-6" />
+                  </svg>
+                </div>
+                <h1 className="display mt-6 text-[32px] leading-tight">Check your inbox</h1>
+                <p className="mt-2 text-muted">
+                  We sent a sign-in link to <span className="font-medium text-ink">{email}</span>. It works once and expires soon.
+                </p>
+                <button onClick={() => setState("idle")} className="press mt-8 text-[14px] font-semibold text-violet">
+                  Use a different email
                 </button>
-              </form>
-              <p className="mt-8 text-[13px] leading-relaxed text-faint">
-                Homeowners: sign in with the email the job was sent to and it will be waiting for you.
-              </p>
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="rise">
+                <Eyebrow>Sign in</Eyebrow>
+                <h1 className="display mt-4 text-[40px] leading-none">Welcome to Trace</h1>
+                <p className="mt-3 text-muted">We&apos;ll email you a link. No password to remember.</p>
+                <form onSubmit={send} className="mt-8">
+                  <label className="text-[13px] font-semibold text-ink-2" htmlFor="email">
+                    Email
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    required
+                    autoFocus
+                    autoComplete="email"
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="field mt-2 bg-paper"
+                  />
+                  {state === "error" && (
+                    <p className="mt-3 rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad" role="alert">
+                      {message}
+                    </p>
+                  )}
+                  <button
+                    disabled={state === "sending"}
+                    className="pill press btn-ink mt-5 flex h-[52px] w-full items-center justify-between rounded-full pl-6 pr-2 font-semibold disabled:opacity-70"
+                  >
+                    {state === "sending" ? "Sending…" : "Email me a link"}
+                    {state === "sending" ? <Spinner /> : <ArrowDisc size={36} />}
+                  </button>
+                </form>
+                <p className="mt-6 rounded-2xl bg-paper px-4 py-3 text-[13px] leading-relaxed text-muted">
+                  Homeowners: sign in with the email the job was sent to and it will be waiting for you.
+                </p>
+              </div>
+            )}
+          </div>
         </div>
       </main>
     </div>
@@ -121,7 +120,7 @@ function SignInForm() {
 }
 
 function Spinner() {
-  return <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-label="Sending" />;
+  return <span className="mr-2 h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-label="Sending" />;
 }
 
 export default function SignIn() {

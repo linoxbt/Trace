@@ -31,7 +31,7 @@ export default function Security() {
         clause="Security"
         title={
           <>
-            Proof you can&apos;t fake. <span className="italic text-violet">Money nobody holds.</span>
+            Proof you can&apos;t fake. <span className="text-violet">Money nobody holds.</span>
           </>
         }
         lede="Trace sits between two people who don't know each other yet. So every photo is checked before it counts, and no amount is ever decided by the app, the model, or Trace itself."
@@ -39,7 +39,7 @@ export default function Security() {
 
       <section className="pb-24">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
-          <SectionHead clause="§ 1 — Photo integrity" title={<>Six checks, <span className="italic text-violet">every photo.</span></>} body="Integrity checks run on the server as the photo arrives. A failure stops the line before a model is ever called, so it costs nobody anything." />
+          <SectionHead id="checks" clause="Photo integrity" title={<>Six checks, <span className="text-violet">every photo.</span></>} body="Integrity checks run on the server as the photo arrives. A failure stops the line before a model is ever called, so it costs nobody anything." />
           <div className="mt-14 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CHECKS.map((c, i) => (
               <Reveal key={c.title} delay={(i % 3) * 90} className="surface group rounded-[24px] p-6 transition-transform duration-500 hover:-translate-y-1">
@@ -55,7 +55,7 @@ export default function Security() {
       <section className="pb-24">
         <div className="mx-auto grid max-w-6xl items-start gap-16 px-5 sm:px-8 lg:grid-cols-[1fr_520px]">
           <div className="lg:sticky lg:top-28">
-            <SectionHead clause="§ 2 — The verdict" title={<>Observations in, <span className="italic text-violet">rules out.</span></>} body="The AI describes what it sees against each agreed check. Code turns that into a verdict: Verified only with every check satisfied, the same place, and confidence of at least 0.80. Borderline lines are re-inspected on a 2× crop, and if the two passes disagree, the homeowner decides." />
+            <SectionHead clause="The verdict" title={<>Observations in, <span className="text-violet">rules out.</span></>} body="The AI describes what it sees against each agreed check. Code turns that into a verdict: Verified only with every check satisfied, the same place, and confidence of at least 0.80. Borderline lines are re-inspected on a 2× crop, and if the two passes disagree, the homeowner decides." />
           </div>
           <Reveal delay={120}>
             <Inspection />
@@ -63,10 +63,10 @@ export default function Security() {
         </div>
       </section>
 
-      <section className="grain relative overflow-hidden bg-night py-24 text-white sm:py-32">
+      <section className="grain relative mx-3 overflow-hidden rounded-[40px] bg-night sm:mx-5 py-24 text-white sm:py-32">
         <div className="gridlines-dark pointer-events-none absolute inset-0" />
         <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
-          <SectionHead dark clause="§ 3 — The money" title={<>Built so it <span className="italic text-lilac">can&apos;t go wrong quietly.</span></>} />
+          <SectionHead dark clause="The money" title={<>Built so it <span className="text-lilac">can&apos;t go wrong quietly.</span></>} />
           <div className="mt-14 grid gap-px overflow-hidden rounded-[28px] bg-white/10 md:grid-cols-2 lg:grid-cols-3">
             {MONEY.map((m, i) => (
               <Reveal key={m.title} delay={(i % 3) * 90} className="bg-night-2 p-7">
@@ -81,7 +81,7 @@ export default function Security() {
 
       <section className="py-24 sm:py-32">
         <div className="mx-auto max-w-3xl px-5 sm:px-8">
-          <SectionHead clause="§ 4 — Honest limits" title={<>What Trace <span className="italic text-violet">can&apos;t promise.</span></>} />
+          <SectionHead clause="Honest limits" title={<>What Trace <span className="text-violet">can&apos;t promise.</span></>} />
           <Reveal delay={100}>
             <ul className="mt-10 space-y-6 text-[17px] leading-relaxed text-ink-2">
               <li>PayPal&apos;s seller protection is aimed at goods. A dispute over a service isn&apos;t guaranteed to go the tradesperson&apos;s way; the evidence pack is the strongest case, not a sure win.</li>
@@ -93,7 +93,7 @@ export default function Security() {
         </div>
       </section>
 
-      <Cta title={<>Check it <span className="italic text-lilac">yourself.</span></>} body="The demo shows every verdict's working, from the first failed grout photo to the final capture." />
+      <Cta title={<>Check it <span className="text-lilac">yourself.</span></>} body="The demo shows every verdict's working, from the first failed grout photo to the final capture." />
     </>
   );
 }

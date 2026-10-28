@@ -1,7 +1,7 @@
 // One template for the two audience pages.
 
 import Link from "next/link";
-import { Bullet, Cta, Faq, PageHero, SectionHead } from "@/components/marketing/blocks";
+import { Bullet, Cta, Faq, PageHero, PillLink, SectionHead } from "@/components/marketing/blocks";
 import { Reveal } from "@/components/ui/reveal";
 
 export interface AudienceProps {
@@ -20,21 +20,21 @@ export function AudiencePage(p: AudienceProps) {
   return (
     <>
       <PageHero clause={p.clause} title={p.title} lede={p.lede}>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Link href="/demo" className="press btn-primary inline-flex h-12 items-center justify-center rounded-full px-7 text-[15px] font-medium">
+        <div className="flex flex-wrap gap-3">
+          <PillLink href="/demo" tone="ink">
             Try the demo
-          </Link>
-          <Link href="/sign-in" className="press inline-flex h-12 items-center justify-center rounded-full border border-line-2 bg-card px-7 text-[15px] font-medium">
+          </PillLink>
+          <PillLink href="/sign-in" tone="light">
             Sign in
-          </Link>
+          </PillLink>
         </div>
       </PageHero>
 
       <section className="pb-24">
         <div className="mx-auto max-w-6xl px-5 sm:px-8">
-        <div className="grid gap-px overflow-hidden rounded-[28px] border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {p.promises.map((x, i) => (
-            <Reveal key={x.k} delay={i * 80} className="bg-card p-7">
+            <Reveal key={x.k} delay={i * 80} className="clay clay-hover rounded-[24px] p-7">
               <div className="clause">{String(i + 1).padStart(2, "0")}</div>
               <div className="mt-3 text-[18px] font-semibold tracking-tight">{x.k}</div>
               <p className="mt-2 text-[14.5px] leading-relaxed text-muted">{x.v}</p>
@@ -44,7 +44,7 @@ export function AudiencePage(p: AudienceProps) {
         </div>
       </section>
 
-      <section className="grain relative overflow-hidden bg-night py-24 text-white sm:py-32">
+      <section className="grain relative mx-3 overflow-hidden rounded-[40px] bg-night sm:mx-5 py-24 text-white sm:py-32">
         <div className="gridlines-dark pointer-events-none absolute inset-0" />
         <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
           <SectionHead dark clause="The journey" title={p.journeyTitle} />
@@ -78,7 +78,7 @@ export function AudiencePage(p: AudienceProps) {
 
       <section className="pb-24">
         <div className="mx-auto grid max-w-6xl gap-12 px-5 sm:px-8 lg:grid-cols-[0.8fr_1.2fr]">
-          <SectionHead clause="Questions" title={<>Asked <span className="italic text-violet">often.</span></>} />
+          <SectionHead id="questions" clause="Questions" title={<>Asked <span className="text-violet">often.</span></>} />
           <Reveal delay={100}>
             <Faq items={p.faq} />
           </Reveal>

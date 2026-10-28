@@ -10,7 +10,7 @@ export default function Homeowners() {
       clause="For homeowners"
       title={
         <>
-          Pay for the repair <span className="italic text-violet">you can see.</span>
+          Pay for the repair <span className="text-violet">you can see.</span>
         </>
       }
       lede="No deposits into the void. You approve a scope in plain words, PayPal holds the money, and each line is paid only after photos taken on site show it's done."
@@ -22,7 +22,7 @@ export default function Homeowners() {
       ]}
       journeyTitle={
         <>
-          Your money, <span className="italic text-lilac">step by step.</span>
+          Your money, <span className="text-lilac">step by step.</span>
         </>
       }
       journey={[
@@ -36,7 +36,7 @@ export default function Homeowners() {
         clause: "The proof",
         title: (
           <>
-            Every verdict <span className="italic text-violet">shows its working.</span>
+            Every verdict <span className="text-violet">shows its working.</span>
           </>
         ),
         body: "You'll never be asked to trust a green tick. Each line carries the photos, the checks that ran and the AI's reason in plain words.",
@@ -49,7 +49,7 @@ export default function Homeowners() {
         ["What if I disagree with a verdict?", "Flag the line with a note. It stays held until the tradesperson fixes and re-proves it, or you both agree to drop it."],
         ["Can I still dispute with PayPal?", "Yes. Your PayPal buyer rights don't change. Trace keeps the photo record either side can point to."],
       ]}
-      cta={{ title: <>See it from <span className="italic text-lilac">your side.</span></>, body: "In the demo you approve the hold, review the photos and release the money yourself." }}
+      cta={{ title: <>See it from <span className="text-lilac">your side.</span></>, body: "In the demo you approve the hold, review the photos and release the money yourself." }}
     />
   );
 }

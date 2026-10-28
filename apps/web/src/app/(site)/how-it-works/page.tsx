@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Cta, Faq, PageHero, SectionHead } from "@/components/marketing/blocks";
+import { Cta, Faq, PageHero, SectionHead, PillLink } from "@/components/marketing/blocks";
 import { Story } from "@/components/marketing/story";
 import { Receipt } from "@/components/marketing/receipt";
 import { Reveal } from "@/components/ui/reveal";
@@ -30,14 +30,14 @@ export default function HowItWorks() {
         clause="How it works"
         title={
           <>
-            From a dripping tap to a <span className="italic text-violet">paid invoice.</span>
+            From a dripping tap to a <span className="text-violet">paid invoice.</span>
           </>
         }
         lede="Trace turns a home repair into a short contract a camera can check, then lets PayPal move the money only as each line is proved."
       >
-        <Link href="/demo" className="press btn-primary inline-flex h-12 items-center rounded-full px-7 text-[15px] font-medium">
+        <PillLink href="/demo" tone="ink">
           Run it yourself in the demo
-        </Link>
+        </PillLink>
       </PageHero>
 
       <section className="pb-12">
@@ -46,15 +46,16 @@ export default function HowItWorks() {
         </div>
       </section>
 
-      <section className="grain relative overflow-hidden bg-night py-24 text-white sm:py-32">
+      <section className="grain relative mx-3 overflow-hidden rounded-[40px] bg-night sm:mx-5 py-24 text-white sm:py-32">
         <div className="gridlines-dark pointer-events-none absolute inset-0" />
         <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
           <SectionHead
             dark
+            id="rules"
             clause="The rules the money follows"
             title={
               <>
-                Six rules, <span className="italic text-lilac">no exceptions.</span>
+                Six rules, <span className="text-lilac">no exceptions.</span>
               </>
             }
             body="These are enforced in code on the server, not by the app or the model. Each one has tests that run against a PayPal stand-in with the same rules."
@@ -76,14 +77,14 @@ export default function HowItWorks() {
 
       <section className="py-24 sm:py-32">
         <div className="mx-auto grid max-w-6xl gap-12 px-5 sm:px-8 lg:grid-cols-[0.8fr_1.2fr]">
-          <SectionHead clause="Questions" title={<>The fine print, <span className="italic text-violet">plainly.</span></>} />
+          <SectionHead clause="Questions" title={<>The fine print, <span className="text-violet">plainly.</span></>} />
           <Reveal delay={100}>
             <Faq items={FAQ} />
           </Reveal>
         </div>
       </section>
 
-      <Cta title={<>Try it with <span className="italic text-lilac">nothing at stake.</span></>} body="The demo runs a whole job in your browser. Play both sides and watch the hold turn into payments." secondary={{ href: "/security", label: "Security" }} />
+      <Cta title={<>Try it with <span className="text-lilac">nothing at stake.</span></>} body="The demo runs a whole job in your browser. Play both sides and watch the hold turn into payments." secondary={{ href: "/security", label: "Security" }} />
     </>
   );
 }

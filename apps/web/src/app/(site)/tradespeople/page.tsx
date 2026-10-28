@@ -10,7 +10,7 @@ export default function Tradespeople() {
       clause="For tradespeople"
       title={
         <>
-          Get paid <span className="italic text-violet">as you finish.</span>
+          Get paid <span className="text-violet">as you finish.</span>
         </>
       }
       lede="Know the money exists before you buy a single tube of sealant. Prove each line with your phone and it's released to your own PayPal account, not at the end, and not after a chase."
@@ -22,7 +22,7 @@ export default function Tradespeople() {
       ]}
       journeyTitle={
         <>
-          From quote <span className="italic text-lilac">to paid.</span>
+          From quote <span className="text-lilac">to paid.</span>
         </>
       }
       journey={[
@@ -36,7 +36,7 @@ export default function Tradespeople() {
         clause: "The money",
         title: (
           <>
-            A statement <span className="italic text-violet">you can bank on.</span>
+            A statement <span className="text-violet">you can bank on.</span>
           </>
         ),
         body: "Every capture is tied to the lines it pays for, so you always know what's been paid, what's still held and why.",
@@ -49,7 +49,7 @@ export default function Tradespeople() {
         ["What about hidden work, like pipes in a wall?", "Mark the line as not visible in an after-photo and take a photo during the work. It goes to the homeowner to approve."],
         ["What happens in a dispute?", "Trace builds an evidence pack from the scope, photos, integrity checks and approvals. You file it in one tap. Seller protection is aimed at goods, so no outcome is guaranteed, but it's the strongest case you can make."],
       ]}
-      cta={{ title: <>Prove a line <span className="italic text-lilac">in seconds.</span></>, body: "In the demo you play the tradesperson too: shoot the after-photos and watch the release land." }}
+      cta={{ title: <>Prove a line <span className="text-lilac">in seconds.</span></>, body: "In the demo you play the tradesperson too: shoot the after-photos and watch the release land." }}
     />
   );
 }

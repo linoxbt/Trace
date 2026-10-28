@@ -20,12 +20,12 @@ export function AccountMenu({ email }: { email: string | null }) {
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         aria-label="Account"
-        className="press grid h-9 w-9 place-items-center rounded-full bg-ink text-[13px] font-semibold text-white ring-4 ring-transparent hover:ring-ink/5"
+        className="press grid h-10 w-10 place-items-center rounded-full bg-violet text-[13px] font-semibold text-white ring-4 ring-transparent hover:ring-violet/15"
       >
         {initial}
       </button>
       <div
-        className={`surface absolute right-0 top-11 w-64 origin-top-right rounded-2xl p-2 transition-all duration-300 ease-[var(--ease-out-expo)] ${
+        className={`clay absolute right-0 top-12 w-64 origin-top-right rounded-2xl p-2 transition-all duration-300 ease-[var(--ease-out-expo)] ${
           open ? "scale-100 opacity-100" : "pointer-events-none scale-95 opacity-0"
         }`}
       >
