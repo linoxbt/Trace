@@ -1,14 +1,20 @@
 // The worker's periodic jobs as a Netlify scheduled function, once a minute
-// (spec section 10 asks for every 30 s; Netlify's finest schedule is 1 min).
-// Each run: retry captures whose outcome is unknown, release lines whose
-// review window lapsed, reauthorize holds past their honor period. A Postgres
-// advisory lock keeps overlapping runs from doing the same work.
+// (spec section 10 asks for every 30 s; Netlify's finest schedule is 1 min;
+// the schedule is in netlify.toml). Each run: retry captures whose outcome is
+// unknown, release lines whose review window lapsed, reauthorize holds past
+// their honor period. A Postgres advisory lock keeps overlapping runs from
+// doing the same work.
+//
+// The build bundles this file, workspace packages and all, into
+// netlify/functions/tick.mjs: Netlify's own packager left the workspace's
+// TypeScript imports unbundled, and the function failed to load.
 
-import type { Config } from "@netlify/functions";
+/// <reference types="@netlify/functions" />
+
 import { Db } from "@trace/db";
 import { consoleLogger, type Engine } from "@trace/engine/worker";
 import { PayPalClient } from "@trace/paypal";
-import { tick } from "../../../worker/src/tick.ts";
+import { tick } from "../../worker/src/tick.ts";
 
 const REQUIRED = ["DATABASE_URL", "PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"] as const;
 
@@ -44,6 +50,3 @@ export default async () => {
   }
 };
 
-export const config: Config = {
-  schedule: "* * * * *", // every minute, UTC
-};

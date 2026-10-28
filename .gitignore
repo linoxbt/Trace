@@ -10,3 +10,4 @@ eval/photos/
 scripts/evidence/*.png
 *.tsbuildinfo
 .netlify
+apps/web/netlify/functions/tick.mjs

@@ -99,7 +99,7 @@ The engine tests drive the demo bathroom job ($420 across four lines) through th
 
 ## Deploy on Netlify
 
-`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `apps/web/netlify/functions/tick.mts`, once a minute: Netlify has no always-on processes, and a minute is its finest schedule. The build runs the database migrations whenever `DATABASE_URL` is available to it.
+`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `apps/web/netlify/tick.mts` (bundled into `netlify/functions/tick.mjs` at build time, schedule in `netlify.toml`), once a minute: Netlify has no always-on processes, and a minute is its finest schedule. The build runs the database migrations whenever `DATABASE_URL` is available to it.
 
 Set these in Netlify under **Site configuration > Environment variables**, then trigger a new deploy, because values are fixed at build time:
 
