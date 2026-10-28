@@ -6,9 +6,11 @@ const Env = z.object({
   DATABASE_CA_CERT: z.string().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
-  PAYPAL_CLIENT_ID: z.string().min(1),
-  PAYPAL_CLIENT_SECRET: z.string().min(1),
-  PAYPAL_WEBHOOK_ID: z.string().min(1),
+  // Optional so sign-in and drafting work before PayPal is connected; the
+  // PayPal steps themselves refuse until all three are set.
+  PAYPAL_CLIENT_ID: z.string().min(1).optional(),
+  PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
+  PAYPAL_WEBHOOK_ID: z.string().min(1).optional(),
   PAYPAL_API_BASE: z.url().default("https://api-m.sandbox.paypal.com"),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   VERIFIER_MODEL: z.string().min(1).optional(),
