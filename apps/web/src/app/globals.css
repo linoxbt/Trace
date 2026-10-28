@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f6f7f5;
+  --color-card: #ffffff;
+  --color-ink: #10201e;
+  --color-muted: #5b6b68;
+  --color-line: #dde3e0;
+  --color-teal: #0b7f74;
+  --color-teal-soft: #e3f3f1;
+  --color-ok: #127a3a;
+  --color-ok-soft: #e4f4e9;
+  --color-warn: #8a5a00;
+  --color-warn-soft: #fbf0d9;
+  --color-bad: #a3261c;
+  --color-bad-soft: #fbe7e5;
+  --color-night: #0b1312;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+html {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+/* Corner brackets on every photo: they double as the camera viewfinder. */
+.bracket {
+  position: relative;
+}
+.bracket::before,
+.bracket::after {
+  content: "";
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  pointer-events: none;
+}
+.bracket::before {
+  top: 6px;
+  left: 6px;
+  border-top: 2px solid var(--color-teal);
+  border-left: 2px solid var(--color-teal);
+}
+.bracket::after {
+  bottom: 6px;
+  right: 6px;
+  border-bottom: 2px solid var(--color-teal);
+  border-right: 2px solid var(--color-teal);
+}
+
+.num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}

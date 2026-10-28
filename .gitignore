@@ -8,3 +8,4 @@ dist/
 coverage/
 eval/photos/
 scripts/evidence/*.png
+*.tsbuildinfo

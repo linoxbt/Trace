@@ -6,7 +6,7 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/). MIT
 
 ## Status
 
-This repository holds the backend core. The Next.js app, the Claude scope writer and verifier, the dispute evidence pack and judge mode's demo seeding come next.
+This repository holds the backend core and the first cut of the Next.js app. The Claude scope writer and verifier, the dispute evidence pack and judge mode's demo seeding come next.
 
 | Part | State |
 | --- | --- |
@@ -15,7 +15,9 @@ This repository holds the backend core. The Next.js app, the Claude scope writer
 | Postgres schema with row-level security, migrations, queries (`packages/db`) | Built, tested on Postgres 16 |
 | Capture engine: authorize, prove, review window, partial and final capture, close, void, reauthorize, webhooks (`packages/engine`) | Built, tested end to end against a fake PayPal |
 | Background worker (`apps/worker`) | Built |
-| Web app, Claude verifier, evidence PDF, judge-mode seeding | Not started |
+| Next.js app (`apps/web`): API routes for every flow, PayPal webhook, magic-link sign-in, job list, new job, job page with money bar, scope editor, in-app camera, PayPal v6 hold button, approve/flag/release, close | Built; builds and serves locally; not yet run against Supabase and the sandbox |
+| Sandbox end-to-end test (`scripts/sandbox-e2e.ts`) | Ready; needs sandbox keys to run |
+| Claude scope writer and verifier, evidence PDF, judge-mode seeding, Realtime | Not started (proofs are refused until the verifier is configured) |
 
 The PayPal client is written by hand. The spec plans to generate it with the APIMatic Context Plugin for the sponsor prize; that has not been done yet.
 
@@ -37,8 +39,9 @@ packages/core      pure domain: money, state machines, capture planning, verdict
 packages/paypal    PayPal REST client, plus FakePayPal (same rules, in memory) for tests
 packages/db        migrations/001_init.sql, migration runner, typed queries
 packages/engine    the flows: jobs, proof, money, webhooks; photo normalisation and dHash (sharp)
+apps/web           Next.js 15 app: API routes, PayPal webhook, pages and components
 apps/worker        30-second loop: auto-release, capture retries, reauthorization; /healthz
-scripts            paypal-spike.ts, the day-1 sandbox test
+scripts            sandbox-e2e.ts: Trace's engine against the real PayPal sandbox
 ```
 
 ## Run it
@@ -49,14 +52,28 @@ Needs Node 22, pnpm 10 and Postgres 15+ (Supabase in production).
 pnpm install
 cp .env.example .env                 # fill in DATABASE_URL and the PayPal sandbox keys
 pnpm db:migrate                      # create the tables
-pnpm spike:paypal                    # day 1: authorize, partial capture, final capture, void, reauthorize
+pnpm sandbox:e2e                     # Trace against the PayPal sandbox (needs TEST_DATABASE_URL too)
+pnpm web                             # the app at http://localhost:3000
 pnpm worker                          # the background worker, health at :8080/healthz
 ```
+
+## Sandbox test
+
+`pnpm sandbox:e2e` runs Trace's engine with the real PayPal client against the sandbox. It covers:
+
+- The $310 partial capture and the $110 final capture.
+- A close that voids the rest.
+- A capture resent with its stored request ID, which must return the same capture.
+- Reauthorizing a partially captured authorization.
+- Captures refused after void and over the hold.
+
+With `PAYPAL_SANDBOX_BUYER_EMAIL` and `PAYPAL_SANDBOX_BUYER_PASSWORD` set, headless Chromium approves each order as the sandbox buyer (run `npx playwright install chromium` once). Without them, it prints the approval link and waits. Results are written to `scripts/evidence/`. Photos are synthetic and the verifier is scripted, so this tests the money, not the vision model.
 
 ## Tests
 
 ```sh
-pnpm typecheck
+pnpm typecheck                       # packages, worker and web app
+pnpm build:web
 TEST_DATABASE_URL=postgres://postgres@localhost:5432/trace_test pnpm test
 ```
 

@@ -1,0 +1,35 @@
+{
+  "name": "@trace/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.7.0",
+    "@supabase/supabase-js": "2.75.0",
+    "@trace/core": "workspace:*",
+    "@trace/db": "workspace:*",
+    "@trace/engine": "workspace:*",
+    "@trace/paypal": "workspace:*",
+    "next": "15.5.28",
+    "pg": "8.16.3",
+    "react": "19.1.10",
+    "react-dom": "19.1.10",
+    "server-only": "0.0.1",
+    "sharp": "0.34.5",
+    "zod": "4.1.13"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.1.14",
+    "@types/node": "22.20.5",
+    "@types/react": "19.1.17",
+    "@types/react-dom": "19.1.11",
+    "tailwindcss": "4.1.14",
+    "typescript": "5.9.3"
+  }
+}

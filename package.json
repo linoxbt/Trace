@@ -7,11 +7,13 @@
     "node": ">=22"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json && tsc -p apps/web/tsconfig.json",
     "test": "vitest run",
     "db:migrate": "tsx packages/db/src/cli.ts",
     "worker": "tsx apps/worker/src/main.ts",
-    "sandbox:e2e": "tsx scripts/sandbox-e2e.ts"
+    "sandbox:e2e": "tsx scripts/sandbox-e2e.ts",
+    "web": "pnpm --filter @trace/web dev",
+    "build:web": "pnpm --filter @trace/web build"
   },
   "devDependencies": {
     "@trace/db": "workspace:*",

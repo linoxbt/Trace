@@ -1,9 +1,10 @@
 import { readdir, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type { Db } from "./db.ts";
 
-export const MIGRATIONS_DIR = fileURLToPath(new URL("../migrations/", import.meta.url));
+// Built from the module path at run time so bundlers leave it alone.
+export const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 const LOCK = 727_001;
 
 /** Apply every migration not yet recorded, in name order, each in its own transaction. */
