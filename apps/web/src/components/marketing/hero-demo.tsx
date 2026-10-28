@@ -206,7 +206,7 @@ export function HeroDemo() {
       </div>
 
       {/* Floating: the PayPal ledger */}
-      <div className="surface-dark absolute bottom-24 hidden w-[230px] rounded-2xl p-3.5 text-white md:-right-12 md:block lg:-right-28 xl:hidden min-[1400px]:-right-32 min-[1400px]:bottom-28 min-[1400px]:block">
+      <div className="surface-dark absolute bottom-24 hidden w-[230px] rounded-2xl p-3.5 text-white md:-right-12 md:block lg:-right-28 xl:hidden wide:-right-32 wide:bottom-28 wide:block">
         <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.14em] text-white/50">
           <span>PayPal ledger</span>
           <span className="flex items-center gap-1 normal-case tracking-normal text-mint">
