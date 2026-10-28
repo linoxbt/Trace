@@ -23,7 +23,7 @@ The PayPal client is written by hand. The spec plans to generate it with the API
 
 ## Brand
 
-The mark is a T whose stem lands in a check: the hold over the proof, on a violet squircle. Logo files, colours and type are in [`brand/`](brand/README.md).
+The mark is two bars on a violet squircle: a solid one for money released, an outlined one for money still held. Logo files, colours and type are in [`brand/`](brand/README.md).
 
 ## How the money moves
 

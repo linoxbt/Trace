@@ -2,14 +2,14 @@
 
 ## The mark
 
-A **T whose stem lands in a check**: the bar is the hold PayPal places, the check is the proof that releases it. It sits on a squircle tile in Trace violet.
+**Two bars**: the solid one is money released for proved work, the outlined one is money still held. Every Trace job is somewhere between the two, and moves from right to left as lines are proved. The outlined bar is inset by half its stroke, so both share the same outer edge. It sits on a squircle tile in Trace violet.
 
 | File | Use |
 | --- | --- |
 | `trace-mark.svg` | Default: violet tile, white glyph |
 | `trace-mark-ink.svg` | One-colour, on light or busy backgrounds |
 | `trace-mark-cream.svg` | On violet or dark photography |
-| `trace-glyph.svg` | The glyph alone, for watermarks and stamps |
+| `trace-glyph.svg` | The two bars alone, for watermarks and stamps |
 | `trace-lockup.svg`, `trace-lockup-dark.svg` | Mark plus wordmark |
 
 Keep clear space of half the tile's width on every side. Smallest size: 16 px.
