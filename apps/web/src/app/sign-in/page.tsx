@@ -27,7 +27,12 @@ function SignInForm() {
       setState("sent");
     } catch (err) {
       setState("error");
-      setMessage(err instanceof Error ? err.message : "Couldn't send the link. Try again.");
+      const raw = err instanceof Error ? err.message : "";
+      setMessage(
+        /rate limit/i.test(raw)
+          ? "Too many sign-in emails in the last hour. Use the newest link already in your inbox, or try again in about an hour."
+          : raw || "Couldn't send the link. Try again.",
+      );
     }
   }
 
