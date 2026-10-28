@@ -1,0 +1,13 @@
+{
+  "name": "@trace/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing.ts" },
+  "dependencies": {
+    "@trace/core": "workspace:*",
+    "@trace/db": "workspace:*",
+    "@trace/paypal": "workspace:*",
+    "sharp": "0.34.5"
+  }
+}

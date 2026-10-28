@@ -1,0 +1,8 @@
+{
+  "name": "@trace/db",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts", "./testing": "./src/testing.ts" },
+  "dependencies": { "@trace/core": "workspace:*", "pg": "8.16.3" }
+}
