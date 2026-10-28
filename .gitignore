@@ -7,3 +7,4 @@ node_modules/
 dist/
 coverage/
 eval/photos/
+scripts/evidence/*.png
