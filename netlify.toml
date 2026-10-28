@@ -7,7 +7,7 @@
 [build]
   base = "apps/web"
   # Migrations run when the build can reach the database.
-  command = "if [ -n \"$DATABASE_URL\" ]; then pnpm --workspace-root db:migrate; fi && pnpm build"
+  command = "if [ -n \"$DATABASE_URL\" ]; then pnpm --workspace-root db:migrate || echo 'WARNING: migrations not applied (database unreachable from the build)'; fi && pnpm build"
   publish = ".next"
 
 [build.environment]

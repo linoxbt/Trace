@@ -16,12 +16,27 @@ export interface DbOptions {
 // in a double, and money is stored as int4 cents.
 pg.types.setTypeParser(pg.types.builtins.INT8, (v) => Number(v));
 
+/**
+ * node-postgres lets ssl settings in the URL replace the ssl option, so a URL
+ * ending in ?sslmode=require would drop a pinned CA. With a CA, the URL's own
+ * ssl parameters are removed and the CA decides.
+ */
+export function withoutSslParams(url: string): string {
+  try {
+    const u = new URL(url);
+    for (const k of ["sslmode", "sslrootcert", "sslcert", "sslkey", "ssl"]) u.searchParams.delete(k);
+    return u.toString();
+  } catch {
+    return url;
+  }
+}
+
 export class Db {
   readonly pool: pg.Pool;
 
   constructor(opts: DbOptions) {
     this.pool = new pg.Pool({
-      connectionString: opts.connectionString,
+      connectionString: opts.caCert ? withoutSslParams(opts.connectionString) : opts.connectionString,
       max: opts.max ?? 10,
       ...(opts.caCert ? { ssl: { ca: opts.caCert, rejectUnauthorized: true } } : {}),
     });

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as store from "../src/index.ts";
-import { migrate, type Db } from "../src/index.ts";
+import { migrate, withoutSslParams, type Db } from "../src/index.ts";
 import { freshDb, makeUser, TEST_DATABASE_URL } from "../src/testing.ts";
 
 const acceptance = { criterion: "c", must_show: ["a"], must_not_show: [], framing: "f" };
@@ -102,5 +102,15 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
       return (await q.query("select count(*)::int as n from capture_tokens")).rows[0].n;
     });
     expect(tokens).toBe(0);
+  });
+});
+
+describe("withoutSslParams", () => {
+  it("drops the URL's ssl settings so a pinned CA is used, and keeps the rest", () => {
+    const out = withoutSslParams("postgresql://trace_app.ref:pw@host.example:5432/postgres?sslmode=require&application_name=trace");
+    expect(out).toBe("postgresql://trace_app.ref:pw@host.example:5432/postgres?application_name=trace");
+  });
+  it("leaves something that isn't a URL alone", () => {
+    expect(withoutSslParams("not a url")).toBe("not a url");
   });
 });
