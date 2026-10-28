@@ -1,29 +1,45 @@
 // Status chips pair colour with an icon and a word, never colour alone.
 
 const LOOK: Record<string, { label: string; icon: string; cls: string }> = {
-  PENDING: { label: "Pending", icon: "○", cls: "bg-paper text-muted border-line" },
-  PROVING: { label: "Proving", icon: "◔", cls: "bg-teal-soft text-teal border-teal/30" },
-  VERIFIED: { label: "Verified", icon: "✓", cls: "bg-ok-soft text-ok border-ok/30" },
-  NEEDS_REVIEW: { label: "Needs review", icon: "!", cls: "bg-warn-soft text-warn border-warn/30" },
-  FAILED: { label: "Failed", icon: "✕", cls: "bg-bad-soft text-bad border-bad/30" },
-  APPROVED: { label: "Approved", icon: "✓", cls: "bg-ok-soft text-ok border-ok/30" },
-  FLAGGED: { label: "Flagged", icon: "⚑", cls: "bg-warn-soft text-warn border-warn/30" },
-  CAPTURED: { label: "Paid", icon: "●", cls: "bg-teal text-white border-teal" },
-  DROPPED: { label: "Dropped", icon: "–", cls: "bg-paper text-muted border-line line-through" },
-  DRAFT: { label: "Draft", icon: "○", cls: "bg-paper text-muted border-line" },
-  AWAITING_APPROVAL: { label: "Awaiting approval", icon: "◔", cls: "bg-warn-soft text-warn border-warn/30" },
-  AUTHORIZED: { label: "Money held", icon: "▣", cls: "bg-teal-soft text-teal border-teal/30" },
-  IN_PROGRESS: { label: "In progress", icon: "◑", cls: "bg-teal-soft text-teal border-teal/30" },
-  PARTIALLY_RELEASED: { label: "Partly released", icon: "◕", cls: "bg-teal-soft text-teal border-teal/30" },
-  COMPLETED: { label: "Completed", icon: "●", cls: "bg-ok-soft text-ok border-ok/30" },
-  CLOSED_VOIDED: { label: "Closed, hold released", icon: "–", cls: "bg-paper text-muted border-line" },
+  PENDING: { label: "Not started", icon: "○", cls: "bg-paper-2 text-muted" },
+  PROVING: { label: "Proving", icon: "◌", cls: "bg-teal-soft text-teal" },
+  VERIFIED: { label: "Verified", icon: "✓", cls: "bg-ok-soft text-ok" },
+  NEEDS_REVIEW: { label: "Needs review", icon: "!", cls: "bg-warn-soft text-warn" },
+  FAILED: { label: "Failed", icon: "✕", cls: "bg-bad-soft text-bad" },
+  APPROVED: { label: "Approved", icon: "✓", cls: "bg-ok-soft text-ok" },
+  FLAGGED: { label: "Flagged", icon: "⚑", cls: "bg-warn-soft text-warn" },
+  CAPTURED: { label: "Paid", icon: "●", cls: "bg-ink text-white" },
+  DROPPED: { label: "Dropped", icon: "–", cls: "bg-paper-2 text-faint line-through" },
+  DRAFT: { label: "Draft", icon: "○", cls: "bg-paper-2 text-muted" },
+  AWAITING_APPROVAL: { label: "Awaiting approval", icon: "◔", cls: "bg-warn-soft text-warn" },
+  AUTHORIZED: { label: "Money held", icon: "◆", cls: "bg-teal-soft text-teal" },
+  IN_PROGRESS: { label: "In progress", icon: "◑", cls: "bg-teal-soft text-teal" },
+  PARTIALLY_RELEASED: { label: "Part released", icon: "◕", cls: "bg-teal-soft text-teal" },
+  COMPLETED: { label: "Completed", icon: "●", cls: "bg-ok-soft text-ok" },
+  CLOSED_VOIDED: { label: "Closed, hold released", icon: "–", cls: "bg-paper-2 text-muted" },
 };
 
-export function StatusChip({ status }: { status: string }) {
-  const l = LOOK[status] ?? { label: status, icon: "·", cls: "bg-paper text-muted border-line" };
+export const LINE_RAIL: Record<string, string> = {
+  PENDING: "bg-line-2",
+  PROVING: "bg-teal",
+  VERIFIED: "bg-ok",
+  NEEDS_REVIEW: "bg-warn",
+  FAILED: "bg-bad",
+  APPROVED: "bg-ok",
+  FLAGGED: "bg-warn",
+  CAPTURED: "bg-ink",
+  DROPPED: "bg-line",
+};
+
+export function StatusChip({ status, size = "md" }: { status: string; size?: "sm" | "md" }) {
+  const l = LOOK[status] ?? { label: status, icon: "·", cls: "bg-paper-2 text-muted" };
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${l.cls}`}>
-      <span aria-hidden>{l.icon}</span>
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full font-medium transition-colors duration-500 ${l.cls} ${
+        size === "sm" ? "px-2 py-0.5 text-[11px]" : "px-2.5 py-1 text-[12px]"
+      }`}
+    >
+      <span aria-hidden className="text-[0.9em] leading-none">{l.icon}</span>
       {l.label}
     </span>
   );

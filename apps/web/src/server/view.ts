@@ -144,14 +144,41 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
   };
 }
 
-/** The signed-in user's jobs, newest first. */
+/** The signed-in user's jobs, newest first, with what is held and released on each. */
 export async function myJobs(userId: string) {
-  const { rows } = await engine().db.query<{ id: string; address: string; status: string; trades_id: string; total: number; created_at: Date }>(
-    `select j.id, j.address, j.status, j.trades_id, coalesce(sum(l.price_cents),0)::int8 as total, j.created_at
-     from jobs j left join lines l on l.job_id = j.id
+  const { rows } = await engine().db.query<{
+    id: string;
+    address: string;
+    status: string;
+    trades_id: string;
+    total: number;
+    held: number | null;
+    released: number;
+    lines: number;
+    paid: number;
+    created_at: Date;
+  }>(
+    `select j.id, j.address, j.status, j.trades_id, j.created_at,
+       (select coalesce(sum(price_cents),0)::int8 from lines where job_id = j.id) as total,
+       (select count(*)::int8 from lines where job_id = j.id) as lines,
+       (select count(*)::int8 from lines where job_id = j.id and status = 'CAPTURED') as paid,
+       a.amount_cents as held,
+       coalesce((select sum(c.amount_cents) from captures c where c.authorization_id = a.id and c.status in ('COMPLETED','PENDING')),0)::int8 as released
+     from jobs j left join authorizations a on a.job_id = j.id and a.kind = 'base'
      where $1 in (j.trades_id, j.homeowner_id)
-     group by j.id order by j.created_at desc limit 50`,
+     order by j.created_at desc limit 50`,
     [userId],
   );
-  return rows.map((r) => ({ id: r.id, address: r.address, status: r.status, role: r.trades_id === userId ? "tradesperson" : "homeowner", totalCents: r.total, createdAt: r.created_at.toISOString() }));
+  return rows.map((r) => ({
+    id: r.id,
+    address: r.address,
+    status: r.status,
+    role: r.trades_id === userId ? ("tradesperson" as const) : ("homeowner" as const),
+    totalCents: r.total,
+    heldCents: r.held ?? 0,
+    releasedCents: r.released,
+    lines: r.lines,
+    paid: r.paid,
+    createdAt: r.created_at.toISOString(),
+  }));
 }

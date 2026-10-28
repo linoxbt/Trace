@@ -114,17 +114,39 @@ export function HoldButton(props: { jobId: string; totalCents: number; currency:
   }
 
   return (
-    <div className="rounded-2xl border border-line bg-card p-4">
-      <div className="text-lg font-semibold">Approve and hold <span className="num">{money(props.totalCents, props.currency)}</span></div>
-      <p className="mt-1 text-sm text-muted">Nothing is charged until work is verified. Each line is paid only after its photos pass.</p>
-      <div className="mt-4 min-h-12">
-        {state === "loading" && <div className="h-12 animate-pulse rounded-xl bg-line" />}
-        {(state === "ready" || state === "error") && session.current && <paypal-button type="pay" onClick={start} className="block w-full" />}
-        {state === "working" && <p className="text-sm">Placing the hold with PayPal…</p>}
-        {state === "held" && <p className="text-sm font-medium text-ok">Held. Nothing charged yet.</p>}
-        {state === "ineligible" && <p className="text-sm text-bad">PayPal isn't available for this payment.</p>}
+    <div className="surface overflow-hidden rounded-[24px]">
+      <div className="p-5">
+        <div className="text-[13px] font-medium text-teal">Your approval</div>
+        <div className="mt-1 text-[22px] font-semibold tracking-tight">
+          Approve and hold <span className="num">{money(props.totalCents, props.currency)}</span>
+        </div>
+        <ul className="mt-3 space-y-1.5 text-[14px] text-ink-2">
+          {["PayPal holds it: nothing is charged now", "Each line is paid only after its photos pass", "Anything unfinished is released back to you"].map((t) => (
+            <li key={t} className="flex gap-2">
+              <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-teal" />
+              {t}
+            </li>
+          ))}
+        </ul>
       </div>
-      {message && <p role="alert" className="mt-2 text-sm text-bad">{message}</p>}
+      <div className="border-t border-line bg-paper/60 p-5">
+        <div className={state === "error" && !session.current ? "" : "min-h-[45px]"}>
+          {state === "loading" && <div className="h-[45px] animate-pulse rounded-full bg-line" />}
+          {(state === "ready" || state === "error") && session.current && <paypal-button type="pay" onClick={start} className="block w-full" />}
+          {state === "working" && (
+            <p className="flex h-[45px] items-center justify-center gap-2 text-[14px] text-muted">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-2 border-t-teal" /> Placing the hold with PayPal…
+            </p>
+          )}
+          {state === "held" && <p className="flex h-[45px] items-center justify-center text-[14px] font-medium text-ok">✓ Held. Nothing charged yet.</p>}
+          {state === "ineligible" && <p className="text-[14px] text-bad">PayPal isn&apos;t available for this payment.</p>}
+        </div>
+        {message && (
+          <p role="alert" className="mt-3 rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">
+            {message}
+          </p>
+        )}
+      </div>
     </div>
   );
 }

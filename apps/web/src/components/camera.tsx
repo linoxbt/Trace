@@ -94,33 +94,69 @@ export function Camera(props: {
     }
   }
 
+  const gpsTone = gps ? (gps.accuracy <= 100 ? "bg-mint" : "bg-[#ffd27a]") : "bg-white/30";
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-night text-white">
-      <div className="flex items-center justify-between px-4 py-3">
-        <button onClick={props.onClose} className="h-11 px-2 text-sm">Cancel</button>
-        <div className="truncate text-sm font-medium">{props.title}</div>
-        <div className="flex h-11 items-center gap-1.5 text-xs" aria-live="polite">
-          <span className={`h-2 w-2 rounded-full ${gps ? (gps.accuracy <= 100 ? "bg-emerald-400" : "bg-amber-400") : "bg-white/30"}`} />
-          {gps ? `GPS ±${Math.round(gps.accuracy)} m` : "Finding GPS"}
+    <div className="fixed inset-0 z-[60] flex flex-col bg-night text-white" role="dialog" aria-modal="true" aria-label={`Camera: ${props.title}`}>
+      <div className="flex items-center justify-between gap-3 px-4 pb-3 pt-[max(12px,env(safe-area-inset-top))]">
+        <button onClick={props.onClose} className="press h-10 rounded-full bg-white/10 px-4 text-[14px] font-medium backdrop-blur">
+          Cancel
+        </button>
+        <div className="min-w-0 text-center">
+          <div className="text-[11px] uppercase tracking-[0.14em] text-white/50">{props.mode === "after" ? "Prove it" : "Before-photo"}</div>
+          <div className="truncate text-[14px] font-medium">{props.title}</div>
+        </div>
+        <div className="flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[12px] backdrop-blur" aria-live="polite">
+          <span className={`h-2 w-2 rounded-full ${gpsTone} ${gps ? "" : "animate-pulse-soft"}`} />
+          <span className="num">{gps ? `±${Math.round(gps.accuracy)} m` : "GPS"}</span>
         </div>
       </div>
-      <div className="bracket relative mx-3 flex-1 overflow-hidden rounded-2xl bg-black">
+
+      <div className="relative mx-3 flex-1 overflow-hidden rounded-[28px] bg-black" style={{ "--bracket": "#9ef0d8" } as React.CSSProperties}>
         <video ref={video} playsInline muted className="h-full w-full object-cover" />
         {props.ghostUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={props.ghostUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-35" />
+          <img src={props.ghostUrl} alt="" className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-35 mix-blend-screen" />
         )}
-        {status === "sending" && <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm">Checking the photo…</div>}
+        {/* Viewfinder corners */}
+        <div className="bracket pointer-events-none absolute inset-6" />
+        {props.ghostUrl && status === "live" && (
+          <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1.5 text-[12px] backdrop-blur">Line up with the ghost of the before-photo</div>
+        )}
+        {status === "starting" && (
+          <div className="absolute inset-0 grid place-items-center text-[14px] text-white/70">
+            <span className="flex items-center gap-2">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" /> Opening the camera…
+            </span>
+          </div>
+        )}
+        {status === "sending" && (
+          <div className="absolute inset-0 grid place-items-center bg-black/55 backdrop-blur-[2px]">
+            <div className="overflow-hidden">
+              <div className="absolute inset-x-0 top-0 h-full animate-scan bg-gradient-to-b from-transparent via-mint/25 to-transparent" />
+              <div className="relative text-center">
+                <div className="text-[16px] font-medium">Checking the photo</div>
+                <div className="mt-1 text-[13px] text-white/60">Location, freshness, then the work itself</div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
-      <div className="px-5 pb-8 pt-4">
-        {props.framing && <p className="mb-3 text-center text-sm text-white/80">{props.framing}</p>}
-        {message && <p role="alert" className="mb-3 text-center text-sm text-red-300">{message}</p>}
+
+      <div className="px-5 pb-[max(28px,env(safe-area-inset-bottom))] pt-5">
+        {props.framing && <p className="mx-auto mb-4 max-w-sm text-center text-[13px] text-white/70">{props.framing}</p>}
+        {message && (
+          <p role="alert" className="mx-auto mb-4 max-w-sm rounded-xl bg-[#2a0f0c] px-3 py-2 text-center text-[13px] text-[#ffb4ab]">
+            {message}
+          </p>
+        )}
         <button
           onClick={shoot}
           disabled={status !== "live"}
           aria-label="Take photo"
-          className="mx-auto block h-18 w-18 rounded-full border-4 border-white bg-white/20 disabled:opacity-40"
-        />
+          className="press group mx-auto grid h-[76px] w-[76px] place-items-center rounded-full border-[3px] border-white/90 disabled:opacity-40"
+        >
+          <span className="h-[60px] w-[60px] rounded-full bg-white transition-transform duration-200 group-active:scale-90" />
+        </button>
       </div>
     </div>
   );
