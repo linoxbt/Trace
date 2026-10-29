@@ -7,7 +7,7 @@ import { Money } from "@/components/ui/count";
  * Money state is always visible (spec section 11): Held, Released, Still held,
  * as a dark card whose figures glide when a capture lands.
  */
-export function MoneyCard({ m, totalCents }: { m: MoneyView; totalCents: number }) {
+export function MoneyCard({ m, totalCents, badge }: { m: MoneyView; totalCents: number; badge?: React.ReactNode }) {
   const held = m.heldCents;
   const pct = held ? Math.min(100, (m.releasedCents / held) * 100) : 0;
   const placed = !!m.authorizationStatus;
@@ -17,12 +17,13 @@ export function MoneyCard({ m, totalCents }: { m: MoneyView; totalCents: number 
       <div className="relative">
         <div className="flex items-center justify-between text-[12px] uppercase tracking-[0.14em] text-white/50">
           <span>{placed ? "Held by PayPal" : "Job total"}</span>
-          {placed && m.authorizationStatus !== "VOIDED" && m.authorizationStatus !== "CAPTURED" && (
-            <span className="flex items-center gap-1.5 normal-case tracking-normal text-lilac">
-              <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-lilac" /> Not charged until verified
-            </span>
-          )}
+          {badge}
         </div>
+        {placed && m.authorizationStatus !== "VOIDED" && m.authorizationStatus !== "CAPTURED" && (
+          <span className="mt-2 flex items-center gap-1.5 text-[12px] text-lilac">
+            <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-lilac" /> Not charged until verified
+          </span>
+        )}
         <Money cents={placed ? held : totalCents} currency={m.currency} className={`mt-2 block text-[40px] font-semibold tracking-[-0.03em] sm:text-[48px] ${placed ? "" : "text-white/60"}`} />
         {placed && (
           <>

@@ -1,6 +1,7 @@
 import "server-only";
 import * as store from "@trace/db";
-import { sum } from "@trace/core";
+import { BUILTIN_RULES, sum } from "@trace/core";
+import { rulesForJob } from "@trace/engine";
 import { engine } from "./engine";
 import { HttpError } from "./http";
 
@@ -73,6 +74,9 @@ export interface GuardView {
     canAnswer: boolean;
   }[];
   scopeFlags: { line: string; text: string; why: string }[];
+  /** Presets and people's own rules in force on this job; the built-ins always are. */
+  rules: { id: string; english: string; owner: string; effect: string }[];
+  builtins: { id: string; label: string }[];
 }
 
 /** Everything a job page shows, for one of its two parties. Photo links are 10-minute signed URLs. */
@@ -84,13 +88,14 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
     job.trades_id === userId && job.homeowner_id === userId ? "both" : job.trades_id === userId ? "tradesperson" : job.homeowner_id === userId ? "homeowner" : null;
   if (!role) throw new HttpError(404, "not_found", "job not found");
 
-  const [lines, photos, events, auth, decisions, approvals] = await Promise.all([
+  const [lines, photos, events, auth, decisions, approvals, inForce] = await Promise.all([
     store.getLines(e.db, jobId),
     store.getPhotos(e.db, jobId),
     store.getEvents(e.db, jobId),
     store.getBaseAuthorization(e.db, jobId),
     store.decisionsForJob(e.db, jobId),
     store.approvalsForJob(e.db, jobId),
+    rulesForJob(e, job),
   ]);
   const verdicts = await e.db.query<{ line_id: string; verdict: string; reasons: string[]; observation: { homeowner_reason?: string; region?: unknown } }>(
     `select distinct on (v.line_id) v.line_id, v.verdict, v.reasons, v.observation
@@ -197,6 +202,8 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
         };
       }),
       scopeFlags: job.scope_flags ?? [],
+      rules: inForce.map((r) => ({ id: r.id, english: r.english, owner: r.owner, effect: r.effect })),
+      builtins: BUILTIN_RULES.map((b) => ({ id: b.id, label: b.label })),
     },
     events: events.map((ev) => ({ id: ev.id, actor: ev.actor, type: ev.type, data: ev.data, at: ev.at.toISOString() })),
   };

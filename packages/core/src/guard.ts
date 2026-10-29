@@ -436,11 +436,11 @@ const ACTION_WORDS: Record<MoneyActionType, string> = {
 export function plainReasons(a: MoneyAction, f: Facts, ev: Evaluation): string[] {
   const what = `${ACTION_WORDS[a.type]}${a.amount_cents ? ` of ${money(a.amount_cents)}` : ""}`;
   if (ev.outcome === "DENY") {
-    return [`${what} blocked.`, ...ev.hits.filter((h) => h.effect === "deny").map((h) => cap(h.why) + ".")];
+    return [`${what} blocked.`, ...ev.hits.filter((h) => h.effect === "deny").map((h) => sentence(h.why))];
   }
   if (ev.outcome === "REQUIRE_APPROVAL") {
     const who = ev.approver === "both" ? "both of you" : `the ${ev.approver ?? "homeowner"}`;
-    return [`${what} is waiting for ${who}.`, ...ev.hits.filter((h) => h.effect === "require_approval" && !h.satisfied).map((h) => cap(h.why) + ".")];
+    return [`${what} is waiting for ${who}.`, ...ev.hits.filter((h) => h.effect === "require_approval" && !h.satisfied).map((h) => sentence(h.why))];
   }
   const parts: string[] = [];
   if (CAPTURE_TYPES.includes(a.type)) parts.push(`${a.line_ids.length} line${a.line_ids.length === 1 ? "" : "s"} approved`);
@@ -448,6 +448,12 @@ export function plainReasons(a: MoneyAction, f: Facts, ev: Evaluation): string[]
   if (HOLD_TYPES.includes(a.type) && f.auth_status) parts.push(`${money(Math.max(0, f.auth_remaining_cents - (CAPTURE_TYPES.includes(a.type) ? a.amount_cents : 0)))} left on hold after this`);
   const ok = ev.hits.filter((h) => h.satisfied).map((h) => `approved: ${h.why}`);
   return [`${what} allowed.`, cap([...parts, ...ok].join(", ")) + "."];
+}
+
+/** A reason as a sentence: capitalised, with one full stop (rule text people wrote may already end in one). */
+function sentence(s: string): string {
+  const t = cap(s.trim());
+  return /[.!?]$/.test(t) ? t : `${t}.`;
 }
 
 function cap(s: string): string {

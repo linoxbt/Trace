@@ -37,6 +37,9 @@ export function AccountMenu({ email }: { email: string | null }) {
         <a href="/jobs" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
           Your jobs
         </a>
+        <a href="/rules" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
+          Payment rules
+        </a>
         <a href="/" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
           About Trace
         </a>

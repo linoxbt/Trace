@@ -14,6 +14,8 @@ import { HoldButton } from "./hold-button";
 import { Camera, type CameraResult } from "./camera";
 import { ScopeEditor } from "./scope-editor";
 import { CloseJob } from "./close-job";
+import { ApprovalCard, GuardBadge, InjectionAlert, releaseMessage, ScopeFlag, ShieldIcon } from "./guard";
+import { RuleComposer } from "./rules";
 
 type Line = JobView["lines"][number];
 type Toast = { id: number; tone: "ok" | "bad" | "info"; text: string };
@@ -77,9 +79,44 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
   const approvedCents = view.lines.filter((l) => l.status === "APPROVED").reduce((n, l) => n + l.priceCents, 0);
   const awaitingHome = view.lines.filter((l) => l.status === "VERIFIED" || l.status === "NEEDS_REVIEW");
   const firstBefore = view.lines.find((l) => l.beforeUrl)?.beforeUrl ?? null;
+  const pending = view.guard.approvals.filter((a) => a.status === "PENDING");
+
+  async function releaseNow() {
+    setBusy(true);
+    try {
+      const m = releaseMessage(await api(`/api/jobs/${job.id}/release`, { json: {} }), job.currency);
+      toast(m.tone, m.text);
+      await refresh();
+    } catch (e) {
+      toast("bad", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function answer(id: string, approve: boolean) {
+    setBusy(true);
+    try {
+      const r = await api<{ kind: string; for?: string; outcome?: string; reasons?: string[]; release?: unknown }>(`/api/approvals/${id}`, { json: { approve } });
+      if (r.kind === "denied") toast("info", "Denied. Nothing moved, and the lines stay approved.");
+      else if (r.kind === "waiting") toast("info", `Approved. Now waiting for the ${r.for}.`);
+      else if (r.release) {
+        const m = releaseMessage(r.release, job.currency);
+        toast(m.tone, m.text);
+      } else toast(r.outcome === "ALLOW" ? "ok" : "bad", r.reasons?.join(" ") || "Done.");
+      await refresh();
+    } catch (e) {
+      toast("bad", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   const nextStep = (
     <NextStep>
+      {pending.map((a) => (
+        <ApprovalCard key={a.id} a={a} currency={job.currency} busy={busy} onAnswer={(ok) => answer(a.id, ok)} />
+      ))}
       {job.status === "DRAFT" && !isTrades && <Waiting title="The scope is being written" body="You'll be able to review every line and its price here." />}
       {job.status === "AWAITING_APPROVAL" && isHome && (
         <HoldButton jobId={job.id} totalCents={job.totalCents} currency={job.currency} clientId={paypalClientId} sandbox={sandbox} onHeld={() => { toast("ok", "Held by PayPal. Nothing has been charged."); refresh(); }} />
@@ -87,13 +124,13 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
       {job.status === "AWAITING_APPROVAL" && !isHome && (
         <Waiting title="Waiting for the homeowner" body={`We've asked ${job.homeownerEmail} to review the scope and approve the hold with PayPal.`} />
       )}
-      {isHome && held && approvedCents > 0 && (
+      {isHome && held && approvedCents > 0 && pending.length === 0 && (
         <ActionCard
           title={`Release ${money(approvedCents, job.currency)}`}
           body="PayPal captures exactly the lines you approved. Everything else stays held."
           cta="Release now"
           busy={busy}
-          onClick={() => act(() => api(`/api/jobs/${job.id}/release`, { json: {} }), "Released. PayPal is capturing it now.")}
+          onClick={releaseNow}
         />
       )}
       {isHome && held && approvedCents === 0 && awaitingHome.length > 0 && (
@@ -137,7 +174,7 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
         {/* Rail (first on phones) */}
         <aside className="flex flex-col gap-4 lg:order-2">
           <div className="rise" style={{ "--delay": "60ms" } as React.CSSProperties}>
-            <MoneyCard m={view.money} totalCents={job.totalCents} />
+            <MoneyCard m={view.money} totalCents={job.totalCents} badge={view.money.authorizationStatus ? <GuardBadge guard={view.guard} demo={job.demo} /> : null} />
           </div>
           <div className="rise empty:hidden" style={{ "--delay": "120ms" } as React.CSSProperties}>
             {nextStep}
@@ -186,6 +223,8 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
                   <div key={l.id} className="rise" style={{ "--delay": `${80 + i * 50}ms` } as React.CSSProperties}>
                     <LineCard
                       line={l}
+                      role={role}
+                      scopeFlag={view.guard.scopeFlags.find((f) => f.line === l.code)}
                       currency={job.currency}
                       canProve={isTrades && held && ["PENDING", "PROVING", "FAILED", "FLAGGED"].includes(l.status)}
                       canDecide={isHome && (l.status === "VERIFIED" || l.status === "NEEDS_REVIEW")}
@@ -204,6 +243,9 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
             <div className="lg:hidden">
               <CloseJob view={view} onDone={refresh} />
             </div>
+          )}
+          {job.status === "AWAITING_APPROVAL" && isHome && (
+            <RuleComposer side="homeowner" scope="job" jobId={job.id} compact onSaved={() => { toast("ok", "Rule saved for this job."); refresh(); }} />
           )}
           <div className="lg:hidden">
             <Timeline events={view.events} />
@@ -290,6 +332,8 @@ function Waiting({ title, body, done }: { title: string; body: string; done?: bo
 
 function LineCard(props: {
   line: Line;
+  role: JobView["role"];
+  scopeFlag?: JobView["guard"]["scopeFlags"][number];
   currency: string;
   canProve: boolean;
   canDecide: boolean;
@@ -373,6 +417,9 @@ function LineCard(props: {
             )}
           </div>
         )}
+
+        {props.scopeFlag && !settled && <ScopeFlag flag={props.scopeFlag} />}
+        {l.injection && proof && <InjectionAlert line={l} role={props.role} />}
 
         {l.flagNote && l.status === "FLAGGED" && (
           <p className="mt-3 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[14px] text-warn">
@@ -473,11 +520,24 @@ const LABELS: Record<string, string> = {
   DISPUTE_UPDATED: "Dispute updated",
   DISPUTE_RESOLVED: "Dispute resolved",
   REFUNDED: "Refunded",
+  GUARD_ALLOWED: "Guard: allowed",
+  GUARD_BLOCKED: "Guard: blocked",
+  GUARD_APPROVAL_NEEDED: "Guard: waiting for approval",
+  GUARD_APPROVED: "Approved",
+  GUARD_DENIED: "Denied",
+  GUARD_APPROVAL_EXPIRED: "Approval request expired",
+  INJECTION_FLAGGED: "Text in a proof was aimed at the inspector",
+  RULE_ADDED: "Rule added",
 };
+
+const GUARD_EVENTS = new Set(["GUARD_ALLOWED", "GUARD_BLOCKED", "GUARD_APPROVAL_NEEDED", "GUARD_APPROVED", "GUARD_DENIED", "GUARD_APPROVAL_EXPIRED", "INJECTION_FLAGGED", "RULE_ADDED"]);
 
 function label(e: JobView["events"][number]): string {
   const base = LABELS[e.type] ?? e.type;
   const d = e.data ?? {};
+  if (e.type.startsWith("GUARD_") && Array.isArray(d.reasons) && d.reasons.length) return String(d.reasons[0]);
+  if (e.type === "INJECTION_FLAGGED" && d.line) return `${base} · ${d.line}`;
+  if (e.type === "RULE_ADDED" && d.english) return `${base}: “${d.english}”`;
   if (e.type === "VERDICT") return `${d.line} ${String(d.verdict).toLowerCase().replace("_", " ")}`;
   if ((e.type === "CAPTURED" || e.type === "RELEASE_STARTED" || e.type === "AUTHORIZED") && typeof d.amount_cents === "number") return `${base} · ${money(d.amount_cents)}`;
   if ((e.type === "LINE_APPROVED" || e.type === "LINE_FLAGGED" || e.type === "LINE_AUTO_APPROVED") && d.line) return `${base} · ${d.line}`;
@@ -485,6 +545,9 @@ function label(e: JobView["events"][number]): string {
 }
 
 function dot(e: JobView["events"][number]): string {
+  if (e.type === "GUARD_ALLOWED" || e.type === "GUARD_APPROVED") return "bg-ok";
+  if (e.type === "GUARD_BLOCKED" || e.type === "GUARD_DENIED" || e.type === "INJECTION_FLAGGED") return "bg-bad";
+  if (e.type === "GUARD_APPROVAL_NEEDED" || e.type === "GUARD_APPROVAL_EXPIRED") return "bg-warn";
   if (e.type === "CAPTURED" || e.type === "AUTHORIZED") return "bg-violet";
   if (e.type.includes("FAILED") || e.type.includes("DENIED") || e.type.startsWith("DISPUTE")) return "bg-bad";
   if (e.type === "VERDICT") return e.data?.verdict === "VERIFIED" ? "bg-ok" : e.data?.verdict === "FAILED" ? "bg-bad" : "bg-warn";
@@ -502,9 +565,18 @@ function Timeline({ events }: { events: JobView["events"] }) {
         <span className="absolute bottom-2 left-[5px] top-2 w-px bg-line" aria-hidden />
         {shown.map((e) => (
           <li key={e.id} className="relative flex gap-3 pb-3.5 last:pb-0">
-            <span className={`relative mt-[5px] h-[11px] w-[11px] shrink-0 rounded-full ring-4 ring-card ${dot(e)}`} />
+            {GUARD_EVENTS.has(e.type) ? (
+              <span className={`relative grid h-[15px] w-[15px] shrink-0 -translate-x-[2px] place-items-center rounded-full text-white ring-4 ring-card ${dot(e)}`}>
+                <ShieldIcon className="h-2.5 w-2.5" />
+              </span>
+            ) : (
+              <span className={`relative mt-[5px] h-[11px] w-[11px] shrink-0 rounded-full ring-4 ring-card ${dot(e)}`} />
+            )}
             <div className="min-w-0">
               <div className="text-[14px] leading-snug">{label(e)}</div>
+              {e.type.startsWith("GUARD_") && Array.isArray(e.data?.reasons) && (e.data!.reasons as string[]).length > 1 && (
+                <div className="mt-0.5 text-[12.5px] leading-snug text-muted">{(e.data!.reasons as string[]).slice(1).join(" ")}</div>
+              )}
               <div className="num mt-0.5 text-[11.5px] text-faint">
                 {when(e.at)} · {e.actor}
               </div>
