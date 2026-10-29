@@ -5,6 +5,7 @@
 
 import { useState } from "react";
 import { categoryOf, type LineTemplate } from "@trace/core/categories";
+import { PROOF_TYPES, type ProofType } from "@trace/core/proof";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import { wordsFor } from "@/lib/words";
@@ -19,10 +20,49 @@ interface Draft {
   mustNotShow: string;
   framing: string;
   verifiableByPhoto: boolean;
+  proofType: ProofType;
+  /** The type's details, as typed (numbers as text until saved). */
+  spec: Record<string, string | boolean>;
 }
 
 let keys = 0;
-const blank = (): Draft => ({ key: ++keys, title: "", price: "", criterion: "", mustShow: "", mustNotShow: "", framing: "Same angle as the before-photo", verifiableByPhoto: true });
+const blank = (): Draft => ({ key: ++keys, title: "", price: "", criterion: "", mustShow: "", mustNotShow: "", framing: "Same angle as the before-photo", verifiableByPhoto: true, proofType: "photo", spec: {} });
+
+const TYPE_HELP: Record<ProofType, string> = {
+  photo: "A photo of the finished work, from the same angle as the before-photo.",
+  video: "A 5 to 20 second clip, for something moving or flowing (no drip, a fan running).",
+  document: "Paperwork: a parts receipt, a certificate, an invoice from a supplier.",
+  reading: "A photo of a gauge or meter; the number is checked against a target.",
+  deliverable: "A file or a link, for work that lives online or in a document.",
+  attestation: "A named person signs off, when nothing else can prove it (work inside a wall).",
+};
+const TYPE_LABEL: Record<ProofType, string> = { photo: "Photo", video: "Video", document: "Document", reading: "Reading", deliverable: "Deliverable", attestation: "Sign-off" };
+
+/** The typed details as the API expects them; numbers parsed, blanks dropped. */
+function specOut(d: Draft): unknown {
+  const v = d.spec;
+  const n = (k: string) => (typeof v[k] === "string" && (v[k] as string).trim() !== "" ? Number((v[k] as string).replace(",", ".")) : undefined);
+  const t = (k: string) => (typeof v[k] === "string" && (v[k] as string).trim() ? (v[k] as string).trim() : undefined);
+  switch (d.proofType) {
+    case "video":
+      return { motion: t("motion") };
+    case "document":
+      return { doc_kind: t("doc_kind"), total_at_most_price: v.total_at_most_price === true, must_match: [] };
+    case "reading":
+      return { quantity: t("quantity"), unit: t("unit"), op: t("op") ?? "gte", target: n("target"), target_max: n("target_max") };
+    case "deliverable":
+      return { kind: t("kind") ?? "url", mime: t("mime") ?? "any" };
+    case "attestation":
+      return { email: t("email"), name: t("name"), statement: t("statement") };
+    default:
+      return null;
+  }
+}
+
+function specIn(type: ProofType, spec: unknown): Record<string, string | boolean> {
+  if (!spec || typeof spec !== "object") return {};
+  return Object.fromEntries(Object.entries(spec as Record<string, unknown>).map(([k, v]) => [k, typeof v === "boolean" ? v : Array.isArray(v) ? v.join("; ") : v == null ? "" : String(v)]));
+}
 const fromTemplate = (t: LineTemplate): Draft => ({
   key: ++keys,
   title: t.title,
@@ -32,6 +72,8 @@ const fromTemplate = (t: LineTemplate): Draft => ({
   mustNotShow: t.mustNotShow.join("\n"),
   framing: t.framing,
   verifiableByPhoto: true,
+  proofType: "photo",
+  spec: {},
 });
 const isBlank = (d: Draft) => !d.title.trim() && !d.price.trim() && !d.criterion.trim() && !d.mustShow.trim();
 const list = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
@@ -49,6 +91,8 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
           mustNotShow: l.mustNotShow.join("\n"),
           framing: l.framing,
           verifiableByPhoto: l.verifiableByPhoto,
+          proofType: l.proof.type,
+          spec: specIn(l.proof.type, l.proof.spec),
         }))
       : [blank()],
   );
@@ -79,7 +123,9 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
             code: `L${i + 1}`,
             title: l.title,
             priceCents: cents(l.price),
-            verifiableByPhoto: l.verifiableByPhoto,
+            verifiableByPhoto: l.proofType === "photo" ? l.verifiableByPhoto : false,
+            proofType: l.proofType,
+            proofSpec: specOut(l),
             acceptance: { criterion: l.criterion, must_show: list(l.mustShow), must_not_show: list(l.mustNotShow), framing: l.framing },
           })),
         },
@@ -149,11 +195,33 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
                 <textarea rows={3} value={l.mustNotShow} onChange={(e) => set(i, { mustNotShow: e.target.value })} placeholder={eg.mustNotShow.join("\n")} className="field text-[14px]" />
               </Field>
             </div>
+            <div className="mt-4">
+              <span className="text-[12px] font-medium text-muted">Proved by</span>
+              <div className="mt-1.5 flex flex-wrap gap-1.5" role="radiogroup" aria-label={`How L${i + 1} is proved`}>
+                {PROOF_TYPES.map((pt) => (
+                  <button
+                    key={pt}
+                    type="button"
+                    role="radio"
+                    aria-checked={l.proofType === pt}
+                    onClick={() => set(i, { proofType: pt, spec: pt === l.proofType ? l.spec : DEFAULT_SPEC[pt] })}
+                    className={`press h-8 rounded-full px-3 text-[12.5px] font-medium ${l.proofType === pt ? "bg-ink text-white" : "bg-paper text-ink-2 hover:bg-paper-2"}`}
+                  >
+                    {TYPE_LABEL[pt]}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[12px] text-faint">{TYPE_HELP[l.proofType]}</p>
+              <SpecFields d={l} onChange={(spec) => set(i, { spec: { ...l.spec, ...spec } })} />
+            </div>
+            {(l.proofType === "photo" || l.proofType === "video" || l.proofType === "reading") && (
             <div className="mt-3">
-              <Field label="How to frame the after-photo">
+              <Field label={l.proofType === "video" ? "How to frame the clip" : l.proofType === "reading" ? "How to frame the gauge" : "How to frame the after-photo"}>
                 <input value={l.framing} maxLength={160} onChange={(e) => set(i, { framing: e.target.value })} className="field text-[14px]" />
               </Field>
             </div>
+            )}
+            {l.proofType === "photo" && (
             <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-paper px-3.5 py-3 text-[14px]">
               <span>
                 Visible in an after-photo
@@ -165,6 +233,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
                 <span className="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow transition-transform duration-300 ease-[var(--ease-spring)] peer-checked:translate-x-4" />
               </span>
             </label>
+            )}
           </div>
         ))}
       </div>
@@ -196,6 +265,85 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
         <p className="mt-2.5 text-[12px] text-faint">Sending freezes the scope. The {w.client} then approves it and PayPal holds the total.</p>
       </div>
     </section>
+  );
+}
+
+const DEFAULT_SPEC: Record<ProofType, Record<string, string | boolean>> = {
+  photo: {},
+  video: { motion: "" },
+  document: { doc_kind: "receipt", total_at_most_price: true },
+  reading: { quantity: "", unit: "", op: "gte", target: "" },
+  deliverable: { kind: "url", mime: "any" },
+  attestation: { email: "", statement: "" },
+};
+
+function SpecFields({ d, onChange }: { d: Draft; onChange: (spec: Record<string, string | boolean>) => void }) {
+  const v = d.spec;
+  const text = (k: string, label: string, placeholder: string, opts: { type?: string; max?: number; wide?: boolean } = {}) => (
+    <div className={opts.wide ? "sm:col-span-2" : ""}>
+      <Field label={label}>
+        <input type={opts.type ?? "text"} value={String(v[k] ?? "")} maxLength={opts.max ?? 200} placeholder={placeholder} onChange={(e) => onChange({ [k]: e.target.value })} className="field text-[14px]" />
+      </Field>
+    </div>
+  );
+  if (d.proofType === "photo") return null;
+  return (
+    <div className="mt-3 grid gap-2 rounded-2xl bg-paper p-3 sm:grid-cols-2">
+      {d.proofType === "video" && text("motion", "What the clip must show over time", "No drip from the spout over the whole clip", { wide: true })}
+      {d.proofType === "document" && (
+        <>
+          {text("doc_kind", "Kind of document", "Parts receipt", { max: 60 })}
+          <label className="flex items-center gap-2 self-end pb-3 text-[13px] text-ink-2">
+            <input type="checkbox" checked={v.total_at_most_price === true} onChange={(e) => onChange({ total_at_most_price: e.target.checked })} />
+            Its total must be within the line&apos;s price
+          </label>
+        </>
+      )}
+      {d.proofType === "reading" && (
+        <>
+          {text("quantity", "What is read", "Boiler pressure", { max: 60 })}
+          {text("unit", "Unit", "bar", { max: 20 })}
+          <Field label="Passes when it is">
+            <select value={String(v.op ?? "gte")} onChange={(e) => onChange({ op: e.target.value })} className="field text-[14px]">
+              <option value="gte">at least</option>
+              <option value="lte">at most</option>
+              <option value="between">between</option>
+            </select>
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            {text("target", v.op === "between" ? "From" : "Target", "1.0", { type: "text", max: 12 })}
+            {v.op === "between" && text("target_max", "To", "1.5", { type: "text", max: 12 })}
+          </div>
+        </>
+      )}
+      {d.proofType === "deliverable" && (
+        <>
+          <Field label="Delivered as">
+            <select value={String(v.kind ?? "url")} onChange={(e) => onChange({ kind: e.target.value })} className="field text-[14px]">
+              <option value="url">A link</option>
+              <option value="file">A file</option>
+            </select>
+          </Field>
+          {v.kind === "file" && (
+            <Field label="File type">
+              <select value={String(v.mime ?? "any")} onChange={(e) => onChange({ mime: e.target.value })} className="field text-[14px]">
+                <option value="any">Any</option>
+                <option value="image">Image</option>
+                <option value="pdf">PDF</option>
+                <option value="text">Text</option>
+              </select>
+            </Field>
+          )}
+        </>
+      )}
+      {d.proofType === "attestation" && (
+        <>
+          {text("email", "Who signs (email)", "inspector@example.com", { type: "email" })}
+          {text("name", "Their name (optional)", "Ada Obi", { max: 80 })}
+          {text("statement", "What they confirm", "The new circuit was wired to code before the wall was closed.", { max: 400, wide: true })}
+        </>
+      )}
+    </div>
   );
 }
 

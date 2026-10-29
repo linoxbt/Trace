@@ -3,6 +3,8 @@
 // Full-screen in-app camera (spec screen 6). No file picker: frames come from
 // getUserMedia. The before-photo sits on top as a 35% ghost to match the angle.
 // For an after-photo the server issues a one-time token when the camera opens.
+// Video lines record a 5 to 20 second clip, sent as 8 frames with their times;
+// reading lines take a photo of the gauge and ask what it reads.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError, deviceId, position } from "@/lib/api";
@@ -19,9 +21,17 @@ export function Camera(props: {
   title: string;
   framing?: string;
   ghostUrl?: string | null;
+  /** How the line is proved: a photo (default), a short video, or a gauge reading. */
+  proofType?: "photo" | "video" | "reading";
+  /** Reading lines: what to read, e.g. "pressure in bar". */
+  readingLabel?: string;
   onClose: () => void;
   onDone: (r: CameraResult) => void;
 }) {
+  const kind = props.mode === "after" ? (props.proofType ?? "photo") : "photo";
+  const [recording, setRecording] = useState<{ started: number; frames: { at: number; blob: Blob }[] } | null>(null);
+  const [elapsed, setElapsed] = useState(0);
+  const [reading, setReading] = useState<{ blob: Blob; value: string } | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [token, setToken] = useState<string | null>(null);
   const [gps, setGps] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
@@ -55,19 +65,22 @@ export function Camera(props: {
     return () => stream?.getTracks().forEach((t) => t.stop());
   }, [getToken]);
 
-  async function shoot() {
+  const grab = async (quality = 0.9): Promise<Blob | null> => {
     const v = video.current;
-    if (!v || !v.videoWidth) return;
-    setStatus("sending");
+    if (!v || !v.videoWidth) return null;
     const canvas = document.createElement("canvas");
     canvas.width = v.videoWidth;
     canvas.height = v.videoHeight;
     canvas.getContext("2d")!.drawImage(v, 0, 0);
-    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.9));
-    if (!blob) return setStatus("live");
+    return new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", quality));
+  };
+
+  /** Send a proof form, with the camera fields; a stale token is replaced once. */
+  async function submit(fill: (form: FormData) => void) {
+    setStatus("sending");
     const send = async (tok: string | null) => {
       const form = new FormData();
-      form.append("photo", blob, "photo.jpg");
+      fill(form);
       form.append("deviceId", deviceId());
       if (gps) {
         form.append("lat", String(gps.lat));
@@ -94,6 +107,65 @@ export function Camera(props: {
     }
   }
 
+  async function shoot() {
+    const blob = await grab();
+    if (!blob) return;
+    if (kind === "reading") return setReading({ blob, value: "" });
+    await submit((form) => form.append("photo", blob, "photo.jpg"));
+  }
+
+  // Video: a frame a second while recording; stop at 20 s, send 8 evenly spread.
+  useEffect(() => {
+    if (!recording) return;
+    const t = setInterval(async () => {
+      const at = (Date.now() - recording.started) / 1000;
+      setElapsed(at);
+      const blob = await grab(0.8);
+      if (blob) recording.frames.push({ at, blob });
+      if (at >= 20) stopRecording();
+    }, 1000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recording]);
+
+  async function startRecording() {
+    const first = await grab(0.85);
+    if (!first) return;
+    setMessage("");
+    setElapsed(0);
+    setRecording({ started: Date.now(), frames: [{ at: 0, blob: first }] });
+  }
+
+  async function stopRecording() {
+    const r = recording;
+    if (!r) return;
+    setRecording(null);
+    const duration = (Date.now() - r.started) / 1000;
+    if (duration < 5) {
+      setMessage("Record at least 5 seconds.");
+      return;
+    }
+    const last = await grab(0.85);
+    const all = last ? [...r.frames, { at: duration, blob: last }] : r.frames;
+    const pick = all.length <= 8 ? all : Array.from({ length: 8 }, (_, i) => all[Math.round((i * (all.length - 1)) / 7)]!);
+    await submit((form) => {
+      pick.forEach((f, i) => form.append("frame", f.blob, `frame-${i}.jpg`));
+      form.append("times", JSON.stringify(pick.map((f) => Math.round(f.at * 10) / 10)));
+      form.append("duration", String(Math.round(duration * 10) / 10));
+    });
+  }
+
+  async function sendReading() {
+    if (!reading) return;
+    const value = Number(reading.value.replace(",", "."));
+    const r = reading;
+    setReading(null);
+    await submit((form) => {
+      form.append("photo", r.blob, "gauge.jpg");
+      if (Number.isFinite(value) && r.value.trim()) form.append("value", String(value));
+    });
+  }
+
   const gpsTone = gps ? (gps.accuracy <= 100 ? "bg-lilac" : "bg-[#ffd27a]") : "bg-white/30";
   return (
     <div className="fixed inset-0 z-[60] flex flex-col bg-night text-white" role="dialog" aria-modal="true" aria-label={`Camera: ${props.title}`}>
@@ -102,7 +174,7 @@ export function Camera(props: {
           Cancel
         </button>
         <div className="min-w-0 text-center">
-          <div className="text-[11px] uppercase tracking-[0.14em] text-white/50">{props.mode === "after" ? "Prove it" : "Before-photo"}</div>
+          <div className="text-[11px] uppercase tracking-[0.14em] text-white/50">{props.mode === "before" ? "Before-photo" : kind === "video" ? "Record it" : kind === "reading" ? "Read the gauge" : "Prove it"}</div>
           <div className="truncate text-[14px] font-medium">{props.title}</div>
         </div>
         <div className="flex h-10 items-center gap-1.5 rounded-full bg-white/10 px-3 text-[12px] backdrop-blur" aria-live="polite">
@@ -149,14 +221,50 @@ export function Camera(props: {
             {message}
           </p>
         )}
-        <button
-          onClick={shoot}
-          disabled={status !== "live"}
-          aria-label="Take photo"
-          className="press group mx-auto grid h-[76px] w-[76px] place-items-center rounded-full border-[3px] border-white/90 disabled:opacity-40"
-        >
-          <span className="h-[60px] w-[60px] rounded-full bg-white transition-transform duration-200 group-active:scale-90" />
-        </button>
+        {reading ? (
+          <div className="mx-auto max-w-sm rounded-2xl bg-white/10 p-4 backdrop-blur">
+            <label className="grid gap-2 text-[13px] text-white/80">
+              What does it read{props.readingLabel ? ` (${props.readingLabel})` : ""}?
+              <input
+                autoFocus
+                inputMode="decimal"
+                value={reading.value}
+                onChange={(e) => setReading({ ...reading, value: e.target.value })}
+                className="h-12 rounded-xl bg-white px-3 text-[18px] text-ink"
+              />
+            </label>
+            <p className="mt-2 text-[12px] text-white/60">The AI reads the photo too; if the two differ, the client takes a look.</p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button onClick={() => setReading(null)} className="press h-11 rounded-full bg-white/15 text-[14px] font-medium">
+                Retake
+              </button>
+              <button onClick={sendReading} className="press h-11 rounded-full bg-white text-[14px] font-semibold text-ink">
+                Send
+              </button>
+            </div>
+          </div>
+        ) : kind === "video" ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="num text-[13px] text-white/70">{recording ? `${elapsed.toFixed(0)} s · stop between 5 and 20 s` : "Record 5 to 20 seconds"}</div>
+            <button
+              onClick={recording ? stopRecording : startRecording}
+              disabled={status !== "live"}
+              aria-label={recording ? "Stop recording" : "Start recording"}
+              className="press group grid h-[76px] w-[76px] place-items-center rounded-full border-[3px] border-white/90 disabled:opacity-40"
+            >
+              <span className={`bg-[#ff5a4f] transition-all duration-200 ${recording ? "h-7 w-7 rounded-md" : "h-[60px] w-[60px] rounded-full"}`} />
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={shoot}
+            disabled={status !== "live"}
+            aria-label="Take photo"
+            className="press group mx-auto grid h-[76px] w-[76px] place-items-center rounded-full border-[3px] border-white/90 disabled:opacity-40"
+          >
+            <span className="h-[60px] w-[60px] rounded-full bg-white transition-transform duration-200 group-active:scale-90" />
+          </button>
+        )}
       </div>
     </div>
   );

@@ -4,6 +4,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import {
   afterMaskedRejudge,
+  CAMERA_PROOFS,
   CAPTURE_TOKEN_TTL_S,
   combinePasses,
   decideVerdict,
@@ -39,6 +40,7 @@ export async function issueCaptureToken(e: Engine, lineId: string, tradesId: str
     if (job.trades_id !== tradesId) throw forbidden();
     if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
     if (!PROVABLE_LINE.includes(line.status)) throw conflict("not_provable", `${line.code} is ${line.status}`);
+    if (!CAMERA_PROOFS.includes(line.proof_type)) throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not the camera`);
     const token = randomBytes(24).toString("base64url");
     const now = e.now();
     await store.issueCaptureToken(q, { token, lineId, issuedTo: tradesId, deviceId, now });
@@ -79,6 +81,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   const job = await store.mustGetJob(e.db, line.job_id);
   if (job.trades_id !== input.tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
+  if (line.proof_type !== "photo") throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not a photo`);
   if (job.demo) await assertDemoBudget(e, input.tradesId);
   const now = e.now();
 

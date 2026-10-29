@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import { categoryOf } from "@trace/core/categories";
+import { readingTarget, type ReadingSpec } from "@trace/core/proof";
 import { wordsFor } from "@/lib/words";
 import { DEMO_SAMPLES, type Sample } from "@/lib/demo-samples";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -315,7 +316,27 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
                       canDecide={isHome && (l.status === "VERIFIED" || l.status === "NEEDS_REVIEW")}
                       busy={busy}
                       onProve={() => setCamera({ mode: "after", line: l })}
-                      samples={job.demo ? DEMO_SAMPLES[l.code] : undefined}
+                      onSubmitProof={async (form) => {
+                        setBusy(true);
+                        try {
+                          cameraDone(await api<CameraResult>(`/api/lines/${l.id}/proof`, { form }));
+                        } catch (e) {
+                          toast("bad", e instanceof Error ? e.message : String(e));
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                      onSignOff={async () => {
+                        try {
+                          const r = await api<{ link: string; email: string }>(`/api/lines/${l.id}/attest-request`, { json: {} });
+                          refresh();
+                          return r;
+                        } catch (e) {
+                          toast("bad", e instanceof Error ? e.message : String(e));
+                          return null;
+                        }
+                      }}
+                      samples={job.demo && l.proof.type === "photo" ? DEMO_SAMPLES[l.code] : undefined}
                       onSample={(src) => sampleProve(l, src)}
                       onApprove={() => act(() => api(`/api/lines/${l.id}/decision`, { json: { approve: true } }), `${l.code} approved.`)}
                       onFlag={(note) => act(() => api(`/api/lines/${l.id}/decision`, { json: { approve: false, note } }), `${l.code} flagged. It stays held until it's fixed.`)}
@@ -370,6 +391,8 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
           title={camera.line ? `${camera.line.code} · ${camera.line.title}` : "Before-photo"}
           framing={camera.line?.framing}
           ghostUrl={camera.line?.beforeUrl}
+          proofType={camera.line?.proof.type === "video" || camera.line?.proof.type === "reading" ? camera.line.proof.type : "photo"}
+          readingLabel={camera.line?.proof.type === "reading" && camera.line.proof.spec ? `${(camera.line.proof.spec as ReadingSpec).quantity} in ${(camera.line.proof.spec as ReadingSpec).unit}` : undefined}
           onClose={() => {
             setCamera(null);
             refresh();
@@ -439,6 +462,10 @@ function LineCard(props: {
   scopeFlag?: JobView["guard"]["scopeFlags"][number];
   currency: string;
   canProve: boolean;
+  /** Document and deliverable proofs: send the form to the proof route. */
+  onSubmitProof: (form: FormData) => Promise<void>;
+  /** Attestation: create a sign-off link. */
+  onSignOff: () => Promise<{ link: string; email: string } | null>;
   /** Judge mode: sample photos that can stand in for the camera. */
   samples?: Sample[];
   onSample?: (src: string) => void;
@@ -454,7 +481,8 @@ function LineCard(props: {
   const [note, setNote] = useState("");
   const settled = l.status === "CAPTURED" || l.status === "DROPPED";
   const [proof, setProof] = useState(!settled);
-  const hasPhotos = !!(l.afterUrl || l.verdict) && proof;
+  const camera = l.proof.type === "photo" || l.proof.type === "video" || l.proof.type === "reading";
+  const hasPhotos = camera && !!(l.afterUrl || l.verdict) && proof;
 
   return (
     <article className="surface relative overflow-hidden rounded-[22px]">
@@ -464,6 +492,7 @@ function LineCard(props: {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="num text-[12px] text-faint">{l.code}</span>
+              {l.proof.type !== "photo" && <span className="rounded-full bg-violet-soft px-2 py-0.5 text-[11px] font-medium text-violet">{PROOF_LABEL[l.proof.type]}</span>}
               <h3 className={`truncate text-[16px] font-semibold tracking-tight ${l.status === "DROPPED" ? "text-faint line-through" : ""}`}>{l.title}</h3>
             </div>
             <p className="mt-1 text-[14px] leading-relaxed text-muted">{l.criterion}</p>
@@ -485,9 +514,10 @@ function LineCard(props: {
         {hasPhotos && (
           <div className="mt-4 grid grid-cols-2 gap-2">
             <Photo url={l.beforeUrl} label="Before" />
-            <Photo url={l.afterUrl} label="After" region={l.verdict?.region} tone={l.verdict?.verdict} />
+            <Photo url={l.afterUrl} label={l.proof.type === "video" ? "Clip, first frame" : l.proof.type === "reading" ? "Gauge" : "After"} region={l.verdict?.region} tone={l.verdict?.verdict} />
           </div>
         )}
+        {proof && <ProofDetails line={l} />}
 
         {settled && (l.afterUrl || l.verdict) && (
           <button onClick={() => setProof((x) => !x)} aria-expanded={proof} className="press mt-3 inline-flex h-8 items-center gap-1 text-[13px] font-medium text-violet">
@@ -533,11 +563,12 @@ function LineCard(props: {
           </p>
         )}
 
-        {props.canProve && (
+        {props.canProve && camera && (
           <button onClick={props.onProve} className="press btn-ink mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full text-[14px] font-medium">
-            <CameraIcon /> {l.status === "FAILED" || l.status === "FLAGGED" ? "Re-prove" : "Prove it"}
+            <CameraIcon /> {l.status === "FAILED" || l.status === "FLAGGED" ? "Re-prove" : l.proof.type === "video" ? "Record it" : l.proof.type === "reading" ? "Read the gauge" : "Prove it"}
           </button>
         )}
+        {props.canProve && !camera && <ProveOther line={l} busy={props.busy} onSubmit={props.onSubmitProof} onSignOff={props.onSignOff} />}
         {props.canProve && props.samples && props.samples.length > 0 && (
           <div className="mt-2 rounded-2xl bg-violet-soft/60 p-3">
             <div className="text-[12px] font-medium text-violet">Use sample proof</div>
@@ -619,6 +650,143 @@ function Photo({ url, label, region, tone }: { url: string | null; label: string
 }
 
 /* -------------------------------------------------------------- timeline */
+
+const PROOF_LABEL: Record<string, string> = { photo: "Photo", video: "Video", document: "Document", reading: "Reading", deliverable: "Deliverable", attestation: "Sign-off" };
+
+/** What a non-photo proof showed: the clip's frames, the reading, the document's fields, the link, the signature. */
+function ProofDetails({ line: l }: { line: Line }) {
+  const p = l.proof;
+  const x = p.extracted;
+  if (p.type === "photo") return null;
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      {p.type === "video" && p.frames.length > 0 && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          {p.frames.map((u, i) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img key={u} src={u} alt={`Frame ${i + 2}`} className="h-16 w-20 shrink-0 rounded-lg object-cover" />
+          ))}
+        </div>
+      )}
+      {p.type === "reading" && p.spec && (
+        <div className="rounded-2xl bg-paper px-3.5 py-2.5 text-[13.5px]">
+          {x?.value != null ? (
+            <>
+              Reads <span className="num font-semibold">{x.value} {x.unit ?? (p.spec as ReadingSpec).unit}</span>
+            </>
+          ) : (
+            "Not read yet"
+          )}
+          <span className="text-muted"> · target {readingTarget(p.spec as ReadingSpec)}</span>
+        </div>
+      )}
+      {(p.type === "document" || (p.type === "deliverable" && p.file)) && p.file && (
+        <a href={p.file.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-2xl bg-paper px-3.5 py-2.5 text-[13.5px] hover:bg-paper-2">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-card text-[11px] font-semibold text-muted shadow-[0_0_0_1px_var(--color-line)]">
+            {p.file.mime.includes("pdf") ? "PDF" : p.file.mime.startsWith("image") ? "IMG" : "TXT"}
+          </span>
+          <span className="min-w-0 flex-1 truncate font-medium">{p.file.name}</span>
+        </a>
+      )}
+      {p.type === "document" && x && (x.vendor || x.total_cents != null || x.date) && (
+        <div className="rounded-2xl bg-paper px-3.5 py-2.5 text-[13px] text-ink-2">
+          {[x.vendor, x.date, x.total_cents != null ? `total ${(x.total_cents / 100).toFixed(2)}` : null].filter(Boolean).join(" · ")}
+          {x.items.length > 0 && <div className="mt-0.5 truncate text-muted">{x.items.join(", ")}</div>}
+        </div>
+      )}
+      {p.link && (
+        <a href={p.link.url} target="_blank" rel="noreferrer noopener" className="truncate rounded-2xl bg-paper px-3.5 py-2.5 text-[13.5px] font-medium text-violet hover:bg-paper-2">
+          {p.link.url} {p.link.status != null && <span className="text-muted">· {p.link.status}</span>}
+        </a>
+      )}
+      {p.type === "attestation" && p.spec && (
+        <div className="rounded-2xl bg-paper px-3.5 py-2.5 text-[13.5px]">
+          <div className="text-ink-2">&ldquo;{(p.spec as { statement: string }).statement}&rdquo;</div>
+          <div className="mt-1 text-[12.5px] text-muted">
+            {p.attestation?.signedName ? `Signed by ${p.attestation.signedName} on ${when(p.attestation.signedAt!)}` : `To be signed by ${(p.spec as { email: string }).email}`}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Proving a line without the camera: upload a document or file, send a link, or ask for a sign-off. */
+function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: boolean; onSubmit: (form: FormData) => Promise<void>; onSignOff: () => Promise<{ link: string; email: string } | null> }) {
+  const [url, setUrl] = useState("");
+  const [link, setLink] = useState<{ link: string; email: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const spec = l.proof.spec as { kind?: string; mime?: string; email?: string; statement?: string } | null;
+  const upload = (accept: string, label: string) => (
+    <label className={`press btn-ink mt-4 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full text-[14px] font-medium ${busy ? "pointer-events-none opacity-60" : ""}`}>
+      {label}
+      <input
+        type="file"
+        accept={accept}
+        className="sr-only"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = "";
+          if (!f) return;
+          const form = new FormData();
+          form.append("file", f, f.name);
+          onSubmit(form);
+        }}
+      />
+    </label>
+  );
+
+  if (l.proof.type === "document") return upload("application/pdf,image/*", l.status === "FAILED" ? "Upload another document" : "Upload the document");
+  if (l.proof.type === "deliverable" && spec?.kind !== "url") {
+    const accept = spec?.mime === "pdf" ? "application/pdf" : spec?.mime === "image" ? "image/*" : spec?.mime === "text" ? "text/*,.md,.csv,.json" : "*/*";
+    return upload(accept, "Upload the file");
+  }
+  if (l.proof.type === "deliverable") {
+    return (
+      <form
+        className="mt-4 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const form = new FormData();
+          form.append("url", url.trim());
+          onSubmit(form);
+        }}
+      >
+        <input type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://" className="field min-w-0 flex-1 text-[14px]" />
+        <button disabled={busy || !url.trim()} className="press btn-ink h-11 shrink-0 rounded-full px-5 text-[14px] font-medium disabled:opacity-60">
+          Check link
+        </button>
+      </form>
+    );
+  }
+  // Attestation
+  return (
+    <div className="mt-4">
+      {link ? (
+        <div className="rounded-2xl bg-paper p-3.5 text-[13.5px]">
+          <div className="font-medium">Send this link to {link.email}</div>
+          <p className="mt-0.5 text-[12.5px] text-muted">It works once, for 14 days. It isn&apos;t shown again.</p>
+          <div className="mt-2 flex gap-2">
+            <input readOnly value={link.link} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />
+            <button
+              onClick={() => navigator.clipboard?.writeText(link.link).then(() => setCopied(true))}
+              className="press h-11 shrink-0 rounded-full bg-card px-4 text-[13px] font-semibold shadow-[0_0_0_1px_var(--color-line)]"
+            >
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <a href={`mailto:${link.email}?subject=${encodeURIComponent(`Please sign off: ${l.title}`)}&body=${encodeURIComponent(`Please confirm this work: ${link.link}`)}`} className="mt-2 inline-block text-[13px] font-medium text-violet">
+            Open in email
+          </a>
+        </div>
+      ) : (
+        <button disabled={busy} onClick={async () => setLink(await onSignOff())} className="press btn-ink flex h-11 w-full items-center justify-center rounded-full text-[14px] font-medium disabled:opacity-60">
+          {l.status === "PROVING" ? "Send a new sign-off link" : "Send for sign-off"}
+        </button>
+      )}
+    </div>
+  );
+}
 
 function PaymentsCard({
   captures,

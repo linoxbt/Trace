@@ -32,6 +32,9 @@ export interface LineEvidence {
   before: { path: string } | null;
   approvedAt: string | null;
   approvedBy: "homeowner" | "review window" | null;
+  /** How the line was proved, and for non-photo proofs what the proof was. */
+  proofType: string;
+  proofNote: string | null;
 }
 
 export interface Evidence {
@@ -77,6 +80,18 @@ export async function loadEvidence(e: Engine, disputeId: string): Promise<Eviden
     `select distinct on (line_id) * from photos where job_id = $1 and kind in ('after','during') order by line_id, taken_at desc`,
     [job.id],
   );
+  const items = await e.db.query<store.ProofItemRow>(
+    "select distinct on (line_id) * from proof_items where job_id = $1 and kind <> 'video_frame' order by line_id, created_at desc",
+    [job.id],
+  );
+  const noteFor = (lineId: string): string | null => {
+    const it = items.rows.find((x) => x.line_id === lineId);
+    if (!it) return null;
+    const m = it.meta as { name?: string; url?: string; final_url?: string; status?: number; email?: string; statement?: string; signed_at?: string };
+    if (it.kind === "attestation") return `Signed by ${String((m as { name?: string }).name ?? "")} (${m.email}) on ${when(m.signed_at ?? null)}: "${m.statement}"`;
+    if (it.kind === "url") return `Link ${m.final_url ?? m.url} answered ${m.status}; snapshot kept (sha256 ${it.sha256?.slice(0, 16)})`;
+    return `${it.kind === "document" ? "Document" : "File"} ${m.name ?? ""} (sha256 ${it.sha256?.slice(0, 16)})`;
+  };
   const approval = new Map<string, { at: string; by: "homeowner" | "review window" }>();
   for (const ev of events) {
     const code = (ev.data as { line?: string } | null)?.line;
@@ -103,6 +118,8 @@ export async function loadEvidence(e: Engine, disputeId: string): Promise<Eviden
       before: b ? { path: b.storage_path } : null,
       approvedAt: approval.get(l.code)?.at ?? null,
       approvedBy: approval.get(l.code)?.by ?? null,
+      proofType: l.proof_type,
+      proofNote: noteFor(l.id),
     });
   }
   return {
@@ -156,7 +173,7 @@ export function evidenceBrief(ev: Evidence): string {
     return [
       `${l.code} ${l.title} (${formatMoney(l.priceCents)}), status ${l.status}`,
       `  agreed: ${l.criterion}; must show: ${l.mustShow.join("; ")}; must not show: ${l.mustNotShow.join("; ") || "nothing listed"}`,
-      `  proof: ${l.proof ? `${l.proof.sample ? "sample photo" : "photo"} taken ${when(l.proof.takenAt)}, ${i?.distanceM != null ? `${i.distanceM} m from the job` : "no distance"}, checks: ${checks}` : "none"}`,
+      `  proof (${l.proofType}): ${l.proof ? `${l.proof.sample ? "sample photo" : "photo"} taken ${when(l.proof.takenAt)}, ${i?.distanceM != null ? `${i.distanceM} m from the job` : "no distance"}, checks: ${checks}` : (l.proofNote ?? "none")}`,
       `  verdict: ${l.verdict ? `${l.verdict.verdict}${l.verdict.reason ? ` ("${l.verdict.reason}")` : ""}` : "none"}`,
       `  approved: ${l.approvedAt ? `${when(l.approvedAt)} by ${l.approvedBy}` : "no"}`,
     ].join("\n");
@@ -352,8 +369,9 @@ export async function renderEvidencePdf(e: Engine, ev: Evidence, notes: string):
   for (const l of ev.lines) {
     pdf.newPage();
     pdf.text(`${l.code} · ${l.title}`, { size: 16, bold: true, gap: 4 });
-    pdf.text(`Agreed: ${l.criterion}`, { color: MUTED, gap: 10 });
-    pdf.images([await embed(doc, e, l.before?.path), await embed(doc, e, l.proof?.path)], ["BEFORE", l.proof?.sample ? "AFTER (SAMPLE PROOF, JUDGE MODE)" : "AFTER"]);
+    pdf.text(`Agreed: ${l.criterion}`, { color: MUTED, gap: l.proofNote ? 4 : 10 });
+    if (l.proofNote) pdf.text(`Proved by ${l.proofType}: ${l.proofNote}`, { gap: 10 });
+    if (["photo", "video", "reading"].includes(l.proofType)) pdf.images([await embed(doc, e, l.before?.path), await embed(doc, e, l.proof?.path)], ["BEFORE", l.proof?.sample ? "AFTER (SAMPLE PROOF, JUDGE MODE)" : "AFTER"]);
     if (l.verdict) {
       pdf.text(`Verdict: ${l.verdict.verdict} (${when(l.verdict.at)})`, { bold: true, color: l.verdict.verdict === "VERIFIED" ? GREEN : l.verdict.verdict === "FAILED" ? RED : INK, gap: 2 });
       if (l.verdict.reason) pdf.text(l.verdict.reason, { gap: 2 });

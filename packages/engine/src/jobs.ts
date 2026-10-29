@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import {
   Acceptance,
   isJobCategory,
+  parseProofSpec,
+  ProofType,
   fromPayPalValue,
   nextJobStatus,
   scopeHash,
@@ -70,6 +72,9 @@ export interface ScopeLineInput {
   priceCents: number;
   acceptance: unknown;
   verifiableByPhoto: boolean;
+  /** How the line is proved; photo when absent. */
+  proofType?: string;
+  proofSpec?: unknown;
 }
 
 /** Save the edited lines on a draft job. */
@@ -83,7 +88,19 @@ export async function saveScope(e: Engine, jobId: string, tradesId: string, line
     codes.add(l.code);
     const acceptance = Acceptance.safeParse(l.acceptance);
     if (!acceptance.success) throw badRequest("bad_acceptance", `${l.code}: acceptance is not valid`);
-    return { ...l, title: l.title.trim(), acceptance: acceptance.data };
+    const type = ProofType.safeParse(l.proofType ?? "photo");
+    if (!type.success) throw badRequest("bad_proof_type", `${l.code}: that proof type isn't one Trace checks`);
+    const spec = parseProofSpec(type.data, l.proofSpec);
+    if (!spec.ok) throw badRequest("bad_proof_spec", `${l.code}: ${spec.error}`);
+    return {
+      ...l,
+      title: l.title.trim(),
+      acceptance: acceptance.data,
+      proofType: type.data,
+      proofSpec: spec.spec,
+      // Only a photo is judged against a before-photo; the other types carry their own proof.
+      verifiableByPhoto: type.data === "photo" ? l.verifiableByPhoto : false,
+    };
   });
   if (sum(clean.map((l) => l.priceCents)) > MAX_JOB_CENTS) throw badRequest("bad_scope", "a job is capped at $10,000");
   return e.db.tx(async (q) => {
@@ -109,7 +126,15 @@ export async function sendScope(e: Engine, jobId: string, tradesId: string): Pro
     const hash = scopeHash({
       jobId,
       currency: job.currency,
-      lines: lines.map((l) => ({ code: l.code, title: l.title, priceCents: l.price_cents, acceptance: l.acceptance, verifiableByPhoto: l.verifiable_by_photo })),
+      lines: lines.map((l) => ({
+        code: l.code,
+        title: l.title,
+        priceCents: l.price_cents,
+        acceptance: l.acceptance,
+        verifiableByPhoto: l.verifiable_by_photo,
+        proofType: l.proof_type,
+        proofSpec: l.proof_spec,
+      })),
     });
     // Flags only count for lines that still read as they did when checked.
     const current = flags?.filter((f) => lines.some((l) => l.code === f.line && l.title === f.title));

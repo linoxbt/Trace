@@ -10,6 +10,9 @@ export interface ScopeLine {
   priceCents: number;
   acceptance: Acceptance;
   verifiableByPhoto: boolean;
+  /** Omitted for photo lines, so scopes frozen before proof types hash the same. */
+  proofType?: string;
+  proofSpec?: unknown;
 }
 
 function canonical(value: unknown): string {
@@ -33,6 +36,7 @@ export function scopeHash(input: { jobId: string; currency: string; lines: reado
       price_cents: l.priceCents,
       acceptance: l.acceptance,
       verifiable_by_photo: l.verifiableByPhoto,
+      ...(l.proofType && l.proofType !== "photo" ? { proof_type: l.proofType, proof_spec: l.proofSpec ?? null } : {}),
     })),
   });
   return createHash("sha256").update(body).digest("hex");

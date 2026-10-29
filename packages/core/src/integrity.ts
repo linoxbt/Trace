@@ -9,7 +9,8 @@ export const CAPTURE_TOKEN_TTL_S = 120;
 export type CheckResult = "pass" | "review" | "fail" | "skipped";
 
 export interface IntegrityCheck {
-  name: "capture_token" | "geofence" | "no_change" | "reuse" | "device";
+  /** Photo checks; other proof types add their own (file type, clip length, URL status, ...). */
+  name: "capture_token" | "geofence" | "no_change" | "reuse" | "device" | "file_type" | "duplicate_file" | "clip_length" | "url_status" | "document_date" | "document_total" | "reading" | "instructions" | "signature";
   result: CheckResult;
   detail: string;
 }
@@ -18,7 +19,8 @@ export interface IntegrityReport {
   status: "pass" | "review" | "fail";
   checks: IntegrityCheck[];
   distanceM: number | null;
-  beforeHamming: number;
+  /** Null for proofs that aren't a photo compared with a before-photo. */
+  beforeHamming: number | null;
   reuseHamming: number | null;
   /** A judge-mode sample photo: camera, geofence, token and device checks were not run. */
   sample: boolean;

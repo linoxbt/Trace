@@ -70,9 +70,19 @@ export const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
 export async function photoForm(req: NextRequest) {
   const form = await req.formData().catch(() => null);
   if (!form) throw new HttpError(400, "bad_form", "send the photo as multipart form data");
-  const file = form.get("photo");
+  return photoFromForm(form);
+}
+
+/** The same fields, from a form already read. */
+export async function photoFromForm(form: FormData, field = "photo") {
+  const file = form.get(field);
   if (!(file instanceof File)) throw new HttpError(400, "no_photo", "the photo is missing");
   if (file.size > MAX_PHOTO_BYTES) throw new HttpError(413, "photo_too_big", "photos are limited to 12 MB");
+  return { bytes: new Uint8Array(await file.arrayBuffer()), ...formFields(form), form };
+}
+
+/** GPS, device and token fields of a proof form. */
+export function formFields(form: FormData) {
   const num = (k: string) => {
     const v = form.get(k);
     const n = typeof v === "string" && v !== "" ? Number(v) : NaN;
@@ -89,5 +99,5 @@ export async function photoForm(req: NextRequest) {
     const v = form.get(k);
     return typeof v === "string" && v ? v.slice(0, 200) : null;
   };
-  return { bytes: new Uint8Array(await file.arrayBuffer()), gps, deviceId: str("deviceId"), token: str("token"), form };
+  return { gps, deviceId: str("deviceId"), token: str("token"), num, str };
 }

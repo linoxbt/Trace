@@ -7,3 +7,4 @@ export * from "./verdict.ts";
 export * from "./scope.ts";
 export * from "./guard.ts";
 export * from "./categories.ts";
+export * from "./proof.ts";

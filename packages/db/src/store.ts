@@ -1,7 +1,7 @@
 // Row types and the queries the engine and the web app share. Every function
 // takes a Queryable, so it runs inside a caller's transaction or on the pool.
 
-import type { Acceptance, JobCategory, JobStatus, LineObservation, LineStatus, IntegrityReport, TextScan, Verdict } from "@trace/core";
+import type { Acceptance, JobCategory, JobStatus, LineObservation, LineStatus, IntegrityReport, ProofSpec, ProofType, TextScan, Verdict } from "@trace/core";
 import type { Queryable } from "./db.ts";
 
 export type Actor = "tradesperson" | "homeowner" | "system" | "paypal";
@@ -52,6 +52,9 @@ export interface LineRow {
   /** Tripwire: the latest proof had text addressed to the inspector. */
   injection_flag: boolean;
   injection_excerpt: string | null;
+  /** How the line is proved, and the type's details (section 6.2). */
+  proof_type: ProofType;
+  proof_spec: ProofSpec | null;
 }
 
 export type AuthorizationStatus = "CREATED" | "PARTIALLY_CAPTURED" | "CAPTURED" | "VOIDED" | "DENIED" | "PENDING";
@@ -255,6 +258,8 @@ export interface NewLine {
   priceCents: number;
   acceptance: Acceptance;
   verifiableByPhoto: boolean;
+  proofType?: ProofType;
+  proofSpec?: ProofSpec | null;
 }
 
 /** Replace a draft job's lines. */
@@ -263,9 +268,9 @@ export async function replaceLines(q: Queryable, jobId: string, lines: readonly 
   const out: LineRow[] = [];
   for (const [i, l] of lines.entries()) {
     const { rows } = await q.query<LineRow>(
-      `insert into lines (job_id, code, title, description, price_cents, acceptance, verifiable_by_photo, position)
-       values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-      [jobId, l.code, l.title, l.description ?? null, l.priceCents, JSON.stringify(l.acceptance), l.verifiableByPhoto, i],
+      `insert into lines (job_id, code, title, description, price_cents, acceptance, verifiable_by_photo, position, proof_type, proof_spec)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning *`,
+      [jobId, l.code, l.title, l.description ?? null, l.priceCents, JSON.stringify(l.acceptance), l.verifiableByPhoto, i, l.proofType ?? "photo", l.proofSpec ? JSON.stringify(l.proofSpec) : null],
     );
     out.push(rows[0]!);
   }
@@ -511,13 +516,77 @@ export async function consumeCaptureToken(q: Queryable, t: { token: string; line
 
 export async function insertVerdict(
   q: Queryable,
-  v: { lineId: string; photoId: string; observation: LineObservation; verdict: Verdict; reasons: string[]; model: string; pass: number; masked?: boolean },
+  v: {
+    lineId: string;
+    /** The photo judged, or for other proof types the proof item. */
+    photoId: string | null;
+    proofItemId?: string | null;
+    /** A LineObservation, plus what an adapter extracted (a reading's value, a document's fields). */
+    observation: LineObservation & { extracted?: unknown; instructions_found?: string | null };
+    verdict: Verdict;
+    reasons: string[];
+    model: string;
+    pass: number;
+    masked?: boolean;
+  },
 ): Promise<string> {
   const { rows } = await q.query<{ id: string }>(
-    `insert into verdicts (line_id, photo_id, observation, verdict, reasons, model, pass, masked) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
-    [v.lineId, v.photoId, JSON.stringify(v.observation), v.verdict, JSON.stringify(v.reasons), v.model, v.pass, !!v.masked],
+    `insert into verdicts (line_id, photo_id, observation, verdict, reasons, model, pass, masked, proof_item_id) values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning id`,
+    [v.lineId, v.photoId, JSON.stringify(v.observation), v.verdict, JSON.stringify(v.reasons), v.model, v.pass, !!v.masked, v.proofItemId ?? null],
   );
   return rows[0]!.id;
+}
+
+// ---------- proof items and attestations ----------
+
+export interface ProofItemRow {
+  id: string;
+  job_id: string;
+  line_id: string;
+  kind: "video_frame" | "document" | "file" | "url" | "attestation";
+  storage_path: string | null;
+  sha256: string | null;
+  meta: Record<string, unknown>;
+  sample: boolean;
+  created_at: Date;
+}
+
+export async function insertProofItem(
+  q: Queryable,
+  p: { jobId: string; lineId: string; kind: ProofItemRow["kind"]; storagePath?: string | null; sha256?: string | null; meta?: Record<string, unknown>; sample?: boolean },
+): Promise<ProofItemRow> {
+  const { rows } = await q.query<ProofItemRow>(
+    `insert into proof_items (job_id, line_id, kind, storage_path, sha256, meta, sample) values ($1, $2, $3, $4, $5, $6, $7) returning *`,
+    [p.jobId, p.lineId, p.kind, p.storagePath ?? null, p.sha256 ?? null, JSON.stringify(p.meta ?? {}), !!p.sample],
+  );
+  return rows[0]!;
+}
+
+/** Has this exact file been used as proof on any other line? */
+export async function sha256UsedElsewhere(q: Queryable, sha256: string, lineId: string): Promise<boolean> {
+  const { rowCount } = await q.query("select 1 from proof_items where sha256 = $1 and line_id <> $2 limit 1", [sha256, lineId]);
+  return (rowCount ?? 0) > 0;
+}
+
+export async function latestProofItems(q: Queryable, lineId: string): Promise<ProofItemRow[]> {
+  const { rows } = await q.query<ProofItemRow>(
+    `select * from proof_items where line_id = $1 and created_at >= coalesce((select max(created_at) from proof_items where line_id = $1 and kind <> 'video_frame'), '-infinity'::timestamptz) - interval '1 minute' order by created_at, id`,
+    [lineId],
+  );
+  return rows;
+}
+
+export interface AttestationRow {
+  id: string;
+  line_id: string;
+  token_hash: string;
+  email: string;
+  statement: string;
+  signed_name: string | null;
+  signed_at: Date | null;
+  signed_ip: string | null;
+  expires_at: Date;
+  created_at: Date;
 }
 
 // ---------- disputes ----------

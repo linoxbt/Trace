@@ -1,6 +1,6 @@
 import "server-only";
 import * as store from "@trace/db";
-import { BUILTIN_RULES, sum } from "@trace/core";
+import { BUILTIN_RULES, sum, type ProofSpec, type ProofType } from "@trace/core";
 import { payeeStatus, rulesForJob } from "@trace/engine";
 import { engine } from "./engine";
 import { HttpError } from "./http";
@@ -60,9 +60,25 @@ export interface JobView {
     afterUrl: string | null;
     /** Text in the latest proof was aimed at the inspector, or steered the verdict (Tripwire). */
     injection: { excerpt: string | null; maskedUrl: string | null; boxes: { x: number; y: number; w: number; h: number }[] } | null;
+    /** How the line is proved, and what its latest proof showed. */
+    proof: ProofView;
   }[];
   guard: GuardView;
   events: { id: number; actor: string; type: string; data: Record<string, unknown> | null; at: string }[];
+}
+
+export interface ProofView {
+  type: ProofType;
+  spec: ProofSpec | null;
+  /** Video: the clip's frames after the first (which is afterUrl). */
+  frames: string[];
+  /** Document or file deliverable. */
+  file: { url: string; name: string; mime: string } | null;
+  /** Link deliverable. */
+  link: { url: string; status: number | null } | null;
+  /** What the check read off the proof (a reading's value, a document's fields). */
+  extracted: { value: number | null; unit: string | null; vendor: string | null; date: string | null; total_cents: number | null; items: string[] } | null;
+  attestation: { email: string; statement: string; signedName: string | null; signedAt: string | null } | null;
 }
 
 export interface GuardView {
@@ -110,14 +126,36 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
   const payee = job.payee_merchant_id
     ? { state: "ready" as const, merchantId: job.payee_merchant_id }
     : { state: trades.state, merchantId: trades.state === "ready" ? trades.merchantId : null };
-  const verdicts = await e.db.query<{ line_id: string; verdict: string; reasons: string[]; observation: { homeowner_reason?: string; region?: unknown } }>(
+  const verdicts = await e.db.query<{ line_id: string; verdict: string; reasons: string[]; observation: { homeowner_reason?: string; region?: unknown; extracted?: ProofView["extracted"] } }>(
     `select distinct on (v.line_id) v.line_id, v.verdict, v.reasons, v.observation
      from verdicts v join lines l on l.id = v.line_id where l.job_id = $1 and not v.masked
      order by v.line_id, v.created_at desc, v.pass desc`,
     [jobId],
   );
   const verdictBy = new Map(verdicts.rows.map((v) => [v.line_id, v]));
+  const [proofItems, attestations] = await Promise.all([
+    e.db.query<store.ProofItemRow>("select * from proof_items where job_id = $1 order by created_at, id", [jobId]),
+    e.db.query<store.AttestationRow>("select a.* from attestations a join lines l on l.id = a.line_id where l.job_id = $1 order by a.created_at", [jobId]),
+  ]);
 
+  const signPath = (path: string | null) => (path ? e.storage.signedUrl(path, 600).catch(() => null) : Promise.resolve(null));
+  async function proofView(l: store.LineRow, after: store.PhotoRow | undefined, extracted: ProofView["extracted"]): Promise<ProofView> {
+    const mine = proofItems.rows.filter((p) => p.line_id === l.id);
+    const since = after ? after.taken_at.getTime() - 60_000 : 0;
+    const frames = mine.filter((p) => p.kind === "video_frame" && p.created_at.getTime() >= since);
+    const doc = [...mine].reverse().find((p) => p.kind === "document" || p.kind === "file" || p.kind === "url");
+    const att = [...attestations.rows].reverse().find((a) => a.line_id === l.id);
+    const meta = (doc?.meta ?? {}) as { name?: string; mime?: string; url?: string; final_url?: string; status?: number };
+    return {
+      type: l.proof_type,
+      spec: l.proof_spec,
+      frames: (await Promise.all(frames.map((f) => signPath(f.storage_path)))).filter((u): u is string => !!u),
+      file: doc && doc.kind !== "url" && doc.storage_path ? { url: (await signPath(doc.storage_path)) ?? "", name: meta.name ?? "file", mime: meta.mime ?? "" } : null,
+      link: doc?.kind === "url" ? { url: meta.final_url ?? meta.url ?? "", status: meta.status ?? null } : null,
+      extracted,
+      attestation: att ? { email: att.email, statement: att.statement, signedName: att.signed_name, signedAt: att.signed_at?.toISOString() ?? null } : null,
+    };
+  }
   const sign = async (p: store.PhotoRow | undefined) => (p?.storage_path ? e.storage.signedUrl(p.storage_path, 600).catch(() => null) : null);
   const firstBefore = photos.find((p) => p.kind === "before");
 
@@ -208,6 +246,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
           injection: l.injection_flag
             ? { excerpt: l.injection_excerpt, maskedUrl: await sign(masked), boxes: (scan?.texts ?? []).map((t) => t.box) }
             : null,
+          proof: await proofView(l, after, v?.observation.extracted ?? null),
         };
       }),
     ),

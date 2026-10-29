@@ -11,7 +11,7 @@ import type { ScopeFlag, ScopeLineText, TextScanner } from "./inject/text-scan.t
 import type { CompiledRule, CompileResult, RuleCompiler } from "./rules/compile.ts";
 import { refreshPayee } from "./payee.ts";
 import { MemoryStorage } from "./storage.ts";
-import type { InspectInput, Verifier } from "./verifier.ts";
+import type { InspectInput, ProofInspectInput, ProofObservation, Verifier } from "./verifier.ts";
 
 export class ScriptedVerifier implements Verifier {
   readonly model = "scripted";
@@ -24,6 +24,20 @@ export class ScriptedVerifier implements Verifier {
     const s = this.script.get(input.lineId);
     const over = typeof s === "function" ? s(input) : (s?.shift() ?? {});
     return { ...passing(input.lineId, input.acceptance), ...over };
+  }
+
+  readonly proofCalls: ProofInspectInput[] = [];
+  /** By line ID, for the other proof types. Unscripted lines pass every check and read nothing. */
+  readonly proofScript = new Map<string, Partial<ProofObservation>>();
+
+  async inspectProof(input: ProofInspectInput): Promise<ProofObservation> {
+    this.proofCalls.push(input);
+    return {
+      ...passing(input.lineId, input.acceptance),
+      extracted: { value: null, unit: null, vendor: null, date: null, total_cents: null, items: [] },
+      instructions_found: null,
+      ...this.proofScript.get(input.lineId),
+    };
   }
 }
 

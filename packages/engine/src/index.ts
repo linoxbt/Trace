@@ -5,6 +5,7 @@ export * from "./storage.ts";
 export * from "./verifier.ts";
 export * from "./jobs.ts";
 export * from "./proof.ts";
+export * from "./proof-types.ts";
 export * from "./money.ts";
 export * from "./payee.ts";
 export * from "./demo.ts";

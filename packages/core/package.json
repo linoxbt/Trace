@@ -6,7 +6,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./guard": "./src/guard.ts",
-    "./categories": "./src/categories.ts"
+    "./categories": "./src/categories.ts",
+    "./proof": "./src/proof.ts"
   },
   "dependencies": {
     "zod": "4.1.13"
