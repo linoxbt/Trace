@@ -441,3 +441,16 @@ textarea.field {
     transform: none;
   }
 }
+
+/* Inside the signed-in app: the banking-app style. Cards are plain white with a
+   hairline border, and figures use the text face with tabular numerals. */
+.app .surface,
+.app .clay {
+  border: 1px solid #ebebf0;
+  box-shadow: 0 1px 2px rgb(16 24 40 / 0.04);
+}
+.app .num {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

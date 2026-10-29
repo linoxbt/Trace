@@ -97,3 +97,35 @@ export const IconDoc = ({ className = "h-5 w-5" }: P) => (
     <path d="M14 3.5V8h4M8.5 12.5h7M8.5 16h5" />
   </svg>
 );
+export const IconLock = ({ className = "h-5 w-5" }: P) => (
+  <svg {...base} className={className}>
+    <rect x="5" y="10.5" width="14" height="10" rx="2.5" />
+    <path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" />
+  </svg>
+);
+export const IconIn = ({ className = "h-5 w-5" }: P) => (
+  <svg {...base} strokeWidth={2} className={className}>
+    <path d="M17 7 7 17M7 9v8h8" />
+  </svg>
+);
+export const IconOut = ({ className = "h-5 w-5" }: P) => (
+  <svg {...base} strokeWidth={2} className={className}>
+    <path d="M7 17 17 7M9 7h8v8" />
+  </svg>
+);
+export const IconUndo = ({ className = "h-5 w-5" }: P) => (
+  <svg {...base} strokeWidth={1.9} className={className}>
+    <path d="M9 7 4.5 11.5 9 16" />
+    <path d="M5 11.5h9a5 5 0 0 1 0 10h-2" />
+  </svg>
+);
+export const IconChevron = ({ className = "h-4 w-4" }: P) => (
+  <svg {...base} strokeWidth={2} className={className}>
+    <path d="m9 6 6 6-6 6" />
+  </svg>
+);
+export const IconX = ({ className = "h-5 w-5" }: P) => (
+  <svg {...base} strokeWidth={2} className={className}>
+    <path d="M7 7l10 10M17 7 7 17" />
+  </svg>
+);

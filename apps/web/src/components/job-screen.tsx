@@ -255,7 +255,7 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
       </div>
 
       {/* Toasts */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 lg:bottom-4 lg:pl-[272px]" aria-live="polite">
+      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 md:bottom-4" aria-live="polite">
         {toasts.map((t) => (
           <div
             key={t.id}

@@ -41,11 +41,11 @@ export function GuardBadge({ guard, demo }: { guard: Guard; demo: boolean }) {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="press inline-flex h-7 items-center gap-1.5 rounded-full bg-white/10 px-2.5 text-[12px] font-medium normal-case tracking-normal text-white hover:bg-white/15"
+        className="press inline-flex h-8 items-center gap-1.5 rounded-full bg-violet-soft px-3 text-[12.5px] font-medium text-violet hover:bg-violet/15"
         aria-haspopup="dialog"
       >
         <ShieldIcon /> Guarded
-        {demo && <span className="num rounded-full bg-lilac/25 px-1.5 text-[11px] text-lilac">{guard.decisions.length}</span>}
+        {demo && <span className="rounded-full bg-white px-1.5 text-[11px] tabular-nums">{guard.decisions.length}</span>}
       </button>
       {open && (
         <Sheet onClose={() => setOpen(false)} title="Every money move is checked first">

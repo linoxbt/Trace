@@ -48,33 +48,8 @@ export interface JobRowView {
   disputed: boolean;
   createdAt: string;
   updatedAt: string;
-  /** One entry per line, in scope order: the proof strip. */
-  strip: StripLine[];
   /** The latest after-photo, else a before-photo. */
   coverUrl: string | null;
-}
-
-export interface StripLine {
-  code: string;
-  title: string;
-  cents: number;
-  status: string;
-}
-
-/** Each job's lines, in scope order. */
-async function stripsFor(jobIds: string[]): Promise<Map<string, StripLine[]>> {
-  const out = new Map<string, StripLine[]>();
-  if (!jobIds.length) return out;
-  const { rows } = await engine().db.query<{ job_id: string; code: string; title: string; price_cents: number; status: string }>(
-    "select job_id, code, title, price_cents, status from lines where job_id = any($1::uuid[]) order by job_id, position",
-    [jobIds],
-  );
-  for (const r of rows) {
-    const list = out.get(r.job_id) ?? [];
-    list.push({ code: r.code, title: r.title, cents: r.price_cents, status: r.status });
-    out.set(r.job_id, list);
-  }
-  return out;
 }
 
 /** A photo per job for its card: the newest proof, else the first before-photo. */
@@ -129,7 +104,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
     [userId, limit],
   );
   const ids = rows.map((r) => r.id);
-  const [strips, covers] = await Promise.all([stripsFor(ids), coversFor(ids)]);
+  const covers = await coversFor(ids);
   return rows
     .map((r) => ({
       id: r.id,
@@ -147,7 +122,6 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
       disputed: r.disputed,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
-      strip: strips.get(r.id) ?? [],
       coverUrl: covers.get(r.id) ?? null,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));

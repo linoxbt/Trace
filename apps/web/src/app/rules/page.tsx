@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { listRules } from "@trace/engine";
-import { AppShell, PageHeader } from "@/components/app/shell";
+import { AppShell } from "@/components/app/shell";
+import { PageTitle } from "@/components/app/ui";
 import { RulesScreen } from "@/components/rules";
 import { currentUser } from "@/server/auth";
 import { engine } from "@/server/engine";
@@ -14,12 +15,8 @@ export default async function Rules() {
   const data = await listRules(engine(), user.id);
   return (
     <AppShell user={user}>
-      <PageHeader
-        eyebrow="Payment rules"
-        title="Your rules, in your words."
-        body="Every release is checked against live PayPal state and these rules before any money moves. Add your own checks on top of the built-in ones; they can only make things stricter."
-      />
-      <div className="rise mt-8" style={{ "--delay": "80ms" } as React.CSSProperties}>
+      <PageTitle title="Payment rules" sub="Checks the money guard runs before any money moves. Yours can only make things stricter." />
+      <div className="mt-6">
         <RulesScreen initial={data} />
       </div>
     </AppShell>

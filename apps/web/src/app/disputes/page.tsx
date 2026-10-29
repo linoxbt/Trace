@@ -1,14 +1,13 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AppShell, Empty, PageHeader } from "@/components/app/shell";
+import { AppShell } from "@/components/app/shell";
 import { IconDispute } from "@/components/app/icons";
+import { Card, Empty, IconCircle, PageTitle, Row } from "@/components/app/ui";
 import { when } from "@/lib/format";
 import { currentUser } from "@/server/auth";
-import { DISPUTE_REASON as REASON, disputesOf } from "@/server/app-data";
+import { DISPUTE_REASON, disputesOf } from "@/server/app-data";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Disputes" };
-
 
 export default async function Disputes() {
   const user = await currentUser();
@@ -16,39 +15,31 @@ export default async function Disputes() {
   const disputes = await disputesOf(user.id);
   return (
     <AppShell user={user}>
-      <PageHeader
-        eyebrow="Disputes"
-        title="If anyone disputes, the proof is ready."
-        body="PayPal disputes on your jobs. Every line's photos, the checks, the verdicts and the homeowner's own approvals are already on record for the evidence pack."
-      />
-      <section className="rise surface mt-8 overflow-hidden rounded-[24px]" style={{ "--delay": "80ms" } as React.CSSProperties}>
+      <PageTitle title="Disputes" sub="PayPal disputes on your jobs. The photos, checks and approvals are already on record as evidence." />
+      <Card className="mt-6 overflow-hidden">
         {disputes.length === 0 ? (
-          <Empty icon={<IconDispute />} title="No disputes" body="If a homeowner opens a PayPal dispute on a release, it appears here with the evidence Trace has already collected." />
+          <Empty icon={<IconDispute />} title="No disputes" body="If a homeowner opens a PayPal dispute, it appears here with the evidence Trace has already collected." />
         ) : (
-          <ul className="divide-y divide-line">
+          <div className="divide-y divide-[#f0f0f4] py-1">
             {disputes.map((d) => (
-              <li key={d.id}>
-                <Link href={`/jobs/${d.jobId}`} className="flex items-center gap-4 px-5 py-4 hover:bg-paper sm:px-6">
-                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-bad-soft text-bad">
-                    <IconDispute />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-[15px] font-semibold">
-                      {REASON[d.reason ?? ""] ?? d.reason ?? "Dispute"} · {d.address}
-                    </div>
-                    <div className="num truncate text-[12px] text-faint">
-                      {d.paypalId} · opened {when(d.createdAt)}
-                    </div>
-                  </div>
-                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11.5px] font-medium ${d.filedAt ? "bg-ok-soft text-ok" : "bg-warn-soft text-warn"}`}>
-                    {d.filedAt ? "Evidence filed" : (d.status ?? "Open").replace(/_/g, " ").toLowerCase()}
-                  </span>
-                </Link>
-              </li>
+              <Row
+                key={d.id}
+                href={`/jobs/${d.jobId}`}
+                icon={
+                  <IconCircle tone="red" size={42}>
+                    <IconDispute className="h-5 w-5" />
+                  </IconCircle>
+                }
+                title={DISPUTE_REASON[d.reason ?? ""] ?? d.reason ?? "Dispute"}
+                sub={`${d.address} · ${d.paypalId} · opened ${when(d.createdAt)}`}
+                value={d.filedAt ? "Evidence filed" : "Open"}
+                valueTone={d.filedAt ? "green" : "red"}
+                meta={(d.status ?? "").replace(/_/g, " ").toLowerCase() || undefined}
+              />
             ))}
-          </ul>
+          </div>
         )}
-      </section>
+      </Card>
     </AppShell>
   );
 }

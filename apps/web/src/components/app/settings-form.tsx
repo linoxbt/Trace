@@ -48,7 +48,7 @@ export function ProfileForm({ name, paypalEmail, email }: { name: string; paypal
       </div>
       {error && <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">{error}</p>}
       <div className="flex items-center gap-3">
-        <button disabled={!dirty || state === "saving"} className="press btn-primary h-11 rounded-full px-6 text-[14px] font-medium disabled:opacity-50">
+        <button disabled={!dirty || state === "saving"} className="press h-10 rounded-full bg-violet px-5 text-[14px] font-semibold text-white disabled:opacity-40">
           {state === "saving" ? "Saving…" : "Save changes"}
         </button>
         {state === "saved" && !dirty && <span className="text-[13px] font-medium text-ok">Saved</span>}
