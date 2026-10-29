@@ -30,7 +30,9 @@ interface PayPalSdk {
 }
 declare global {
   interface Window {
-    paypal?: { createInstance(o: { clientId: string; components: string[]; pageType?: string }): Promise<PayPalSdk> };
+    paypal?: {
+      createInstance(o: { clientId: string; components: string[]; pageType?: string; merchantId?: string; partnerAttributionId?: string }): Promise<PayPalSdk>;
+    };
   }
 }
 
@@ -53,7 +55,17 @@ function loadSdk(sandbox: boolean): Promise<void> {
 
 type State = "loading" | "ready" | "ineligible" | "working" | "held" | "error";
 
-export function HoldButton(props: { jobId: string; totalCents: number; currency: string; clientId: string; sandbox: boolean; onHeld: () => void }) {
+export function HoldButton(props: {
+  jobId: string;
+  totalCents: number;
+  currency: string;
+  clientId: string;
+  /** The tradesperson's PayPal merchant ID: the account this payment goes to. */
+  merchantId: string | null;
+  bnCode: string;
+  sandbox: boolean;
+  onHeld: () => void;
+}) {
   const [state, setState] = useState<State>("loading");
   const [message, setMessage] = useState("");
   const session = useRef<PayPalSession | null>(null);
@@ -64,7 +76,13 @@ export function HoldButton(props: { jobId: string; totalCents: number; currency:
       try {
         if (!props.clientId) throw new Error("PayPal isn't configured on this server.");
         await loadSdk(props.sandbox);
-        const sdk = await window.paypal!.createInstance({ clientId: props.clientId, components: ["paypal-payments"], pageType: "checkout" });
+        const sdk = await window.paypal!.createInstance({
+          clientId: props.clientId,
+          components: ["paypal-payments"],
+          pageType: "checkout",
+          ...(props.merchantId ? { merchantId: props.merchantId } : {}),
+          ...(props.bnCode ? { partnerAttributionId: props.bnCode } : {}),
+        });
         const methods = await sdk.findEligibleMethods({ currencyCode: props.currency });
         if (!live) return;
         if (!methods.isEligible("paypal")) return setState("ineligible");
@@ -98,7 +116,7 @@ export function HoldButton(props: { jobId: string; totalCents: number; currency:
     return () => {
       live = false;
     };
-  }, [props.clientId, props.sandbox, props.currency, props.jobId]);
+  }, [props.clientId, props.sandbox, props.currency, props.jobId, props.merchantId, props.bnCode]);
 
   async function start() {
     if (!session.current) return;
@@ -121,7 +139,7 @@ export function HoldButton(props: { jobId: string; totalCents: number; currency:
           Approve and hold <span className="num">{money(props.totalCents, props.currency)}</span>
         </div>
         <ul className="mt-3 space-y-1.5 text-[14px] text-ink-2">
-          {["PayPal holds it: nothing is charged now", "Each line is paid only after its photos pass", "Anything unfinished is released back to you"].map((t) => (
+          {["PayPal holds it: nothing is charged now", "Each line is paid only after its photos pass", "Payments go straight to the tradesperson's PayPal", "Anything unfinished is released back to you"].map((t) => (
             <li key={t} className="flex gap-2">
               <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-violet" />
               {t}

@@ -12,6 +12,11 @@ const Env = z.object({
   PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
   PAYPAL_WEBHOOK_ID: z.string().min(1).optional(),
   PAYPAL_API_BASE: z.url().default("https://api-m.sandbox.paypal.com"),
+  // Trace as a PayPal partner: tradespeople link their own accounts and are
+  // paid directly. Without the partner merchant ID nobody can link, so no
+  // real job can be sent.
+  PAYPAL_PARTNER_MERCHANT_ID: z.string().min(1).optional(),
+  PAYPAL_BN_CODE: z.string().min(1).optional(),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
   VERIFIER_MODEL: z.string().min(1).optional(),
   DEMO_MODE: z.enum(["true", "false"]).default("false"),

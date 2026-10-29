@@ -8,6 +8,7 @@ import type { Engine } from "./deps.ts";
 import { EngineError } from "./errors.ts";
 import { forgetDisputes } from "./guard/preflight.ts";
 import { settleCapture } from "./money.ts";
+import { payeeWebhook } from "./payee.ts";
 
 export class WebhookRejected extends EngineError {
   constructor(reason: string) {
@@ -135,6 +136,12 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
       await store.appendEvent(e.db, { jobId: job.id, actor: "paypal", type: "ORDER_APPROVED", data: { order_id: r.id } });
       return { result: "processed", type, jobId: job.id };
     }
+
+    case "MERCHANT.ONBOARDING.COMPLETED":
+    case "MERCHANT.PARTNER-CONSENT.REVOKED":
+    case "CUSTOMER.MERCHANT-INTEGRATION.SELLER-EMAIL-CONFIRMED":
+    case "CUSTOMER.MERCHANT-INTEGRATION.CAPABILITY-UPDATED":
+      return { result: (await payeeWebhook(e, type, r)) ? "processed" : "ignored", type };
 
     default:
       return { result: "ignored", type };

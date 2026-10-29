@@ -15,6 +15,7 @@ import type { ScopeFlag } from "./inject/text-scan.ts";
 import { guardedVoid } from "./guard/execute.ts";
 import { DEMO_REVIEW_WINDOW_S, HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
+import { payeeForJob } from "./payee.ts";
 
 export const MAX_LINES = 8;
 export const MAX_JOB_CENTS = 10_000_00;
@@ -89,6 +90,10 @@ export async function sendScope(e: Engine, jobId: string, tradesId: string): Pro
     if (job.trades_id !== tradesId) throw forbidden();
     const lines = await store.getLines(q, jobId);
     if (lines.length === 0) throw conflict("empty_scope", "add at least one line first");
+    // A scope the homeowner can't pay is never sent: the money needs somewhere to land.
+    await payeeForJob(q, job).catch(() => {
+      throw conflict("payee_not_ready", "Connect your PayPal in Settings before sending. That's where the money for this job goes.");
+    });
     const hash = scopeHash({
       jobId,
       currency: job.currency,
@@ -113,13 +118,13 @@ export async function sendScope(e: Engine, jobId: string, tradesId: string): Pro
 
 /** The homeowner's PayPal button asks for an order. Amounts come from the stored lines only. */
 export async function createOrder(e: Engine, jobId: string, homeownerId: string): Promise<{ orderId: string }> {
-  const { job, lines } = await e.db.tx(async (q) => {
+  const { job, lines, payee } = await e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId);
     if (job.homeowner_id !== homeownerId) throw forbidden();
     if (job.status !== "AWAITING_APPROVAL" || !job.scope_hash) throw conflict("not_awaiting_approval", "this job isn't waiting for approval");
-    return { job, lines: await store.getLines(q, jobId) };
+    return { job, lines: await store.getLines(q, jobId), payee: await payeeForJob(q, job) };
   });
-  // Same job and scope -> same request ID -> PayPal hands back the same order.
+  // Same job, scope and payee -> same request ID -> PayPal hands back the same order.
   const order = await e.paypal.createOrder(
     {
       currency: job.currency,
@@ -128,12 +133,13 @@ export async function createOrder(e: Engine, jobId: string, homeownerId: string)
       description: `Trace job: ${job.address}`,
       items: lines.map((l) => ({ code: l.code, title: l.title, priceCents: l.price_cents })),
       brandName: e.settings.brandName,
+      payeeMerchantId: payee,
     },
-    `order-${job.id}-${job.scope_hash!.slice(0, 16)}`,
+    `order-${job.id}-${job.scope_hash!.slice(0, 16)}${payee ? `-${payee}` : ""}`,
   );
   await e.db.tx(async (q) => {
-    await store.updateJob(q, jobId, { paypal_order_id: order.id });
-    await store.appendEvent(q, { jobId, actor: "homeowner", type: "ORDER_CREATED", data: { order_id: order.id } });
+    await store.updateJob(q, jobId, { paypal_order_id: order.id, payee_merchant_id: payee });
+    await store.appendEvent(q, { jobId, actor: "homeowner", type: "ORDER_CREATED", data: { order_id: order.id, payee: payee ? "tradesperson" : "platform" } });
   });
   return { orderId: order.id };
 }
@@ -155,11 +161,14 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
   const lines = await store.getLines(e.db, jobId);
   const expected = sum(lines.map((l) => l.price_cents));
   const got = auth.amount ? fromPayPalValue(auth.amount.value) : -1;
-  if (got !== expected || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== job.scope_hash)) {
+  const payee = order.purchase_units?.[0]?.payee?.merchant_id ?? null;
+  const wrongPayee = !!job.payee_merchant_id && payee !== null && payee !== job.payee_merchant_id;
+  if (wrongPayee || got !== expected || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== job.scope_hash)) {
     // The hold doesn't match the frozen scope. Release it rather than keep a wrong one.
     await guardedVoid(e, jobId, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
       e.log.error("void after mismatch failed", { err: String(err) }),
     );
+    if (wrongPayee) throw new EngineError("payee_mismatch", "PayPal's order pays a different account than this job's tradesperson", 502);
     throw new EngineError("amount_mismatch", `PayPal authorized ${got} ${auth.amount?.currency_code}, expected ${expected} ${job.currency}`, 502);
   }
   if (auth.status !== "CREATED") throw new EngineError("authorization_not_created", `PayPal returned an authorization in status ${auth.status}`, 502);

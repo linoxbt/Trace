@@ -8,6 +8,8 @@ import { BigMoney, Card, CardHead, Empty, IconCircle, Progress, QuickAction, See
 import { money } from "@/lib/format";
 import { currentUser } from "@/server/auth";
 import { activityOf, guardSummaryOf, inboxOf, jobsOf, profileOf } from "@/server/app-data";
+import { payeeStatus } from "@trace/engine";
+import { engine } from "@/server/engine";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Home" };
@@ -30,7 +32,14 @@ function greeting(): string {
 export default async function Home() {
   const user = await currentUser();
   if (!user) redirect("/sign-in?next=/dashboard");
-  const [profile, jobs, inbox, activity, guard] = await Promise.all([profileOf(user.id), jobsOf(user.id), inboxOf(user.id, user.email), activityOf(user.id, 8), guardSummaryOf(user.id)]);
+  const [profile, jobs, inbox, activity, guard, payee] = await Promise.all([
+    profileOf(user.id),
+    jobsOf(user.id),
+    inboxOf(user.id, user.email),
+    activityOf(user.id, 8),
+    guardSummaryOf(user.id),
+    payeeStatus(engine(), user.id),
+  ]);
 
   const live = jobs.filter((j) => !["COMPLETED", "CLOSED_VOIDED"].includes(j.status));
   const held = live.filter((j) => j.status !== "DRAFT").reduce((n, j) => n + Math.max(0, j.heldCents - j.releasedCents), 0);
@@ -38,6 +47,8 @@ export default async function Home() {
   const paid = jobs.filter((j) => j.side === "homeowner").reduce((n, j) => n + j.releasedCents, 0);
   const holding = live.filter((j) => j.heldCents > j.releasedCents).length;
   const checked = guard.allowed + guard.asked + guard.blocked;
+  // Tradespeople (and new accounts, who may be one) are asked to link the PayPal account they're paid into.
+  const askToConnect = !user.anonymous && payee.state !== "ready" && (jobs.length === 0 || jobs.some((j) => j.side === "tradesperson" && !j.demo));
 
   return (
     <AppShell user={user}>
@@ -47,6 +58,21 @@ export default async function Home() {
 
       <div className="mt-4 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_350px]">
         <div className="flex min-w-0 flex-col gap-5">
+          {askToConnect && (
+            <Card className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:p-6">
+              <IconCircle tone={payee.state === "pending" ? "amber" : "violet"} size={44}>
+                <IconWallet className="h-5 w-5" />
+              </IconCircle>
+              <div className="min-w-0 flex-1">
+                <div className="text-[15.5px] font-semibold">{payee.state === "pending" ? "Finish setting up PayPal" : "Get paid straight into your PayPal"}</div>
+                <p className="mt-0.5 text-[13.5px] leading-relaxed text-muted">Link the PayPal business account you're paid into. You need it before you can send a scope.</p>
+              </div>
+              <Link href="/settings#get-paid" className="press inline-flex h-10 shrink-0 items-center justify-center rounded-full bg-violet px-5 text-[14px] font-semibold text-white hover:bg-violet-deep">
+                {payee.state === "pending" ? "Finish set-up" : "Connect PayPal"}
+              </Link>
+            </Card>
+          )}
+
           {/* Balance */}
           <Card className="p-6 sm:p-8">
             <div className="text-[14px] font-medium text-muted">Held now</div>

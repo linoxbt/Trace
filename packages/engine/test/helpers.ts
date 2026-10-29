@@ -12,7 +12,7 @@ import {
   submitProof,
   type ProofResult,
 } from "../src/index.ts";
-import { makeUser, testPhoto, type TestEngine } from "../src/testing.ts";
+import { connectPayee, makeUser, testPhoto, type TestEngine } from "../src/testing.ts";
 
 export const ANCHOR = { lat: 6.4541, lng: 3.3947, accuracyM: 8 };
 export const DEVICE = "device-1";
@@ -42,6 +42,7 @@ export interface Held {
 
 export async function heldJob(e: TestEngine, opts: { lines?: typeof BATHROOM; demo?: boolean } = {}): Promise<Held> {
   const trades = await makeUser(e.db, "trades");
+  if (!opts.demo) await connectPayee(e, trades);
   const home = opts.demo ? trades : await makeUser(e.db, "home");
   const email = (await e.db.query<{ email: string }>("select email from auth.users where id = $1", [home])).rows[0]!.email;
   const job = await createJob(e, { tradesId: trades, homeownerEmail: email, address: "12 Admiralty Way, Lekki", deviceId: DEVICE, demo: !!opts.demo });

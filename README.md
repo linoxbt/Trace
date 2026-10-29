@@ -29,6 +29,7 @@ The mark is two bars on a violet squircle: a solid one for money released, an ou
 
 ## How the money moves
 
+0. **The tradesperson is paid directly.** Trace is a PayPal partner: in Settings, a tradesperson taps **Connect PayPal** and signs up or logs in through PayPal's partner sign-up (Partner Referrals, features `PAYMENT`, `REFUND`, `READ_SELLER_DISPUTE`, `UPDATE_SELLER_DISPUTE`). When they come back, Trace asks PayPal which account was linked under their tracking ID (the return URL's query string is ignored) and whether it can take payments, has a confirmed email and granted the permissions. A scope can only be sent once all three hold. Every order then names that account as `payee.merchant_id`, so captured money settles in the tradesperson's own PayPal and never in Trace's; they withdraw to their bank from PayPal as usual. Refunds and dispute calls act for that account with a `PayPal-Auth-Assertion`. The payee is frozen on the job when the order is created, and Trace refuses an authorization whose order pays anyone else. Sandbox demo jobs, where one person plays both sides, pay the partner account.
 1. The homeowner approves a PayPal order with `intent: AUTHORIZE`. Trace authorizes it on the server and checks the authorized amount against the frozen scope.
 2. For each line, the tradesperson opens the in-app camera, which issues a one-time token valid for 120 seconds. The after-photo goes through the integrity checks (token, 150 m geofence, device, dHash against the before-photo and every stored photo). Then the vision verifier returns observations, and code turns them into Verified, Needs review or Failed.
 3. The homeowner approves or flags each proved line. Silence approves a Verified line once its review window lapses; a Needs review line never auto-releases.
@@ -110,6 +111,8 @@ pnpm worker                          # the background worker, health at :8080/he
 - Reauthorizing a partially captured authorization.
 - Captures refused after void and over the hold.
 
+Every order pays `PAYPAL_SANDBOX_SELLER_MERCHANT_ID`, a sandbox business account already linked to the partner app (Connect PayPal in Settings does that), and the script checks each order names it as payee.
+
 With `PAYPAL_SANDBOX_BUYER_EMAIL` and `PAYPAL_SANDBOX_BUYER_PASSWORD` set, headless Chromium approves each order as the sandbox buyer (run `npx playwright install chromium` once). Without them, it prints the approval link and waits. Results are written to `scripts/evidence/`. Photos are synthetic and the verifier is scripted, so this tests the money, not the vision model.
 
 ## Tests
@@ -165,12 +168,13 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 | `DATABASE_URL` | Builds, Functions |
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | Builds, Functions |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `ANTHROPIC_API_KEY` | Functions (mark as secret) |
-| `APP_URL`, `PAYPAL_API_BASE`, `DEMO_MODE` | Builds, Functions |
+| `APP_URL`, `PAYPAL_API_BASE`, `DEMO_MODE`, `PAYPAL_PARTNER_MERCHANT_ID`, `PAYPAL_BN_CODE` | Builds, Functions |
 
 `render.yaml` and `apps/worker` remain for hosting on Render instead.
 
 ## Known limits
 
+- Paying tradespeople directly needs PayPal to approve Trace as a partner before it works with live money. The sandbox needs no approval. Which multiparty calls need a `PayPal-Auth-Assertion` follows PayPal's guides (refunds and disputes do; authorize, capture, void and reauthorize on the partner's own order don't) and still needs confirming against the sandbox.
 - One authorization per job. Change orders (their own order and authorization) aren't built yet.
 - PayPal seller protection targets goods, so a services dispute isn't guaranteed to go the tradesperson's way. The evidence pack is the best possible defence, not a guaranteed win.
 - The multipart field name for dispute evidence (`file1`) still needs confirming against the sandbox.

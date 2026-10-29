@@ -4,13 +4,12 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
 
-export function ProfileForm({ name, paypalEmail, email }: { name: string; paypalEmail: string | null; email: string | null }) {
+export function ProfileForm({ name, email }: { name: string; email: string | null }) {
   const router = useRouter();
   const [n, setN] = useState(name);
-  const [pp, setPp] = useState(paypalEmail ?? "");
   const [state, setState] = useState<"idle" | "saving" | "saved">("idle");
   const [error, setError] = useState<string | null>(null);
-  const dirty = n.trim() !== name || pp.trim() !== (paypalEmail ?? "");
+  const dirty = n.trim() !== name;
 
   return (
     <form
@@ -20,7 +19,7 @@ export function ProfileForm({ name, paypalEmail, email }: { name: string; paypal
         setState("saving");
         setError(null);
         try {
-          await api("/api/me", { method: "PATCH", json: { displayName: n.trim(), paypalEmail: pp.trim() || null } });
+          await api("/api/me", { method: "PATCH", json: { displayName: n.trim() } });
           setState("saved");
           router.refresh();
         } catch (err) {
@@ -39,11 +38,6 @@ export function ProfileForm({ name, paypalEmail, email }: { name: string; paypal
           <span className="text-[13px] font-medium text-ink-2">Sign-in email</span>
           <input value={email ?? "Guest"} disabled className="field opacity-70" />
           <span className="text-[12px] text-faint">Scopes sent to this email appear in your jobs.</span>
-        </label>
-        <label className="grid gap-2 md:col-span-2">
-          <span className="text-[13px] font-medium text-ink-2">PayPal email you&apos;re paid at</span>
-          <input type="email" value={pp} onChange={(e) => { setPp(e.target.value); setState("idle"); }} placeholder="you@business.com" className="field" />
-          <span className="text-[12px] text-faint">For tradespeople. Releases settle into your own PayPal business account; Trace never holds the money.</span>
         </label>
       </div>
       {error && <p className="rounded-xl bg-bad-soft px-3 py-2 text-[13px] text-bad">{error}</p>}

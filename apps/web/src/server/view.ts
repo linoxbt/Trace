@@ -1,7 +1,7 @@
 import "server-only";
 import * as store from "@trace/db";
 import { BUILTIN_RULES, sum } from "@trace/core";
-import { rulesForJob } from "@trace/engine";
+import { payeeStatus, rulesForJob } from "@trace/engine";
 import { engine } from "./engine";
 import { HttpError } from "./http";
 
@@ -30,6 +30,8 @@ export interface JobView {
     closeDropLineIds: string[];
     closeConfirmedByTrades: boolean;
     closeConfirmedByHomeowner: boolean;
+    /** Where this job's money goes: the tradesperson's own PayPal once it can take payments. */
+    payee: { state: "none" | "pending" | "ready"; merchantId: string | null };
   };
   role: Role;
   money: MoneyView;
@@ -88,7 +90,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
     job.trades_id === userId && job.homeowner_id === userId ? "both" : job.trades_id === userId ? "tradesperson" : job.homeowner_id === userId ? "homeowner" : null;
   if (!role) throw new HttpError(404, "not_found", "job not found");
 
-  const [lines, photos, events, auth, decisions, approvals, inForce] = await Promise.all([
+  const [lines, photos, events, auth, decisions, approvals, inForce, trades] = await Promise.all([
     store.getLines(e.db, jobId),
     store.getPhotos(e.db, jobId),
     store.getEvents(e.db, jobId),
@@ -96,7 +98,12 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
     store.decisionsForJob(e.db, jobId),
     store.approvalsForJob(e.db, jobId),
     rulesForJob(e, job),
+    payeeStatus(e, job.trades_id),
   ]);
+  // Once the order exists its payee is frozen; before that, the tradesperson's linked account.
+  const payee = job.payee_merchant_id
+    ? { state: "ready" as const, merchantId: job.payee_merchant_id }
+    : { state: trades.state, merchantId: trades.state === "ready" ? trades.merchantId : null };
   const verdicts = await e.db.query<{ line_id: string; verdict: string; reasons: string[]; observation: { homeowner_reason?: string; region?: unknown } }>(
     `select distinct on (v.line_id) v.line_id, v.verdict, v.reasons, v.observation
      from verdicts v join lines l on l.id = v.line_id where l.job_id = $1 and not v.masked
@@ -134,6 +141,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       closeDropLineIds: job.close_drop_line_ids ?? [],
       closeConfirmedByTrades: !!job.close_trades_at,
       closeConfirmedByHomeowner: !!job.close_homeowner_at,
+      payee,
     },
     role,
     money: {

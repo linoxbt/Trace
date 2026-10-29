@@ -17,7 +17,7 @@ await migrate(db);
 
 const engine: Engine = {
   db,
-  paypal: new PayPalClient({ clientId: cfg.paypalClientId, clientSecret: cfg.paypalClientSecret, baseUrl: cfg.paypalApiBase }),
+  paypal: new PayPalClient({ clientId: cfg.paypalClientId, clientSecret: cfg.paypalClientSecret, baseUrl: cfg.paypalApiBase, partner: cfg.paypalPartner }),
   // The worker never stores or inspects photos.
   storage: {
     put: () => Promise.reject(new Error("worker has no photo storage")),

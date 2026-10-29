@@ -14,7 +14,9 @@ import type {
   Dispute,
   EvidenceInput,
   Order,
+  PartnerReferralInput,
   Refund,
+  SellerStatus,
   WebhookHeaders,
 } from "./types.ts";
 
@@ -45,6 +47,10 @@ function unprocessable(issue: string, message = issue): PayPalError {
   return new PayPalError(422, "UNPROCESSABLE_ENTITY", message, [issue], "fake-debug", { name: "UNPROCESSABLE_ENTITY", details: [{ issue }] });
 }
 
+function denied(message: string): PayPalError {
+  return new PayPalError(403, "PERMISSION_DENIED", message, ["PERMISSION_DENIED"], "fake-debug", {});
+}
+
 function notFound(what: string): PayPalError {
   return new PayPalError(404, "RESOURCE_NOT_FOUND", `${what} not found`, ["INVALID_RESOURCE_ID"], "fake-debug", {});
 }
@@ -55,6 +61,9 @@ export class FakePayPal implements PayPalApi {
   readonly captures = new Map<string, Capture & { authId: string; cents: number }>();
   readonly disputes = new Map<string, Dispute & { evidence: EvidenceInput[] }>();
   readonly calls: { op: Op; args: unknown[] }[] = [];
+  /** Sellers who signed up through a partner referral, by tracking ID. */
+  readonly sellers = new Map<string, Omit<SellerStatus, "trackingId">>();
+  readonly referrals = new Set<string>();
   /** Whether a partially captured authorization may be reauthorized (spec section 17: unconfirmed). */
   allowReauthorizeAfterPartialCapture = true;
   webhookVerdict = true;
@@ -124,6 +133,27 @@ export class FakePayPal implements PayPalApi {
     return d;
   }
 
+  /** Test helper: the seller finishes PayPal sign-up for a referral. Returns their merchant ID. */
+  onboard(trackingId: string, opts: Partial<Omit<SellerStatus, "trackingId" | "merchantId">> = {}): string {
+    const prior = this.sellers.get(trackingId);
+    const merchantId = prior?.merchantId ?? this.id("MERCH");
+    this.sellers.set(trackingId, { merchantId, paymentsReceivable: true, emailConfirmed: true, permissionsGranted: true, ...opts });
+    return merchantId;
+  }
+
+  /** Whose PayPal account a capture paid into: the order's payee, or Trace's own (null). */
+  payeeOfCapture(captureId: string): string | null {
+    const c = this.captures.get(captureId);
+    const a = c ? this.auths.get(c.authId) : undefined;
+    return (a && this.orders.get(a.orderId)?.input.payeeMerchantId) || null;
+  }
+
+  /** A payee's resources can only be touched while acting for that payee. */
+  private actFor(captureId: string, seller: string | null | undefined): void {
+    const payee = this.payeeOfCapture(captureId);
+    if (payee && seller !== payee) throw denied("the capture belongs to a seller this call doesn't act for");
+  }
+
   /** Test helper: expire an authorization, as PayPal's negative testing does. */
   expire(authId: string): void {
     const a = this.auths.get(authId);
@@ -156,6 +186,7 @@ export class FakePayPal implements PayPalApi {
           invoice_id: o.input.invoiceId,
           custom_id: o.input.customId,
           amount: { currency_code: o.input.currency, value: toPayPalValue(total) },
+          ...(o.input.payeeMerchantId ? { payee: { merchant_id: o.input.payeeMerchantId } } : {}),
           ...(auth ? { payments: { authorizations: [this.authView(auth)] } } : {}),
         },
       ],
@@ -292,11 +323,12 @@ export class FakePayPal implements PayPalApi {
     return view;
   }
 
-  async refundCapture(id: string, amount: { cents: number; currency: string } | null, requestId: string): Promise<Refund> {
-    this.enter("refundCapture", [id, amount, requestId]);
+  async refundCapture(id: string, amount: { cents: number; currency: string } | null, requestId: string, seller?: string | null): Promise<Refund> {
+    this.enter("refundCapture", [id, amount, requestId, seller]);
     return this.once("refundCapture", requestId, () => {
       const c = this.captures.get(id);
       if (!c) throw notFound(`capture ${id}`);
+      this.actFor(id, seller);
       const cents = amount?.cents ?? c.cents;
       if (cents > c.cents) throw unprocessable("REFUND_AMOUNT_EXCEEDED");
       c.status = cents === c.cents ? "REFUNDED" : "PARTIALLY_REFUNDED";
@@ -304,35 +336,58 @@ export class FakePayPal implements PayPalApi {
     });
   }
 
-  async listDisputesForTransaction(transactionId: string): Promise<Dispute[]> {
-    this.enter("listDisputesForTransaction", [transactionId]);
+  async listDisputesForTransaction(transactionId: string, seller?: string | null): Promise<Dispute[]> {
+    this.enter("listDisputesForTransaction", [transactionId, seller]);
+    if (this.captures.has(transactionId)) this.actFor(transactionId, seller);
     return [...this.disputes.values()]
       .filter((d) => d.disputed_transactions?.some((t) => t.seller_transaction_id === transactionId))
       .map(({ evidence: _e, ...d }) => d);
   }
 
-  async getDispute(id: string): Promise<Dispute> {
-    this.enter("getDispute", [id]);
+  private disputeFor(id: string, seller: string | null | undefined) {
     const d = this.disputes.get(id);
     if (!d) throw notFound(`dispute ${id}`);
+    const cap = d.disputed_transactions?.[0]?.seller_transaction_id;
+    if (cap) this.actFor(cap, seller);
+    return d;
+  }
+
+  async getDispute(id: string, seller?: string | null): Promise<Dispute> {
+    this.enter("getDispute", [id, seller]);
+    const d = this.disputeFor(id, seller);
     const { evidence: _e, ...view } = d;
     return view;
   }
 
-  async provideEvidence(id: string, evidence: EvidenceInput): Promise<void> {
-    this.enter("provideEvidence", [id, evidence]);
-    const d = this.disputes.get(id);
-    if (!d) throw notFound(`dispute ${id}`);
+  async provideEvidence(id: string, evidence: EvidenceInput, seller?: string | null): Promise<void> {
+    this.enter("provideEvidence", [id, evidence, seller]);
+    const d = this.disputeFor(id, seller);
     if (d.status !== "WAITING_FOR_SELLER_RESPONSE") throw unprocessable("NOT_ALLOWED_IN_CURRENT_STATE");
     d.evidence.push(evidence);
     d.status = "UNDER_REVIEW";
   }
 
-  async requireEvidence(id: string): Promise<void> {
-    this.enter("requireEvidence", [id]);
-    const d = this.disputes.get(id);
-    if (!d) throw notFound(`dispute ${id}`);
+  async requireEvidence(id: string, seller?: string | null): Promise<void> {
+    this.enter("requireEvidence", [id, seller]);
+    const d = this.disputeFor(id, seller);
     d.status = "WAITING_FOR_SELLER_RESPONSE";
+  }
+
+  async createPartnerReferral(input: PartnerReferralInput): Promise<{ actionUrl: string }> {
+    this.enter("createPartnerReferral", [input]);
+    this.referrals.add(input.trackingId);
+    return { actionUrl: `https://www.sandbox.paypal.com/bizsignup/fake?tracking=${encodeURIComponent(input.trackingId)}` };
+  }
+
+  async findSeller(trackingId: string): Promise<string | null> {
+    this.enter("findSeller", [trackingId]);
+    return this.sellers.get(trackingId)?.merchantId ?? null;
+  }
+
+  async sellerStatus(merchantId: string): Promise<SellerStatus> {
+    this.enter("sellerStatus", [merchantId]);
+    for (const [trackingId, s] of this.sellers) if (s.merchantId === merchantId) return { trackingId, ...s };
+    throw notFound(`merchant ${merchantId}`);
   }
 
   async verifyWebhook(headers: WebhookHeaders, rawEvent: string, webhookId: string): Promise<boolean> {

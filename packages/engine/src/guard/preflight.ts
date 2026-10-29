@@ -45,7 +45,7 @@ export function payloadKey(a: MoneyAction): string {
   return JSON.stringify([a.type, a.job_id, [...a.line_ids].sort(), a.amount_cents, a.capture_id ?? null, a.dispute_id ?? null, a.paypal_authorization_id ?? null, !!a.final]);
 }
 
-async function disputeOpen(e: Engine, jobId: string, authId: string | null): Promise<boolean> {
+async function disputeOpen(e: Engine, jobId: string, authId: string | null, seller: string | null): Promise<boolean> {
   const hit = disputeCache.get(jobId);
   if (hit && Date.now() - hit.at < DISPUTE_TTL_MS) return hit.open;
   const db = await e.db.query("select 1 from disputes where job_id = $1 and coalesce(status, '') <> 'RESOLVED' limit 1", [jobId]);
@@ -56,7 +56,7 @@ async function disputeOpen(e: Engine, jobId: string, authId: string | null): Pro
       [authId],
     );
     try {
-      const lists = await Promise.all(caps.rows.map((c) => e.paypal.listDisputesForTransaction(c.paypal_capture_id)));
+      const lists = await Promise.all(caps.rows.map((c) => e.paypal.listDisputesForTransaction(c.paypal_capture_id, seller)));
       open = lists.flat().some((d) => (d.status ?? "") !== "RESOLVED");
     } catch (err) {
       throw new FactsUnavailable(`disputes: ${err instanceof Error ? err.message : String(err)}`);
@@ -80,7 +80,7 @@ export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
           throw new FactsUnavailable(`authorization: ${err instanceof Error ? err.message : String(err)}`);
         })
       : Promise.resolve(null),
-    disputeOpen(e, job.id, auth?.id ?? null),
+    disputeOpen(e, job.id, auth?.id ?? null, job.payee_merchant_id),
   ]);
 
   const authAmount = auth?.amount_cents ?? (live?.amount ? fromPayPalValue(live.amount.value) : 0);

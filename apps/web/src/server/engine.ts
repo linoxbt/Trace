@@ -27,7 +27,12 @@ export function engine(): Engine {
     db,
     paypal:
       e.PAYPAL_CLIENT_ID && e.PAYPAL_CLIENT_SECRET && e.PAYPAL_WEBHOOK_ID
-        ? new PayPalClient({ clientId: e.PAYPAL_CLIENT_ID, clientSecret: e.PAYPAL_CLIENT_SECRET, baseUrl: e.PAYPAL_API_BASE })
+        ? new PayPalClient({
+            clientId: e.PAYPAL_CLIENT_ID,
+            clientSecret: e.PAYPAL_CLIENT_SECRET,
+            baseUrl: e.PAYPAL_API_BASE,
+            ...(e.PAYPAL_PARTNER_MERCHANT_ID ? { partner: { merchantId: e.PAYPAL_PARTNER_MERCHANT_ID, bnCode: e.PAYPAL_BN_CODE } } : {}),
+          })
         : paypalNotYet,
     storage: new PostgresStorage(db),
     verifier: e.ANTHROPIC_API_KEY ? new ClaudeVerifier({ apiKey: e.ANTHROPIC_API_KEY, model: e.VERIFIER_MODEL }) : notYet,

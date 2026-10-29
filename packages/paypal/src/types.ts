@@ -61,6 +61,8 @@ export interface CreateOrderInput {
   description: string;
   items: { code: string; title: string; priceCents: number }[];
   brandName?: string;
+  /** The tradesperson's PayPal merchant ID: captures settle straight into their account. */
+  payeeMerchantId?: string | null;
 }
 
 export interface Order {
@@ -72,6 +74,7 @@ export interface Order {
     invoice_id?: string;
     custom_id?: string;
     amount?: Money;
+    payee?: { merchant_id?: string; email_address?: string };
     payments?: { authorizations?: Authorization[]; captures?: Capture[] };
   }[];
   links?: Link[];
@@ -118,4 +121,22 @@ export interface WebhookEvent {
   resource: Record<string, unknown>;
   create_time?: string;
   summary?: string;
+}
+
+/** A tradesperson's PayPal account as seen through Trace's partner link. */
+export interface SellerStatus {
+  merchantId: string;
+  trackingId: string | null;
+  /** PayPal will accept payments into the account. */
+  paymentsReceivable: boolean;
+  emailConfirmed: boolean;
+  /** The seller granted Trace the third-party permissions it asked for. */
+  permissionsGranted: boolean;
+}
+
+export interface PartnerReferralInput {
+  /** Our ID for the seller; PayPal hands it back so we can find their merchant ID. */
+  trackingId: string;
+  /** Where PayPal sends the seller after sign-up. */
+  returnUrl: string;
 }

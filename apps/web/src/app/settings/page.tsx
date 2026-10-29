@@ -2,19 +2,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app/shell";
 import { IconActivity, IconChevron, IconDispute, IconShield } from "@/components/app/icons";
+import { GetPaid } from "@/components/app/get-paid";
 import { ProfileForm } from "@/components/app/settings-form";
 import { Card, CardHead, IconCircle, PageTitle } from "@/components/app/ui";
 import { when } from "@/lib/format";
 import { currentUser } from "@/server/auth";
+import { payeeStatus } from "@trace/engine";
 import { profileOf } from "@/server/app-data";
+import { engine } from "@/server/engine";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Settings" };
 
-export default async function Settings() {
+export default async function Settings({ searchParams }: { searchParams: Promise<{ paypal?: string }> }) {
   const user = await currentUser();
   if (!user) redirect("/sign-in?next=/settings");
-  const profile = await profileOf(user.id);
+  const [profile, payee, { paypal }] = await Promise.all([profileOf(user.id), payeeStatus(engine(), user.id), searchParams]);
   const links = [
     { href: "/rules", label: "Payment rules", sub: "Checks the money guard runs before paying", icon: IconShield },
     { href: "/activity", label: "Activity", sub: "Everything that happened on your jobs", icon: IconActivity },
@@ -34,9 +37,19 @@ export default async function Settings() {
       <Card className="mt-5 overflow-hidden">
         <CardHead title="Profile" />
         <div className="px-5 pb-6 pt-2 sm:px-6">
-          <ProfileForm name={profile.displayName} paypalEmail={profile.paypalEmail} email={user.email} />
+          <ProfileForm name={profile.displayName} email={user.email} />
         </div>
       </Card>
+      {!user.anonymous && (
+        <Card className="mt-5 overflow-hidden">
+          <div id="get-paid" className="scroll-mt-24" />
+          <CardHead title="Get paid" />
+          <GetPaid
+            initial={{ state: payee.state, merchantId: payee.merchantId, receivable: payee.receivable, emailConfirmed: payee.emailConfirmed, permissions: payee.permissions }}
+            flash={paypal}
+          />
+        </Card>
+      )}
       <Card className="mt-5 overflow-hidden">
         <ul className="divide-y divide-[#f0f0f4]">
           {links.map((l) => (
@@ -57,7 +70,7 @@ export default async function Settings() {
       </Card>
       <Card className="mt-5 p-5 text-[13.5px] leading-relaxed text-muted sm:p-6">
         <div className="mb-2 text-[15px] font-semibold text-ink">Your data</div>
-        Photos and check results are kept for 180 days after a job closes, the window in which disputes can arise. Locations are only recorded with photos, never tracked. This is a PayPal sandbox build: no real money moves.
+        Photos and check results are kept for 180 days after a job closes, the window in which disputes can arise. Locations are only recorded with photos, never tracked. Payments for your jobs settle in your own PayPal account, never in Trace's. This is a PayPal sandbox build: no real money moves.
       </Card>
     </AppShell>
   );

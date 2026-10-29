@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PayPalClient, PayPalError, PayPalNetworkError, isRetryable, webhookHeaders } from "../src/index.ts";
+import { authAssertion, PayPalClient, PayPalError, PayPalNetworkError, PayPalNotPartner, isRetryable, webhookHeaders } from "../src/index.ts";
 
 interface Seen {
   url: string;
@@ -147,5 +147,63 @@ describe("PayPalClient", () => {
     expect(webhookHeaders((n) => all[n] ?? null)).toMatchObject({ transmissionSig: "d" });
     delete all["paypal-transmission-sig"];
     expect(webhookHeaders((n) => all[n] ?? null)).toBeNull();
+  });
+});
+
+describe("PayPalClient as a partner", () => {
+  const partner = { merchantId: "PARTNER1", bnCode: "Trace_SP" };
+
+  it("names the payee on the order and tags every call with the BN code", async () => {
+    const { f, seen } = mockFetch([token, json({ id: "ORDER1", status: "CREATED" }, 201)]);
+    const pp = new PayPalClient({ clientId: "id", clientSecret: "s", fetch: f, partner });
+    await pp.createOrder({ currency: "USD", invoiceId: "job-1", customId: "h", description: "d", items: [{ code: "L1", title: "Tap", priceCents: 100 }], payeeMerchantId: "SELLER1" }, "r1");
+    expect(JSON.parse(seen[1]!.body as string).purchase_units[0].payee).toEqual({ merchant_id: "SELLER1" });
+    expect(seen[1]!.headers["PayPal-Partner-Attribution-Id"]).toBe("Trace_SP");
+    expect(seen[1]!.headers["PayPal-Auth-Assertion"]).toBeUndefined();
+  });
+
+  it("refunds and reads disputes as the seller, with an unsigned assertion", async () => {
+    const { f, seen } = mockFetch([token, json({ id: "REF1", status: "COMPLETED" }, 201), json({ items: [] })]);
+    const pp = new PayPalClient({ clientId: "client-1", clientSecret: "s", fetch: f, partner });
+    await pp.refundCapture("CAP1", null, "r2", "SELLER1");
+    await pp.listDisputesForTransaction("CAP1", "SELLER1");
+    const a = seen[1]!.headers["PayPal-Auth-Assertion"]!;
+    expect(a).toBe(authAssertion("client-1", "SELLER1"));
+    const [head, body, sig] = a.split(".");
+    expect(JSON.parse(Buffer.from(head!, "base64url").toString())).toEqual({ alg: "none" });
+    expect(JSON.parse(Buffer.from(body!, "base64url").toString())).toEqual({ iss: "client-1", payer_id: "SELLER1" });
+    expect(sig).toBe("");
+    expect(seen[2]!.headers["PayPal-Auth-Assertion"]).toBe(a);
+  });
+
+  it("starts seller sign-up and reads the seller's state back", async () => {
+    const { f, seen } = mockFetch([
+      token,
+      json({ links: [{ rel: "self", href: "x" }, { rel: "action_url", href: "https://www.sandbox.paypal.com/bizsignup/abc" }] }, 201),
+      json({ merchant_id: "SELLER1", tracking_id: "user-1" }),
+      json({
+        merchant_id: "SELLER1",
+        tracking_id: "user-1",
+        payments_receivable: true,
+        primary_email_confirmed: false,
+        oauth_integrations: [{ integration_type: "OAUTH_THIRD_PARTY", oauth_third_party: [{ scopes: ["https://uri.paypal.com/services/payments/realtimepayment"] }] }],
+      }),
+      () => new Response("", { status: 404 }),
+    ]);
+    const pp = new PayPalClient({ clientId: "id", clientSecret: "s", fetch: f, partner });
+    expect(await pp.createPartnerReferral({ trackingId: "user-1", returnUrl: "https://trace.test/back" })).toEqual({ actionUrl: "https://www.sandbox.paypal.com/bizsignup/abc" });
+    const body = JSON.parse(seen[1]!.body as string);
+    expect(body.tracking_id).toBe("user-1");
+    expect(body.partner_config_override.return_url).toBe("https://trace.test/back");
+    expect(body.operations[0].api_integration_preference.rest_api_integration.third_party_details.features).toContain("PAYMENT");
+    expect(await pp.findSeller("user-1")).toBe("SELLER1");
+    expect(new URL(seen[2]!.url).pathname).toBe("/v1/customer/partners/PARTNER1/merchant-integrations");
+    expect(await pp.sellerStatus("SELLER1")).toEqual({ merchantId: "SELLER1", trackingId: "user-1", paymentsReceivable: true, emailConfirmed: false, permissionsGranted: true });
+    expect(await pp.findSeller("nobody")).toBeNull();
+  });
+
+  it("says plainly when partner settings are missing", async () => {
+    const pp = new PayPalClient({ clientId: "id", clientSecret: "s", fetch: mockFetch([]).f });
+    await expect(pp.findSeller("x")).rejects.toBeInstanceOf(PayPalNotPartner);
   });
 });

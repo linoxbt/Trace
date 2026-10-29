@@ -18,7 +18,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     const view = await jobView(id, user.id);
     return (
       <AppShell user={user} back={{ href: "/jobs", label: "Jobs" }}>
-        <JobScreen initial={view} paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? ""} sandbox={(process.env.PAYPAL_API_BASE ?? "sandbox").includes("sandbox")} />
+        <JobScreen initial={view} paypalClientId={process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ?? ""} bnCode={process.env.PAYPAL_BN_CODE ?? ""} sandbox={(process.env.PAYPAL_API_BASE ?? "sandbox").includes("sandbox")} />
       </AppShell>
     );
   } catch (err) {

@@ -25,9 +25,10 @@ export interface JobRow {
   close_drop_line_ids: string[] | null;
   close_trades_at: Date | null;
   close_homeowner_at: Date | null;
-  /** Tripwire scope-time check: line text that read as instructions to the AI. */
   /** Scope-time check: lines whose text speaks to the AI (Tripwire section 7). */
   scope_flags: { line: string; text: string; why: string }[] | null;
+  /** The tradesperson's PayPal merchant ID, frozen when the order is created. Null pays Trace's own account (demo jobs). */
+  payee_merchant_id: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -150,6 +151,42 @@ export async function updateProfile(q: Queryable, id: string, p: { displayName?:
   );
 }
 
+export interface PayeeRow {
+  paypal_merchant_id: string | null;
+  paypal_receivable: boolean;
+  paypal_email_confirmed: boolean;
+  paypal_permissions: boolean;
+  paypal_checked_at: Date | null;
+}
+
+export async function getPayee(q: Queryable, userId: string): Promise<PayeeRow | null> {
+  const { rows } = await q.query<PayeeRow>(
+    "select paypal_merchant_id, paypal_receivable, paypal_email_confirmed, paypal_permissions, paypal_checked_at from profiles where id = $1",
+    [userId],
+  );
+  return rows[0] ?? null;
+}
+
+/** Record what PayPal says about a person's linked account. A null merchant ID unlinks it. */
+export async function setPayee(
+  q: Queryable,
+  userId: string,
+  p: { merchantId: string | null; receivable: boolean; emailConfirmed: boolean; permissions: boolean },
+): Promise<void> {
+  // A merchant account links to one Trace profile; an older link to it is dropped.
+  if (p.merchantId) await q.query("update profiles set paypal_merchant_id = null, paypal_receivable = false where paypal_merchant_id = $1 and id <> $2", [p.merchantId, userId]);
+  await q.query(
+    `update profiles set paypal_merchant_id = $2, paypal_receivable = $3, paypal_email_confirmed = $4,
+       paypal_permissions = $5, paypal_checked_at = now() where id = $1`,
+    [userId, p.merchantId, p.receivable, p.emailConfirmed, p.permissions],
+  );
+}
+
+export async function profileIdByMerchant(q: Queryable, merchantId: string): Promise<string | null> {
+  const { rows } = await q.query<{ id: string }>("select id from profiles where paypal_merchant_id = $1", [merchantId]);
+  return rows[0]?.id ?? null;
+}
+
 // ---------- jobs ----------
 
 export async function insertJob(
@@ -178,7 +215,7 @@ export async function mustGetJob(q: Queryable, id: string, opts: { lock?: boolea
 export async function updateJob(
   q: Queryable,
   id: string,
-  patch: Partial<Pick<JobRow, "status" | "disputed" | "scope_hash" | "paypal_order_id" | "anchor_lat" | "anchor_lng" | "homeowner_id" | "close_drop_line_ids" | "close_trades_at" | "close_homeowner_at" | "scope_flags">>,
+  patch: Partial<Pick<JobRow, "status" | "disputed" | "scope_hash" | "paypal_order_id" | "anchor_lat" | "anchor_lng" | "homeowner_id" | "close_drop_line_ids" | "close_trades_at" | "close_homeowner_at" | "scope_flags" | "payee_merchant_id">>,
 ): Promise<JobRow> {
   const keys = Object.keys(patch) as (keyof typeof patch)[];
   if (keys.length === 0) return mustGetJob(q, id);

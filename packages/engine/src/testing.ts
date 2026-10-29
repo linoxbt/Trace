@@ -9,6 +9,7 @@ import { FakePayPal } from "@trace/paypal/fake";
 import type { Engine, Logger } from "./deps.ts";
 import type { ScopeFlag, ScopeLineText, TextScanner } from "./inject/text-scan.ts";
 import type { CompiledRule, CompileResult, RuleCompiler } from "./rules/compile.ts";
+import { refreshPayee } from "./payee.ts";
 import { MemoryStorage } from "./storage.ts";
 import type { InspectInput, Verifier } from "./verifier.ts";
 
@@ -105,6 +106,13 @@ export async function testEngine(): Promise<TestEngine> {
 }
 
 export { makeUser };
+
+/** The tradesperson links a PayPal account that can take payments. Returns its merchant ID. */
+export async function connectPayee(e: TestEngine, userId: string): Promise<string> {
+  const merchantId = e.paypal.onboard(userId);
+  await refreshPayee(e, userId);
+  return merchantId;
+}
 
 let seed = 0;
 /**

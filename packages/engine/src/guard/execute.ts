@@ -335,7 +335,7 @@ export async function guardedRefund(
   const verdict = await decide(e, a);
   if (verdict.outcome !== "ALLOW") return { ...verdict, refunded: false };
   const auth = (await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [cap.authorization_id])).rows[0]!;
-  const refund = await moneyRefund(e, cap.paypal_capture_id, { cents: amount, currency: auth.currency }, a.request_id);
+  const refund = await moneyRefund(e, cap.paypal_capture_id, { cents: amount, currency: auth.currency }, a.request_id, job.payee_merchant_id);
   await store.markDecisionExecuted(e.db, verdict.decisionId, { refund: refund.id, status: refund.status });
   await e.db.tx(async (q) => {
     await store.mustGetJob(q, jobId, { lock: true });
@@ -354,7 +354,7 @@ export async function guardedFileEvidence(e: Engine, jobId: string, init: Initia
   const a = action("FILE_EVIDENCE", job, init, provenance, { request_id: `evidence-${dispute.paypal_dispute_id}-${randomUUID()}`, dispute_id: dispute.paypal_dispute_id });
   const verdict = await decide(e, a);
   if (verdict.outcome !== "ALLOW") return { ...verdict, filed: false };
-  await moneyFileEvidence(e, dispute.paypal_dispute_id, evidence);
+  await moneyFileEvidence(e, dispute.paypal_dispute_id, evidence, job.payee_merchant_id);
   await store.markDecisionExecuted(e.db, verdict.decisionId, { filed: dispute.paypal_dispute_id });
   await e.db.tx(async (q) => {
     await q.query("update disputes set filed_at = now(), updated_at = now() where id = $1", [dispute.id]);

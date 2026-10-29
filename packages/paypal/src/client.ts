@@ -9,12 +9,21 @@ import type {
   Dispute,
   EvidenceInput,
   Order,
+  PartnerReferralInput,
   Refund,
+  SellerStatus,
   WebhookHeaders,
 } from "./types.ts";
 
 export const SANDBOX_BASE = "https://api-m.sandbox.paypal.com";
 export const LIVE_BASE = "https://api-m.paypal.com";
+
+/**
+ * What a tradesperson lets Trace do on their PayPal account. These must match
+ * the features turned on for the REST app, and the dispute ones need the app's
+ * Disputes API toggle.
+ */
+export const PARTNER_FEATURES = ["PAYMENT", "REFUND", "READ_SELLER_DISPUTE", "UPDATE_SELLER_DISPUTE"] as const;
 
 export interface PayPalClientOptions {
   clientId: string;
@@ -24,6 +33,11 @@ export interface PayPalClientOptions {
   timeoutMs?: number;
   /** Multipart field name for the evidence file. Spec section 17 lists it as unconfirmed. */
   evidenceFileField?: string;
+  /**
+   * Trace as a PayPal partner: its own merchant ID (for seller sign-up and
+   * status) and its BN code, sent as PayPal-Partner-Attribution-Id.
+   */
+  partner?: { merchantId: string; bnCode?: string };
 }
 
 interface RequestOptions {
@@ -35,6 +49,21 @@ interface RequestOptions {
   /** Prefer: return=representation, so writes answer with the full resource. */
   representation?: boolean;
   allow404?: boolean;
+  /** Act for this seller (their merchant ID) with a PayPal-Auth-Assertion. */
+  seller?: string | null;
+}
+
+const b64url = (s: string) => Buffer.from(s).toString("base64url");
+
+/** PayPal's unsigned assertion naming the seller a partner acts for. The trailing dot is required. */
+export function authAssertion(clientId: string, sellerMerchantId: string): string {
+  return `${b64url(JSON.stringify({ alg: "none" }))}.${b64url(JSON.stringify({ iss: clientId, payer_id: sellerMerchantId }))}.`;
+}
+
+export class PayPalNotPartner extends Error {
+  constructor() {
+    super("PayPal partner settings are missing: set PAYPAL_PARTNER_MERCHANT_ID");
+  }
 }
 
 export class PayPalClient implements PayPalApi {
@@ -88,6 +117,8 @@ export class PayPalClient implements PayPalApi {
     };
     if (o.requestId) headers["PayPal-Request-Id"] = o.requestId;
     if (o.representation) headers["Prefer"] = "return=representation";
+    if (this.opts.partner?.bnCode) headers["PayPal-Partner-Attribution-Id"] = this.opts.partner.bnCode;
+    if (o.seller) headers["PayPal-Auth-Assertion"] = authAssertion(this.opts.clientId, o.seller);
     let body: BodyInit | undefined;
     if (o.form) body = o.form;
     else if (o.rawJson !== undefined) {
@@ -99,6 +130,7 @@ export class PayPalClient implements PayPalApi {
     }
     const res = await this.send(`${this.base}${path}`, { method, headers, body });
     if (res.status === 401) this.token = null;
+    if (res.status === 404 && o.allow404) return null as T;
     if (!res.ok) throw await PayPalError.from(res);
     if (res.status === 204) return undefined as T;
     const text = await res.text();
@@ -120,6 +152,7 @@ export class PayPalClient implements PayPalApi {
             custom_id: input.customId,
             description: input.description.slice(0, 127),
             amount: { ...money(total), breakdown: { item_total: money(total) } },
+            ...(input.payeeMerchantId ? { payee: { merchant_id: input.payeeMerchantId } } : {}),
             items: input.items.map((i) => ({
               name: `${i.code} ${i.title}`.slice(0, 127),
               sku: i.code,
@@ -185,27 +218,29 @@ export class PayPalClient implements PayPalApi {
     return this.request<Capture>("GET", `/v2/payments/captures/${encodeURIComponent(id)}`);
   }
 
-  refundCapture(id: string, amount: { cents: number; currency: string } | null, requestId: string): Promise<Refund> {
+  refundCapture(id: string, amount: { cents: number; currency: string } | null, requestId: string, seller?: string | null): Promise<Refund> {
     return this.request<Refund>("POST", `/v2/payments/captures/${encodeURIComponent(id)}/refund`, {
       requestId,
+      seller,
       representation: true,
       body: amount ? { amount: { currency_code: amount.currency, value: toPayPalValue(amount.cents) } } : {},
     });
   }
 
-  async listDisputesForTransaction(transactionId: string): Promise<Dispute[]> {
+  async listDisputesForTransaction(transactionId: string, seller?: string | null): Promise<Dispute[]> {
     const res = await this.request<{ items?: Dispute[] }>(
       "GET",
       `/v1/customer/disputes?disputed_transaction_id=${encodeURIComponent(transactionId)}`,
+      { seller },
     );
     return res.items ?? [];
   }
 
-  getDispute(id: string): Promise<Dispute> {
-    return this.request<Dispute>("GET", `/v1/customer/disputes/${encodeURIComponent(id)}`);
+  getDispute(id: string, seller?: string | null): Promise<Dispute> {
+    return this.request<Dispute>("GET", `/v1/customer/disputes/${encodeURIComponent(id)}`, { seller });
   }
 
-  async provideEvidence(id: string, evidence: EvidenceInput): Promise<void> {
+  async provideEvidence(id: string, evidence: EvidenceInput, seller?: string | null): Promise<void> {
     const form = new FormData();
     const input = {
       evidences: [
@@ -222,13 +257,74 @@ export class PayPalClient implements PayPalApi {
       new Blob([evidence.file.bytes as Uint8Array<ArrayBuffer>], { type: evidence.file.contentType }),
       evidence.file.name,
     );
-    await this.request<unknown>("POST", `/v1/customer/disputes/${encodeURIComponent(id)}/provide-evidence`, { form });
+    await this.request<unknown>("POST", `/v1/customer/disputes/${encodeURIComponent(id)}/provide-evidence`, { form, seller });
   }
 
-  async requireEvidence(id: string): Promise<void> {
+  async requireEvidence(id: string, seller?: string | null): Promise<void> {
     await this.request<unknown>("POST", `/v1/customer/disputes/${encodeURIComponent(id)}/require-evidence`, {
       body: { action: "SELLER_EVIDENCE" },
+      seller,
     });
+  }
+
+  private partnerId(): string {
+    if (!this.opts.partner?.merchantId) throw new PayPalNotPartner();
+    return encodeURIComponent(this.opts.partner.merchantId);
+  }
+
+  async createPartnerReferral(input: PartnerReferralInput): Promise<{ actionUrl: string }> {
+    this.partnerId();
+    const res = await this.request<{ links?: { rel: string; href: string }[] }>("POST", "/v2/customer/partner-referrals", {
+      body: {
+        tracking_id: input.trackingId,
+        partner_config_override: { return_url: input.returnUrl, return_url_description: "Back to Trace" },
+        operations: [
+          {
+            operation: "API_INTEGRATION",
+            api_integration_preference: {
+              rest_api_integration: {
+                integration_method: "PAYPAL",
+                integration_type: "THIRD_PARTY",
+                third_party_details: { features: PARTNER_FEATURES },
+              },
+            },
+          },
+        ],
+        products: ["EXPRESS_CHECKOUT"],
+        legal_consents: [{ type: "SHARE_DATA_CONSENT", granted: true }],
+      },
+    });
+    const url = res.links?.find((l) => l.rel === "action_url")?.href;
+    if (!url) throw new Error("PayPal didn't return a sign-up link");
+    return { actionUrl: url };
+  }
+
+  async findSeller(trackingId: string): Promise<string | null> {
+    const res = await this.request<{ merchant_id?: string } | null>(
+      "GET",
+      `/v1/customer/partners/${this.partnerId()}/merchant-integrations?tracking_id=${encodeURIComponent(trackingId)}`,
+      { allow404: true },
+    );
+    return res?.merchant_id || null;
+  }
+
+  async sellerStatus(merchantId: string): Promise<SellerStatus> {
+    const r = await this.request<{
+      merchant_id: string;
+      tracking_id?: string;
+      payments_receivable?: boolean;
+      primary_email_confirmed?: boolean;
+      oauth_integrations?: { integration_type?: string; oauth_third_party?: { scopes?: string[] }[] }[];
+    }>("GET", `/v1/customer/partners/${this.partnerId()}/merchant-integrations/${encodeURIComponent(merchantId)}`);
+    return {
+      merchantId: r.merchant_id,
+      trackingId: r.tracking_id ?? null,
+      paymentsReceivable: r.payments_receivable === true,
+      emailConfirmed: r.primary_email_confirmed === true,
+      permissionsGranted: (r.oauth_integrations ?? []).some(
+        (o) => o.integration_type === "OAUTH_THIRD_PARTY" && (o.oauth_third_party ?? []).some((t) => (t.scopes?.length ?? 0) > 0),
+      ),
+    };
   }
 
   async verifyWebhook(h: WebhookHeaders, rawEvent: string, webhookId: string): Promise<boolean> {

@@ -4,6 +4,7 @@
 // on the left, the money, the next step and the timeline in a sticky rail.
 // Phone: money first, then the next step, the lines and the timeline.
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobView } from "@/server/view";
 import { api } from "@/lib/api";
@@ -22,7 +23,7 @@ type Line = JobView["lines"][number];
 type Toast = { id: number; tone: "ok" | "bad" | "info"; text: string };
 const HELD = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
 
-export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobView; paypalClientId: string; sandbox: boolean }) {
+export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initial: JobView; paypalClientId: string; bnCode: string; sandbox: boolean }) {
   const [view, setView] = useState(initial);
   const [camera, setCamera] = useState<{ mode: "before" | "after"; line?: Line } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -119,8 +120,20 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
         <ApprovalCard key={a.id} a={a} currency={job.currency} busy={busy} onAnswer={(ok) => answer(a.id, ok)} />
       ))}
       {job.status === "DRAFT" && !isTrades && <Waiting title="The scope is being written" body="You'll be able to review every line and its price here." />}
-      {job.status === "AWAITING_APPROVAL" && isHome && (
-        <HoldButton jobId={job.id} totalCents={job.totalCents} currency={job.currency} clientId={paypalClientId} sandbox={sandbox} onHeld={() => { toast("ok", "Held by PayPal. Nothing has been charged."); refresh(); }} />
+      {job.status === "AWAITING_APPROVAL" && isHome && (job.demo || job.payee.state === "ready") && (
+        <HoldButton
+          jobId={job.id}
+          totalCents={job.totalCents}
+          currency={job.currency}
+          clientId={paypalClientId}
+          merchantId={job.demo ? null : job.payee.merchantId}
+          bnCode={bnCode}
+          sandbox={sandbox}
+          onHeld={() => { toast("ok", "Held by PayPal. Nothing has been charged."); refresh(); }}
+        />
+      )}
+      {job.status === "AWAITING_APPROVAL" && isHome && !job.demo && job.payee.state !== "ready" && (
+        <Waiting title="Waiting for the tradesperson's PayPal" body="Payments go straight into the tradesperson's own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is." />
       )}
       {job.status === "AWAITING_APPROVAL" && !isHome && (
         <Waiting title="Waiting for the homeowner" body={`We've asked ${job.homeownerEmail} to review the scope and approve the hold with PayPal.`} />
@@ -209,6 +222,7 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
                   <CameraIcon /> {firstBefore ? "Add another photo" : "Take the first photo"}
                 </button>
               </section>
+              {!job.demo && job.payee.state !== "ready" && <ConnectPayPal pending={job.payee.state === "pending"} />}
               <ScopeEditor view={view} onSaved={(sent) => { toast("ok", sent ? "Sent. The homeowner can approve now." : "Draft saved."); refresh(); }} />
             </>
           )}
@@ -312,6 +326,20 @@ function ActionCard({ title, body, cta, busy, onClick }: { title: string; body: 
         {busy ? <span className="h-5 w-5 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : cta}
       </button>
     </div>
+  );
+}
+
+function ConnectPayPal({ pending }: { pending: boolean }) {
+  return (
+    <section className="surface rounded-[24px] border-l-4 border-l-warn p-5">
+      <div className="text-[17px] font-semibold tracking-tight">{pending ? "Finish setting up PayPal to send this" : "Connect PayPal to get paid"}</div>
+      <p className="mt-1 text-[14px] leading-relaxed text-muted">
+        Each approved line is paid straight into your own PayPal business account; Trace never holds the money. Link your account before you send the scope.
+      </p>
+      <Link href="/settings#get-paid" className="press mt-4 inline-flex h-11 items-center rounded-full bg-violet px-5 text-[14px] font-semibold text-white hover:bg-violet-deep">
+        {pending ? "Finish PayPal set-up" : "Connect PayPal"}
+      </Link>
+    </section>
   );
 }
 

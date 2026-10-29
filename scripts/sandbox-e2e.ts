@@ -14,7 +14,12 @@
 // Photos are synthetic and the verifier is scripted: this tests the money, not
 // the vision model.
 //
-//   PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... TEST_DATABASE_URL=... pnpm sandbox:e2e
+// Every order names a sandbox business account as payee, as live jobs name the
+// tradesperson: PAYPAL_SANDBOX_SELLER_MERCHANT_ID must be a sandbox seller
+// already linked to the partner app (Settings > Connect PayPal does that).
+//
+//   PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... PAYPAL_PARTNER_MERCHANT_ID=... \
+//   PAYPAL_SANDBOX_SELLER_MERCHANT_ID=... TEST_DATABASE_URL=... pnpm sandbox:e2e
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { createInterface } from "node:readline/promises";
@@ -49,7 +54,13 @@ const need = (k: string) => {
   }
   return v;
 };
-const paypal = new PayPalClient({ clientId: need("PAYPAL_CLIENT_ID"), clientSecret: need("PAYPAL_CLIENT_SECRET"), baseUrl: process.env.PAYPAL_API_BASE });
+const paypal = new PayPalClient({
+  clientId: need("PAYPAL_CLIENT_ID"),
+  clientSecret: need("PAYPAL_CLIENT_SECRET"),
+  baseUrl: process.env.PAYPAL_API_BASE,
+  partner: { merchantId: need("PAYPAL_PARTNER_MERCHANT_ID"), bnCode: process.env.PAYPAL_BN_CODE },
+});
+const seller = need("PAYPAL_SANDBOX_SELLER_MERCHANT_ID");
 if (!(process.env.PAYPAL_API_BASE ?? "sandbox").includes("sandbox")) {
   console.error("sandbox only");
   process.exit(1);
@@ -134,6 +145,9 @@ async function approve(orderId: string): Promise<void> {
 
 async function heldJob(label: string) {
   const trades = await makeUser(db, "trades");
+  // The seller's real state at PayPal, linked to this throwaway tradesperson.
+  const s = await paypal.sellerStatus(seller);
+  await store.setPayee(db, trades, { merchantId: seller, receivable: s.paymentsReceivable, emailConfirmed: s.emailConfirmed, permissions: s.permissionsGranted });
   const home = await makeUser(db, "home");
   const email = (await db.query<{ email: string }>("select email from auth.users where id = $1", [home])).rows[0]!.email;
   const job = await createJob(e, { tradesId: trades, homeownerEmail: email, address: `Sandbox ${label}`, deviceId: DEVICE });
@@ -144,6 +158,8 @@ async function heldJob(label: string) {
   const { orderId } = await createOrder(e, job.id, home);
   await approve(orderId);
   const auth = await authorizeJob(e, job.id, orderId, home);
+  const payee = (await paypal.getOrder(orderId)).purchase_units?.[0]?.payee?.merchant_id;
+  if (payee !== seller) throw new Error(`order ${orderId} pays ${payee ?? "the platform"}, expected the seller ${seller}`);
   const lines = Object.fromEntries((await store.getLines(db, job.id)).map((l) => [l.code, l]));
   console.log(`  [${label}] order ${orderId}, authorization ${auth.paypal_auth_id} for $${auth.amount_cents / 100}`);
   return { jobId: job.id, trades, home, lines, auth, orderId };

@@ -6,9 +6,9 @@ import { myJobs } from "@/server/view";
 
 export const GET = route(async (_req, { user }) => ({ user, jobs: await myJobs(user.id) }));
 
-/** PATCH /api/me: your name and the PayPal email you're paid at. */
+/** PATCH /api/me: your name. The account you're paid into is linked through PayPal (/api/paypal/connect). */
 export const PATCH = route(async (req, { user }) => {
-  const b = await body(req, z.object({ displayName: z.string().trim().min(1).max(80).optional(), paypalEmail: z.email().max(200).nullable().optional() }));
+  const b = await body(req, z.object({ displayName: z.string().trim().min(1).max(80).optional() }));
   await updateProfile(engine().db, user.id, b);
   return { ok: true };
 });

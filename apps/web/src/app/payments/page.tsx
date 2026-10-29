@@ -38,7 +38,7 @@ export default async function Payments() {
           <div className="sm:pl-6">
             <div className="text-[14px] font-medium text-muted">Paid to you</div>
             <div className="mt-1 text-[26px] font-semibold tabular-nums text-ok">{money(earned)}</div>
-            <div className="mt-1 text-[13px] text-muted">As tradesperson</div>
+            <div className="mt-1 text-[13px] text-muted">Straight into your PayPal</div>
           </div>
           <div className="sm:pl-6">
             <div className="text-[14px] font-medium text-muted">Paid by you</div>

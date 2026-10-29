@@ -18,10 +18,18 @@ export function moneyReauthorize(e: Engine, paypalAuthId: string, amount: { cent
   return e.paypal.reauthorize(paypalAuthId, amount, requestId);
 }
 
-export function moneyRefund(e: Engine, paypalCaptureId: string, amount: { cents: number; currency: string } | null, requestId: string): Promise<Refund> {
-  return e.paypal.refundCapture(paypalCaptureId, amount, requestId);
+// Refunds and evidence act on the payee's own PayPal account (`seller`).
+
+export function moneyRefund(
+  e: Engine,
+  paypalCaptureId: string,
+  amount: { cents: number; currency: string } | null,
+  requestId: string,
+  seller: string | null,
+): Promise<Refund> {
+  return e.paypal.refundCapture(paypalCaptureId, amount, requestId, seller);
 }
 
-export function moneyFileEvidence(e: Engine, disputeId: string, evidence: EvidenceInput): Promise<void> {
-  return e.paypal.provideEvidence(disputeId, evidence);
+export function moneyFileEvidence(e: Engine, disputeId: string, evidence: EvidenceInput, seller: string | null): Promise<void> {
+  return e.paypal.provideEvidence(disputeId, evidence, seller);
 }

@@ -6,6 +6,7 @@ export * from "./verifier.ts";
 export * from "./jobs.ts";
 export * from "./proof.ts";
 export * from "./money.ts";
+export * from "./payee.ts";
 export * from "./guard/execute.ts";
 export { forgetDisputes } from "./guard/preflight.ts";
 export * from "./webhooks.ts";
