@@ -6,7 +6,7 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/). MIT
 
 ## Status
 
-This repository holds the backend core and the first cut of the Next.js app. The Claude scope writer and verifier, the dispute evidence pack and judge mode's demo seeding come next.
+This repository holds the backend, the Next.js app and Tripwire, the guard in front of every money move. The dispute evidence pack and judge mode's demo seeding come next.
 
 | Part | State |
 | --- | --- |
@@ -17,7 +17,9 @@ This repository holds the backend core and the first cut of the Next.js app. The
 | Background worker (`apps/worker`) | Built |
 | Next.js app (`apps/web`): API routes for every flow, PayPal webhook, magic-link sign-in, job list, new job, job page with money bar, scope editor, in-app camera, PayPal v6 hold button, approve/flag/release, close | Built; builds and serves locally; not yet run against Supabase and the sandbox |
 | Sandbox end-to-end test (`scripts/sandbox-e2e.ts`) | Ready; needs sandbox keys to run |
-| Claude scope writer and verifier, evidence PDF, judge-mode seeding, Realtime | Not started (proofs are refused until the verifier is configured) |
+| Claude photo verifier (`packages/engine/src/claude-verifier.ts`) | Built; runs when `ANTHROPIC_API_KEY` is set |
+| Tripwire: guard, rules, ledger, approvals, injection defence, rule compiler (see [Safety](#safety-tripwire)) | Built, tested against a fake PayPal and scripted models |
+| Evidence PDF, judge-mode seeding, Realtime | Not started |
 
 The PayPal client is written by hand. The spec plans to generate it with the APIMatic Context Plugin for the sponsor prize; that has not been done yet.
 
@@ -36,6 +38,42 @@ The mark is two bars on a violet squircle: a solid one for money released, an ou
 7. After the 3-day honor period, the worker reauthorizes once while lines are still open. A refusal is recorded and flagged for both sides, not retried.
 8. Webhooks are verified with PayPal against the raw body, de-duplicated on event ID, and reconcile captures, voids and disputes.
 
+## Safety: Tripwire
+
+AI reads the photos; it never moves the money. Every capture, void, reauthorization, refund and dispute filing goes through one function, `packages/engine/src/guard/execute.ts`, in the same five steps:
+
+1. **Check the action.** The amount is recomputed from the stored lines, never taken from a request or a model.
+2. **Read live facts.** The hold's status comes from PayPal, and disputes are listed at PayPal too, not just when a webhook arrives. If PayPal can't be read, the answer is deny: nothing moves.
+3. **Trace the inputs.** Every input is labelled with how far it can be trusted. Photos and anything a model read from them are never trusted as instructions.
+4. **Apply the rules.** The eleven built-in rules (B1 to B11) come first, then the presets and people's own rules. Deny beats ask-first, and ask-first beats allow.
+5. **Write the decision down, then act.** The decision goes to `guard_decisions`, which a database trigger keeps append-only. Only then is PayPal asked.
+
+Only `execute.ts` can import the money client (`guard/paypal-money.ts`), and a test fails if any other file calls a money-moving PayPal method.
+
+- **Approvals.** When a rule asks first, an approval request is opened. It expires after 24 hours, or 5 minutes in demo mode. Approving re-runs the guard on the same frozen action with the approval attached, so the built-in deny rules still apply. "Both" needs one tap from each side.
+- **Presets.** Three presets are on by default:
+  - Releases over $150 need the homeowner's tap.
+  - More than $300 released in 24 hours needs a tap.
+  - More than 3 releases in 10 minutes need a tap.
+
+  A release the homeowner started themselves doesn't need the first two.
+- **Your own rules.** People write rules in plain English.
+  - Claude Sonnet 5.5 compiles them to rule JSON using only the fields the guard checks. It says "unsupported" rather than guessing when a rule can't be expressed.
+  - Claude Haiku 5.5 reads the JSON back without seeing the person's words.
+  - A backtest replays the person's past decisions with the new rule and reports how many it would have changed.
+  - Rules can only ask first or block; nothing a person writes can loosen a built-in rule.
+- **Planted notes.** Text in a proof photo can't steer a verdict:
+  1. Claude Haiku 5.5 lists the text in every proof photo and before-photo, beside the verifier's first look.
+  2. If a Verified proof has any text, the text is painted out on a stored copy (`sharp`, 8% padding) and the line is judged again on the masked pair.
+  3. If the verdict changes, or the text was aimed at the inspector, the line goes to Needs review. The homeowner sees the note outlined beside the masked copy.
+
+  A scan that fails is never read as "no text". When a scope is sent, its lines are checked the same way for instructions aimed at the AI.
+- **Agents.** AI agents can draft (rule B6), but they never trigger a money move.
+
+`pnpm eval:inject` measures the planted-note check. It draws 20 planted notes (including Yoruba, Pidgin and Spanish ones, faint text and notes cut off at the frame) and 10 ordinary labels. It then runs the real scanner and prints the confusion matrix. The targets are at least 95% caught, at most 10% false flags, and no planted note with no text found. The set is synthetic, and the eval needs `ANTHROPIC_API_KEY`. **It has not been run yet**, so there is no catch rate to report.
+
+What's left out of the add-on spec: rule B12 (a price over 3x the AI's suggestion), because Trace doesn't suggest prices. Refunds and dispute evidence go through the guard but have no buttons in the app yet.
+
 ## Layout
 
 ```
@@ -45,7 +83,8 @@ packages/db        migrations/001_init.sql, migration runner, typed queries
 packages/engine    the flows: jobs, proof, money, webhooks; photo normalisation and dHash (sharp)
 apps/web           Next.js 15 app: API routes, PayPal webhook, pages and components
 apps/worker        30-second loop: auto-release, capture retries, reauthorization; /healthz
-scripts            sandbox-e2e.ts: Trace's engine against the real PayPal sandbox
+scripts            sandbox-e2e.ts: Trace's engine against the real PayPal sandbox; eval-inject.ts: the planted-note eval
+eval/inject        the injection eval set, drawn in code
 ```
 
 ## Run it
@@ -96,6 +135,24 @@ The engine tests drive the demo bathroom job ($420 across four lines) through th
 - Geofence, reuse and no-change failures, token expiry, and the second pass on a crop.
 - Judge-mode sample photos.
 - Webhook verification, de-duplication, denied captures and disputes.
+
+The Tripwire tests cover:
+
+- Every built-in rule, firing and not firing.
+- The money-client boundary.
+- The ledger row written before PayPal is called.
+- A dispute opened at PayPal before its webhook arrives.
+- PayPal unreachable, which means deny.
+- Agents refused.
+- A reused request id.
+- A capture no decision allowed.
+- The $150 preset asking, then capturing on the homeowner's tap.
+- Approvals that can't bypass the built-ins.
+- "Both" needing two taps, and expiry.
+- Planted notes in after-photos and before-photos, and text that steered the verdict.
+- Brand marks let through, and failed scans.
+- Scope flags.
+- Rule compile, readback, backtest and saving, and that rules only tighten.
 
 ## Deploy on Netlify
 

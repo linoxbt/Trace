@@ -11,3 +11,4 @@ scripts/evidence/*.png
 *.tsbuildinfo
 .netlify
 apps/web/netlify/functions/tick.mjs
+eval/inject/images/
