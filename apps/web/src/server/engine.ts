@@ -1,6 +1,6 @@
 import "server-only";
 import { Db } from "@trace/db";
-import { ClaudeDisputeDrafter, ClaudeRuleCompiler, ClaudeTextScanner, ClaudeVerifier, consoleLogger, EngineError, PostgresStorage, type Engine, type Verifier } from "@trace/engine";
+import { ClaudeDisputeDrafter, ClaudeScopeDrafter, ClaudeRuleCompiler, ClaudeTextScanner, ClaudeVerifier, consoleLogger, EngineError, PostgresStorage, type Engine, type Verifier } from "@trace/engine";
 import { PayPalClient, type PayPalApi } from "@trace/paypal";
 import { env } from "./env";
 
@@ -41,6 +41,7 @@ export function engine(): Engine {
           scanner: new ClaudeTextScanner({ apiKey: e.ANTHROPIC_API_KEY }),
           compiler: new ClaudeRuleCompiler({ apiKey: e.ANTHROPIC_API_KEY }),
           drafter: new ClaudeDisputeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
+          scopeDrafter: new ClaudeScopeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
         }
       : {}),
     settings: { webhookId: e.PAYPAL_WEBHOOK_ID ?? "", demoMode: e.DEMO_MODE === "true", confidenceThreshold: 0.8, brandName: "Trace" },

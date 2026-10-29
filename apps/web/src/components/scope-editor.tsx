@@ -11,6 +11,25 @@ import { money } from "@/lib/format";
 import { wordsFor } from "@/lib/words";
 import type { JobView } from "@/server/view";
 
+interface DraftedLine {
+  title: string;
+  suggestedPriceCents: number;
+  acceptance: { criterion: string; must_show: string[]; must_not_show: string[]; framing: string };
+  verifiableByPhoto: boolean;
+  proofType: ProofType;
+  proofSpec: unknown;
+}
+
+interface SpeechRec {
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: (ev: { resultIndex: number; results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void;
+  onend: () => void;
+  onerror: () => void;
+  start(): void;
+  stop(): void;
+}
+
 interface Draft {
   key: number;
   title: string;
@@ -96,7 +115,10 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
         }))
       : [blank()],
   );
-  const [busy, setBusy] = useState<"save" | "send" | null>(null);
+  const [busy, setBusy] = useState<"save" | "send" | "draft" | null>(null);
+  const [desc, setDesc] = useState("");
+  const [listening, setListening] = useState(false);
+  const [drafted, setDrafted] = useState<string | null>(null);
   const [error, setError] = useState("");
   const total = lines.reduce((n, l) => n + (cents(l.price) || 0), 0);
   const set = (i: number, patch: Partial<Draft>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
@@ -110,6 +132,54 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
       const i = ls.findIndex(isBlank);
       return i >= 0 ? ls.map((l, j) => (j === i ? fromTemplate(t) : l)) : ls.length < 8 ? [...ls, fromTemplate(t)] : ls;
     });
+
+  /** The AI drafts lines from the before-photos and the description; they fill the editor, unsaved. */
+  async function draftWithAi() {
+    setBusy("draft");
+    setError("");
+    try {
+      const r = await api<{ summary: string; lines: DraftedLine[] }>(`/api/jobs/${view.job.id}/scope/draft`, { json: { description: desc } });
+      const fresh = r.lines.map((d): Draft => ({
+        key: ++keys,
+        title: d.title,
+        price: (d.suggestedPriceCents / 100).toFixed(2),
+        criterion: d.acceptance.criterion,
+        mustShow: d.acceptance.must_show.join("\n"),
+        mustNotShow: d.acceptance.must_not_show.join("\n"),
+        framing: d.acceptance.framing,
+        verifiableByPhoto: d.verifiableByPhoto,
+        proofType: d.proofType,
+        spec: specIn(d.proofType, d.proofSpec),
+      }));
+      const keep = lines.filter((l) => !isBlank(l));
+      if (keep.length && !confirm("Replace your lines with the AI's draft? Cancel to add the draft below them.")) setLines([...keep, ...fresh].slice(0, 8));
+      else setLines(fresh);
+      setDrafted(r.summary || "Drafted. Check every line and price before sending.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  /** Dictation, where the browser has it (Chrome, Safari); typing works everywhere. */
+  function dictate() {
+    const W = window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec };
+    const Rec = W.SpeechRecognition ?? W.webkitSpeechRecognition;
+    if (!Rec) return setError("Dictation isn't available in this browser; type the description instead.");
+    const rec = new Rec();
+    rec.continuous = true;
+    rec.interimResults = false;
+    rec.onresult = (ev) => {
+      const text = Array.from(ev.results).slice(ev.resultIndex).map((x) => x[0]?.transcript ?? "").join(" ");
+      setDesc((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}${text.trim()}`.slice(0, 4000));
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    setListening(true);
+    rec.start();
+    setTimeout(() => rec.stop(), 60_000);
+  }
 
   async function save(send: boolean) {
     setBusy(send ? "send" : "save");
@@ -146,8 +216,38 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
       </div>
       <p className="mt-1 text-[14px] text-muted">One visible outcome per line. Write what a camera would need to see.</p>
 
+      <div className="surface mt-4 rounded-[22px] p-5">
+        <div className="text-[15px] font-semibold">Draft with AI</div>
+        <p className="mt-0.5 text-[13px] text-muted">Describe the job; the AI looks at your before-photos and drafts lines, prices and how each is proved. You edit everything before sending.</p>
+        <div className="relative mt-3">
+          <textarea
+            rows={3}
+            value={desc}
+            maxLength={4000}
+            onChange={(e) => setDesc(e.target.value)}
+            placeholder={`e.g. ${category.templates.slice(0, 2).map((t) => t.title.toLowerCase()).join(", ")}…`}
+            className="field pr-12 text-[14px]"
+          />
+          <button
+            type="button"
+            onClick={dictate}
+            aria-label={listening ? "Listening" : "Dictate"}
+            className={`press absolute bottom-2.5 right-2.5 grid h-9 w-9 place-items-center rounded-full ${listening ? "animate-pulse bg-bad text-white" : "bg-paper text-ink-2 hover:bg-paper-2"}`}
+          >
+            <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+              <rect x="9" y="3" width="6" height="11" rx="3" />
+              <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" />
+            </svg>
+          </button>
+        </div>
+        <button disabled={!!busy} onClick={draftWithAi} className="press mt-3 inline-flex h-10 items-center rounded-full bg-violet px-5 text-[14px] font-semibold text-white hover:bg-violet-deep disabled:opacity-50">
+          {busy === "draft" ? "Drafting…" : "Draft the lines"}
+        </button>
+        {drafted && <p className="mt-3 rounded-xl bg-violet-soft px-3 py-2 text-[13px] text-violet">{drafted}</p>}
+      </div>
+
       <div className="mt-4">
-        <div className="text-[12.5px] font-medium text-muted">Start from a {category.label.toLowerCase()} line</div>
+        <div className="text-[12.5px] font-medium text-muted">Or start from a {category.label.toLowerCase()} line</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {category.templates.map((t) => (
             <button
