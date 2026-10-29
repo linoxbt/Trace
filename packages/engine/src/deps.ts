@@ -2,6 +2,7 @@ import type { Db } from "@trace/db";
 import type { PayPalApi } from "@trace/paypal";
 import type { PhotoStorage } from "./storage.ts";
 import type { TextScanner } from "./inject/text-scan.ts";
+import type { RuleCompiler } from "./rules/compile.ts";
 import type { Verifier } from "./verifier.ts";
 
 export interface Logger {
@@ -27,6 +28,8 @@ export interface Engine {
   verifier: Verifier;
   /** Finds text in proof photos (Tripwire section 7). Without one, a proof can't end Verified on its own. */
   scanner?: TextScanner;
+  /** Plain-English payment rules to rule JSON, and the blind readback. */
+  compiler?: RuleCompiler;
   settings: EngineSettings;
   now: () => Date;
   log: Logger;

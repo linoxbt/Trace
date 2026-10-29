@@ -8,6 +8,7 @@ import { freshDb, makeUser } from "@trace/db/testing";
 import { FakePayPal } from "@trace/paypal/fake";
 import type { Engine, Logger } from "./deps.ts";
 import type { ScopeFlag, ScopeLineText, TextScanner } from "./inject/text-scan.ts";
+import type { CompiledRule, CompileResult, RuleCompiler } from "./rules/compile.ts";
 import { MemoryStorage } from "./storage.ts";
 import type { InspectInput, Verifier } from "./verifier.ts";
 
@@ -44,6 +45,22 @@ export class ScriptedScanner implements TextScanner {
   }
 }
 
+/** Answers from a table keyed by the rule's words; the readback is built from the JSON. */
+export class ScriptedCompiler implements RuleCompiler {
+  readonly model = "scripted-compiler";
+  readonly answers = new Map<string, CompileResult>();
+  readonly readbackSaw: CompiledRule[] = [];
+
+  async compile(english: string): Promise<CompileResult> {
+    return this.answers.get(english) ?? { kind: "unsupported", reason: "not in the script" };
+  }
+
+  async readback(rule: CompiledRule): Promise<string> {
+    this.readbackSaw.push(rule);
+    return `When ${rule.when.map((c) => `${c.field} ${c.op} ${JSON.stringify(c.value)}`).join(" and ")}, ${rule.effect === "deny" ? "block it" : `ask the ${rule.approver ?? "owner"}`}.`;
+  }
+}
+
 export function passing(lineId: string, a: Acceptance): LineObservation {
   return {
     line_id: lineId,
@@ -66,6 +83,7 @@ export interface TestEngine extends Engine {
   storage: MemoryStorage;
   verifier: ScriptedVerifier;
   scanner: ScriptedScanner;
+  compiler: ScriptedCompiler;
   clock: { t: Date };
 }
 
@@ -78,6 +96,7 @@ export async function testEngine(): Promise<TestEngine> {
     storage: new MemoryStorage(),
     verifier: new ScriptedVerifier(),
     scanner: new ScriptedScanner(),
+    compiler: new ScriptedCompiler(),
     settings: { webhookId: "WH-TEST", demoMode: false, confidenceThreshold: 0.8, brandName: "Trace" },
     now: () => clock.t,
     log: quietLog,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ruleProblems,
   afterMaskedRejudge,
   backtest,
   BUILTIN_RULES,
@@ -194,5 +195,22 @@ describe("guard: proof text", () => {
     expect(afterMaskedRejudge("VERIFIED", "FAILED", false)).toEqual({ verdict: "NEEDS_REVIEW", reason: "the verdict depended on text in the proof" });
     expect(afterMaskedRejudge("FAILED", "VERIFIED", true)).toEqual({ verdict: "FAILED" });
     expect(afterMaskedRejudge("VERIFIED", null, false)).toEqual({ verdict: "VERIFIED" });
+  });
+});
+
+describe("ruleProblems: a saved rule can always fire", () => {
+  const base = { id: "u1", owner: "homeowner" as const, scope: "account" as const, applies_to: ["CAPTURE" as const], effect: "require_approval" as const, english: "x", readback: "x" };
+  it("accepts well-typed conditions", () => {
+    expect(ruleProblems({ ...base, when: [{ field: "action.amount_cents", op: "gt", value: 15000 }] })).toEqual([]);
+    expect(ruleProblems({ ...base, when: [{ field: "facts.dispute_open", op: "eq", value: true }] })).toEqual([]);
+    expect(ruleProblems({ ...base, when: [{ field: "action.initiator.kind", op: "in", value: ["worker", "agent"] }] })).toEqual([]);
+    expect(ruleProblems({ ...base, when: [{ field: "verdict.min_confidence", op: "lt", value: 0.9 }] })).toEqual([]);
+  });
+  it("names what is wrong", () => {
+    expect(ruleProblems({ ...base, when: [{ field: "action.amount_cents", op: "gt", value: "150" }] })).toEqual(["action.amount_cents needs a number"]);
+    expect(ruleProblems({ ...base, when: [{ field: "verdict.min_confidence", op: "lt", value: 90 }] })).toEqual(["confidence is between 0 and 1"]);
+    expect(ruleProblems({ ...base, when: [{ field: "facts.device_changed", op: "gt", value: true }] })).toEqual(["facts.device_changed is yes or no"]);
+    expect(ruleProblems({ ...base, when: [{ field: "action.initiator.kind", op: "eq", value: "robot" }] })[0]).toMatch(/must be one of/);
+    expect(ruleProblems({ ...base, when: [{ field: "action.type", op: "in", value: "CAPTURE" }] })).toEqual(["action.type compares with eq, neq or in"]);
   });
 });

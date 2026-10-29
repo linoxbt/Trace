@@ -49,8 +49,30 @@ export interface JobView {
     verdict: { verdict: string; reasons: string[]; homeownerReason: string; region: unknown } | null;
     beforeUrl: string | null;
     afterUrl: string | null;
+    /** Text in the latest proof was aimed at the inspector, or steered the verdict (Tripwire). */
+    injection: { excerpt: string | null; maskedUrl: string | null; boxes: { x: number; y: number; w: number; h: number }[] } | null;
   }[];
+  guard: GuardView;
   events: { id: number; actor: string; type: string; data: Record<string, unknown> | null; at: string }[];
+}
+
+export interface GuardView {
+  decisions: { id: number; type: string; amountCents: number; outcome: "ALLOW" | "REQUIRE_APPROVAL" | "DENY"; reasons: string[]; at: string; executed: boolean }[];
+  approvals: {
+    id: string;
+    status: "PENDING" | "APPROVED" | "DENIED" | "EXPIRED";
+    approver: "homeowner" | "tradesperson" | "both";
+    expiresAt: string;
+    type: string;
+    amountCents: number;
+    reasons: string[];
+    /** The rules that asked, in their owners' own words. */
+    rules: { id: string; why: string }[];
+    approvedBy: ("homeowner" | "tradesperson")[];
+    /** Whether the signed-in user's tap is one this request still needs. */
+    canAnswer: boolean;
+  }[];
+  scopeFlags: { line: string; text: string; why: string }[];
 }
 
 /** Everything a job page shows, for one of its two parties. Photo links are 10-minute signed URLs. */
@@ -62,15 +84,17 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
     job.trades_id === userId && job.homeowner_id === userId ? "both" : job.trades_id === userId ? "tradesperson" : job.homeowner_id === userId ? "homeowner" : null;
   if (!role) throw new HttpError(404, "not_found", "job not found");
 
-  const [lines, photos, events, auth] = await Promise.all([
+  const [lines, photos, events, auth, decisions, approvals] = await Promise.all([
     store.getLines(e.db, jobId),
     store.getPhotos(e.db, jobId),
     store.getEvents(e.db, jobId),
     store.getBaseAuthorization(e.db, jobId),
+    store.decisionsForJob(e.db, jobId),
+    store.approvalsForJob(e.db, jobId),
   ]);
   const verdicts = await e.db.query<{ line_id: string; verdict: string; reasons: string[]; observation: { homeowner_reason?: string; region?: unknown } }>(
     `select distinct on (v.line_id) v.line_id, v.verdict, v.reasons, v.observation
-     from verdicts v join lines l on l.id = v.line_id where l.job_id = $1
+     from verdicts v join lines l on l.id = v.line_id where l.job_id = $1 and not v.masked
      order by v.line_id, v.created_at desc, v.pass desc`,
     [jobId],
   );
@@ -119,7 +143,9 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       lines.map(async (l) => {
         const v = verdictBy.get(l.id);
         const before = photos.find((p) => p.kind === "before" && p.line_id === l.id) ?? firstBefore;
-        const after = [...photos].reverse().find((p) => p.line_id === l.id && p.kind !== "before");
+        const after = [...photos].reverse().find((p) => p.line_id === l.id && p.kind !== "before" && p.kind !== "masked");
+        const masked = after ? photos.find((p) => p.kind === "masked" && p.masked_of === after.id) : undefined;
+        const scan = after?.text_scan as { texts?: { box: { x: number; y: number; w: number; h: number } }[] } | null | undefined;
         return {
           id: l.id,
           code: l.code,
@@ -137,9 +163,41 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
           verdict: v ? { verdict: v.verdict, reasons: v.reasons, homeownerReason: v.observation.homeowner_reason ?? "", region: v.observation.region ?? null } : null,
           beforeUrl: await sign(before),
           afterUrl: await sign(after),
+          injection: l.injection_flag
+            ? { excerpt: l.injection_excerpt, maskedUrl: await sign(masked), boxes: (scan?.texts ?? []).map((t) => t.box) }
+            : null,
         };
       }),
     ),
+    guard: {
+      decisions: decisions.map((d) => ({
+        id: d.id,
+        type: d.action.type,
+        amountCents: d.action.amount_cents,
+        outcome: d.outcome,
+        reasons: d.decision.reasons_plain,
+        at: d.decided_at.toISOString(),
+        executed: d.executed,
+      })),
+      approvals: approvals.map((a) => {
+        const approvedBy = [...new Set(a.approvals.map((x) => x.by))];
+        const needed = a.approver === "both" ? (["homeowner", "tradesperson"] as const) : ([a.approver] as const);
+        const mine = role === "both" ? needed : needed.filter((n) => n === role);
+        return {
+          id: a.id,
+          status: a.status,
+          approver: a.approver,
+          expiresAt: a.expires_at.toISOString(),
+          type: a.action.type,
+          amountCents: a.action.amount_cents,
+          reasons: a.decision.reasons_plain,
+          rules: a.decision.rule_hits.filter((h) => h.effect === "require_approval" && !h.satisfied).map((h) => ({ id: h.rule_id, why: h.why })),
+          approvedBy,
+          canAnswer: a.status === "PENDING" && mine.some((m) => !approvedBy.includes(m)),
+        };
+      }),
+      scopeFlags: job.scope_flags ?? [],
+    },
     events: events.map((ev) => ({ id: ev.id, actor: ev.actor, type: ev.type, data: ev.data, at: ev.at.toISOString() })),
   };
 }

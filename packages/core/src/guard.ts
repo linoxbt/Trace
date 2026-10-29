@@ -328,6 +328,47 @@ export function conditionHolds(c: Condition, a: MoneyAction, f: Facts): boolean 
   }
 }
 
+const NUMBER_FIELDS: ConditionField[] = [
+  "action.amount_cents",
+  "lines.max_price_cents",
+  "verdict.min_confidence",
+  "facts.released_24h_cents",
+  "facts.releases_10m_count",
+  "facts.hours_since_authorization",
+  "facts.auth_remaining_cents",
+];
+const BOOLEAN_FIELDS: ConditionField[] = ["verdict.any_second_pass", "injection.flagged", "facts.device_changed", "facts.dispute_open"];
+const ENUM_FIELDS: Partial<Record<ConditionField, readonly string[]>> = {
+  "action.type": MoneyActionType.options,
+  "action.initiator.kind": InitiatorKind.options,
+};
+
+/**
+ * What is wrong with a rule someone wrote, in plain words; empty when it can
+ * be saved. Each condition's value has to fit its field, so a rule can't
+ * quietly never fire because of a type mix-up.
+ */
+export function ruleProblems(rule: Rule): string[] {
+  const out: string[] = [];
+  if (rule.effect !== "deny" && rule.effect !== "require_approval") out.push("a rule can only ask first or block");
+  for (const c of rule.when) {
+    const v = c.value;
+    if (NUMBER_FIELDS.includes(c.field)) {
+      if (typeof v !== "number" || !Number.isFinite(v) || c.op === "in") out.push(`${c.field} needs a number`);
+      else if (c.field === "verdict.min_confidence" && (v < 0 || v > 1)) out.push("confidence is between 0 and 1");
+      else if (v < 0) out.push(`${c.field} can't be negative`);
+    } else if (BOOLEAN_FIELDS.includes(c.field)) {
+      if (typeof v !== "boolean" || (c.op !== "eq" && c.op !== "neq")) out.push(`${c.field} is yes or no`);
+    } else {
+      const allowed = ENUM_FIELDS[c.field] ?? [];
+      const values = Array.isArray(v) ? v : [v];
+      if (!["eq", "neq", "in"].includes(c.op) || (c.op === "in") !== Array.isArray(v)) out.push(`${c.field} compares with eq, neq or in`);
+      else if (values.length === 0 || values.some((x) => typeof x !== "string" || !allowed.includes(x))) out.push(`${c.field} must be one of ${allowed.join(", ")}`);
+    }
+  }
+  return out;
+}
+
 export function ruleMatches(rule: Rule, a: MoneyAction, f: Facts): boolean {
   return rule.applies_to.includes(a.type) && rule.when.every((c) => conditionHolds(c, a, f));
 }

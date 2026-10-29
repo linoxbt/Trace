@@ -56,7 +56,10 @@ export async function rulesForJob(e: Engine, job: store.JobRow): Promise<Rule[]>
   const rows = await store.rulesForOwners(e.db, owners, job.id);
   const off = new Set(rows.filter((r) => r.preset && !r.enabled && r.owner_id === job.homeowner_id).map((r) => r.preset));
   const presets = job.homeowner_id ? PRESET_RULES.filter((p) => !off.has(p.id)) : [];
-  const own = rows.filter((r) => r.rule && r.enabled).map((r) => ({ ...r.rule!, id: r.id }));
+  // An account rule follows its owner's side on this job: a homeowner rule from
+  // someone who is the tradesperson here doesn't apply.
+  const sideOf = (r: store.RuleRow) => (r.owner_kind === "homeowner" ? job.homeowner_id : job.trades_id) === r.owner_id;
+  const own = rows.filter((r) => r.rule && r.enabled && sideOf(r)).map((r) => ({ ...r.rule!, id: r.id }));
   return [...presets, ...own];
 }
 

@@ -39,12 +39,22 @@ export async function decisionsForJob(q: Queryable, jobId: string): Promise<Deci
   return rows;
 }
 
-/** Every decision on jobs the user is a party to, oldest first: the backtest's history. */
-export async function decisionsForUser(q: Queryable, userId: string, limit = 500): Promise<DecisionRow[]> {
+/**
+ * Decisions on jobs the user is a party to, oldest first: the backtest's
+ * history. With `side`, only jobs where they were on that side; with `jobId`, one job.
+ */
+export async function decisionsForUser(
+  q: Queryable,
+  userId: string,
+  opts: { side?: "homeowner" | "tradesperson"; jobId?: string | null; limit?: number } = {},
+): Promise<DecisionRow[]> {
   const { rows } = await q.query<DecisionRow>(
     `select d.* from guard_decisions d join jobs j on j.id = d.job_id
-      where $1 in (j.trades_id, j.homeowner_id) order by d.id desc limit $2`,
-    [userId, limit],
+      where case $2::text when 'homeowner' then j.homeowner_id = $1 when 'tradesperson' then j.trades_id = $1
+                          else $1 in (j.trades_id, j.homeowner_id) end
+        and ($3::uuid is null or d.job_id = $3)
+      order by d.id desc limit $4`,
+    [userId, opts.side ?? null, opts.jobId ?? null, opts.limit ?? 500],
   );
   return rows.reverse();
 }
@@ -137,6 +147,12 @@ export async function insertRule(
     [r.ownerId, r.ownerKind, r.scope, r.jobId, JSON.stringify(r.rule), r.rule.english, r.rule.readback],
   );
   return rows[0]!;
+}
+
+/** Everything one person has set: their own rules and preset switches. */
+export async function rulesOfOwner(q: Queryable, ownerId: string): Promise<RuleRow[]> {
+  const { rows } = await q.query<RuleRow>("select * from guard_rules where owner_id = $1 order by created_at", [ownerId]);
+  return rows;
 }
 
 export async function setRuleEnabled(q: Queryable, ownerId: string, id: string, enabled: boolean): Promise<RuleRow | null> {
