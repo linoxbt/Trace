@@ -39,7 +39,16 @@ export interface IntegrityInput {
   /** Smallest Hamming distance to any other photo stored in Trace, or null if there are none. */
   nearestOtherHamming: number | null;
   sameDevice: boolean;
+  /**
+   * Largest per-cell pixel difference from the before-photo (0 to 255), when
+   * the dHashes are close. A same-angle photo of a small fix hashes close to
+   * its before-photo; only a near-identical one (a re-saved copy) is "no change".
+   */
+  beforeCellDiff?: number | null;
 }
+
+/** At or under this cell difference, a close dHash really is the same photo. */
+export const SAME_IMAGE_CELL_DIFF = 4;
 
 /** Hamming distance between two 64-bit dHashes written as 16 hex characters. */
 export function hamming(a: string, b: string): number {
@@ -101,10 +110,19 @@ export function evaluateIntegrity(input: IntegrityInput): IntegrityReport {
   }
 
   const beforeHamming = hamming(input.dhash, input.beforeDhash);
+  const cell = input.beforeCellDiff ?? null;
+  const sameAsBefore = beforeHamming <= SAME_IMAGE_HAMMING && (cell === null || cell <= SAME_IMAGE_CELL_DIFF);
   checks.push(
-    beforeHamming <= SAME_IMAGE_HAMMING
+    sameAsBefore
       ? { name: "no_change", result: "fail", detail: "after-photo matches before-photo" }
-      : { name: "no_change", result: "pass", detail: `differs from the before-photo (distance ${beforeHamming})` },
+      : {
+          name: "no_change",
+          result: "pass",
+          detail:
+            beforeHamming <= SAME_IMAGE_HAMMING
+              ? `same framing as the before-photo, but the picture changed (cell difference ${cell})`
+              : `differs from the before-photo (distance ${beforeHamming})`,
+        },
   );
 
   const reuseHamming = input.nearestOtherHamming;

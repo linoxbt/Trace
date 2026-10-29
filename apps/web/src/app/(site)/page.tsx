@@ -58,11 +58,11 @@ function Hero() {
             Repairs, cleans, car work, gardens, installs. Trace holds the client&apos;s payment with PayPal and releases it line by line, only when AI confirms the work from photos taken on site.
           </p>
           <div className="rise mt-9 flex flex-wrap gap-3" style={{ "--delay": "220ms" } as React.CSSProperties}>
-            <PillLink href="/demo" tone="ink">
-              Try the demo
+            <PillLink href="/try" tone="ink">
+              Try the demo job
             </PillLink>
-            <PillLink href="/how-it-works" tone="light">
-              How it works
+            <PillLink href="/demo" tone="light">
+              Watch the walkthrough
             </PillLink>
           </div>
           <div className="rise mt-7 flex flex-wrap gap-2" style={{ "--delay": "300ms" } as React.CSSProperties}>

@@ -8,10 +8,12 @@ import {
   combinePasses,
   decideVerdict,
   evaluateIntegrity,
+  hamming,
   isFlagged,
   needsSecondPass,
   nextJobStatus,
   nextLineStatus,
+  SAME_IMAGE_HAMMING,
   type IntegrityReport,
   type LineObservation,
   type TextScan,
@@ -20,8 +22,9 @@ import {
 import * as store from "@trace/db";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
-import { cropRegion, dHash, normalizePhoto } from "./image.ts";
+import { cropRegion, dHash, maxCellDiff, normalizePhoto } from "./image.ts";
 import { maskText } from "./inject/mask.ts";
+import { assertDemoBudget } from "./demo-budget.ts";
 import { photoPath } from "./storage.ts";
 
 const PROVABLE_JOB = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
@@ -76,6 +79,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   const job = await store.mustGetJob(e.db, line.job_id);
   if (job.trades_id !== input.tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
+  if (job.demo) await assertDemoBudget(e, input.tradesId);
   const now = e.now();
 
   if (input.sample) {
@@ -98,8 +102,11 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   const before = await store.beforePhotoFor(e.db, line);
   if (!before) throw conflict("no_before_photo", "this job has no before-photo");
   const hash = await dHash(after);
-  const nearest = await store.nearestOtherHamming(e.db, hash, [before.id]);
+  const nearest = await store.nearestOtherHamming(e.db, hash, [before.id], input.sample ? { jobId: job.id } : {});
+  // A close hash alone can't tell a small fix from a re-used photo; the pixels can.
+  const beforeCellDiff = hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? await maxCellDiff(await e.storage.get(before.storage_path), after) : null;
   const integrity = evaluateIntegrity({
+    beforeCellDiff,
     sample: !!input.sample,
     tokenValid: true,
     gps: input.gps,

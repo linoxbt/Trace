@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Demo } from "@/components/demo/demo";
-import { Eyebrow, FloatDots } from "@/components/marketing/blocks";
+import { Eyebrow, FloatDots, PillLink } from "@/components/marketing/blocks";
 
 export const metadata: Metadata = {
   title: "Live demo",
@@ -22,6 +22,12 @@ export default function DemoPage() {
         <p className="rise mt-5 max-w-2xl text-[17px] leading-relaxed text-muted sm:text-[18px]" style={{ "--delay": "120ms" } as React.CSSProperties}>
           A $420 bathroom repair in four lines. Play the homeowner and the tradesperson, and watch the hold turn into payments one proved line at a time.
         </p>
+        <div className="rise mt-6 flex flex-wrap items-center gap-3" style={{ "--delay": "150ms" } as React.CSSProperties}>
+          <PillLink href="/try" tone="ink">
+            Run it for real
+          </PillLink>
+          <span className="text-[14px] text-muted">Your own copy, a real PayPal sandbox hold and the real AI check. No sign-up.</span>
+        </div>
       </div>
       <div className="rise mt-10 px-3 sm:px-8" style={{ "--delay": "180ms" } as React.CSSProperties}>
         <Demo />

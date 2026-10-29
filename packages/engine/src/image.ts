@@ -29,6 +29,26 @@ export async function dHash(input: Uint8Array): Promise<string> {
   return bits.toString(16).padStart(16, "0");
 }
 
+/**
+ * How different two photos are where they differ most: both shrunk to 64x64
+ * grey, split into an 8x8 grid, and the largest mean absolute difference of
+ * any cell (0 to 255). A re-saved copy of the same photo scores near 0; a
+ * small local change (a drip gone, a crack filled) still lifts one cell.
+ */
+export async function maxCellDiff(a: Uint8Array, b: Uint8Array): Promise<number> {
+  const grey = (x: Uint8Array) => sharp(x).greyscale().resize(64, 64, { fit: "fill" }).raw().toBuffer();
+  const [pa, pb] = await Promise.all([grey(a), grey(b)]);
+  let max = 0;
+  for (let cy = 0; cy < 8; cy++) {
+    for (let cx = 0; cx < 8; cx++) {
+      let sum = 0;
+      for (let y = cy * 8; y < cy * 8 + 8; y++) for (let x = cx * 8; x < cx * 8 + 8; x++) sum += Math.abs(pa[y * 64 + x]! - pb[y * 64 + x]!);
+      max = Math.max(max, sum / 64);
+    }
+  }
+  return Math.round(max * 10) / 10;
+}
+
 /** The region the model pointed at, padded and enlarged 2x, for the second pass. */
 export async function cropRegion(input: Uint8Array, region: Region): Promise<Buffer> {
   const img = sharp(input);

@@ -45,6 +45,13 @@ describe("integrity", () => {
     expect(evaluateIntegrity({ ...base, gps: null }).status).toBe("review");
   });
 
+  it("passes a same-angle photo of a small fix: a close hash but changed pixels", () => {
+    const close = { ...base, dhash: base.beforeDhash };
+    const fixed = evaluateIntegrity({ ...close, beforeCellDiff: 31.6 }).checks.find((c) => c.name === "no_change");
+    expect(fixed?.result).toBe("pass");
+    expect(evaluateIntegrity({ ...close, beforeCellDiff: 0.8 }).checks.find((c) => c.name === "no_change")?.result).toBe("fail");
+  });
+
   it("fails an after-photo that is the before-photo, or one already used", () => {
     expect(evaluateIntegrity({ ...base, dhash: base.beforeDhash }).checks.find((c) => c.name === "no_change")?.detail).toBe("after-photo matches before-photo");
     expect(evaluateIntegrity({ ...base, nearestOtherHamming: 6 }).checks.find((c) => c.name === "reuse")?.detail).toBe("photo already used");

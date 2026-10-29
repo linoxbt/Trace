@@ -16,6 +16,7 @@ export const LABELS: Record<string, string> = {
   ORDER_APPROVED: "Approved in PayPal",
   AUTHORIZED: "Money held by PayPal",
   VERDICT: "Photo checked",
+  SAMPLE_HISTORY: "Sample history added",
   RELEASE_REQUESTED: "Release requested",
   LINE_APPROVED: "Line approved",
   LINE_AUTO_APPROVED: "Line approved when the review window ended",
@@ -51,7 +52,7 @@ export function eventLabel(e: EventLike): string {
   if (e.type.startsWith("GUARD_") && Array.isArray(d.reasons) && d.reasons.length) return String(d.reasons[0]);
   if (e.type === "INJECTION_FLAGGED" && d.line) return `${base} · ${d.line}`;
   if (e.type === "RULE_ADDED" && d.english) return `${base}: “${d.english}”`;
-  if (e.type === "VERDICT") return `${d.line} ${String(d.verdict).toLowerCase().replace("_", " ")}`;
+  if (e.type === "VERDICT") return `${d.line} ${String(d.verdict).toLowerCase().replace("_", " ")}${d.sample ? " · sample proof" : ""}`;
   if ((e.type === "CAPTURED" || e.type === "RELEASE_STARTED" || e.type === "AUTHORIZED") && typeof d.amount_cents === "number") return `${base} · ${money(d.amount_cents)}`;
   if ((e.type === "LINE_APPROVED" || e.type === "LINE_FLAGGED" || e.type === "LINE_AUTO_APPROVED") && d.line) return `${base} · ${d.line}`;
   return base;

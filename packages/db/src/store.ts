@@ -475,12 +475,16 @@ export async function beforePhotoFor(q: Queryable, line: Pick<LineRow, "id" | "j
   return rows[0] ?? null;
 }
 
-/** Smallest Hamming distance from `dhash` to any stored photo other than the line's own before-photos. */
-export async function nearestOtherHamming(q: Queryable, dhash: string, excludePhotoIds: string[]): Promise<number | null> {
+/**
+ * Smallest Hamming distance from `dhash` to any stored photo other than the
+ * line's own before-photos. With `jobId`, only that job's photos: every demo
+ * copy holds the same sample photos, so a sample is only "reused" within its job.
+ */
+export async function nearestOtherHamming(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string } = {}): Promise<number | null> {
   const { rows } = await q.query<{ d: number | null }>(
     `select min(bit_count(('x' || dhash)::bit(64) # ('x' || $1)::bit(64)))::int8 as d
-     from photos where kind <> 'masked' and not (id = any($2::uuid[]))`,
-    [dhash, excludePhotoIds],
+     from photos where kind <> 'masked' and not (id = any($2::uuid[])) and ($3::uuid is null or job_id = $3)`,
+    [dhash, excludePhotoIds, opts.jobId ?? null],
   );
   return rows[0]?.d ?? null;
 }

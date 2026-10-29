@@ -81,8 +81,8 @@ export function Nav() {
           <Link href={account.href} className="press rounded-full px-4 py-2 text-[14px] font-medium text-ink-2 hover:text-ink">
             {account.label}
           </Link>
-          <Link href="/demo" className="pill press btn-primary inline-flex h-12 items-center gap-2.5 rounded-full pl-5 pr-1.5 text-[14px] font-semibold">
-            Try the demo <ArrowDisc tone="white" size={36} />
+          <Link href="/try" className="pill press btn-primary inline-flex h-12 items-center gap-2.5 rounded-full pl-5 pr-1.5 text-[14px] font-semibold">
+            Try the demo job <ArrowDisc tone="white" size={36} />
           </Link>
         </div>
         <button
@@ -117,8 +117,8 @@ export function Nav() {
           ))}
         </div>
         <div className="mt-8 grid gap-3">
-          <Link href="/demo" className="pill press btn-primary flex h-14 items-center justify-between rounded-full pl-6 pr-2 font-semibold">
-            Try the demo <ArrowDisc tone="white" size={40} />
+          <Link href="/try" className="pill press btn-primary flex h-14 items-center justify-between rounded-full pl-6 pr-2 font-semibold">
+            Try the demo job <ArrowDisc tone="white" size={40} />
           </Link>
           <Link href={account.href} className="press flex h-14 items-center justify-center rounded-full bg-paper font-semibold">
             {account.label}

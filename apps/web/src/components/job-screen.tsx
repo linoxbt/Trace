@@ -7,9 +7,10 @@
 import Link from "next/link";
 import { categoryOf } from "@trace/core/categories";
 import { wordsFor } from "@/lib/words";
+import { DEMO_SAMPLES, type Sample } from "@/lib/demo-samples";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobView } from "@/server/view";
-import { api } from "@/lib/api";
+import { api, deviceId } from "@/lib/api";
 import { money, when } from "@/lib/format";
 import { MoneyCard } from "./money-bar";
 import { LINE_RAIL, StatusChip } from "./status";
@@ -32,8 +33,10 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
   const [busy, setBusy] = useState(false);
   const seq = useRef(0);
   const { job, role } = view;
-  const isTrades = role === "tradesperson" || role === "both";
-  const isHome = role === "homeowner" || role === "both";
+  // Judge mode: one person plays both sides, one side at a time.
+  const [playing, setPlaying] = useState<"homeowner" | "tradesperson">(job.status === "AWAITING_APPROVAL" ? "homeowner" : "tradesperson");
+  const isTrades = role === "tradesperson" || (role === "both" && playing === "tradesperson");
+  const isHome = role === "homeowner" || (role === "both" && playing === "homeowner");
   const w = wordsFor(job.category);
   const category = categoryOf(job.category);
   const held = HELD.includes(job.status);
@@ -65,6 +68,24 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
       await fn();
       if (ok) toast("ok", ok);
       await refresh();
+    } catch (e) {
+      toast("bad", e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Judge mode: send a sample photo for a line instead of opening the camera.
+  async function sampleProve(line: Line, src: string) {
+    setBusy(true);
+    try {
+      const blob = await (await fetch(src)).blob();
+      const form = new FormData();
+      form.append("photo", blob, src.split("/").pop() ?? "sample.webp");
+      form.append("sample", "true");
+      form.append("deviceId", deviceId());
+      const r = await api<CameraResult>(`/api/lines/${line.id}/proof`, { form });
+      cameraDone(r);
     } catch (e) {
       toast("bad", e instanceof Error ? e.message : String(e));
     } finally {
@@ -175,9 +196,23 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
       <div className="rise flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
-            <span className="rounded-full bg-card px-2.5 py-1 text-[12px] font-medium text-ink-2 shadow-[0_0_0_1px_var(--color-line)]">
-              {role === "both" ? "Demo · both sides" : role === "tradesperson" ? w.Pro : w.Client}
-            </span>
+            {role === "both" ? (
+              <span role="radiogroup" aria-label="Play as" className="inline-flex rounded-full bg-card p-0.5 text-[12px] font-medium shadow-[0_0_0_1px_var(--color-line)]">
+                {(["homeowner", "tradesperson"] as const).map((side) => (
+                  <button
+                    key={side}
+                    role="radio"
+                    aria-checked={playing === side}
+                    onClick={() => setPlaying(side)}
+                    className={`press rounded-full px-3 py-1 ${playing === side ? "bg-ink text-white" : "text-ink-2 hover:text-ink"}`}
+                  >
+                    {side === "homeowner" ? `As ${w.client}` : `As ${w.pro}`}
+                  </button>
+                ))}
+              </span>
+            ) : (
+              <span className="rounded-full bg-card px-2.5 py-1 text-[12px] font-medium text-ink-2 shadow-[0_0_0_1px_var(--color-line)]">{role === "tradesperson" ? w.Pro : w.Client}</span>
+            )}
             <span className="rounded-full bg-violet-soft px-2.5 py-1 text-[12px] font-medium text-violet">{category.label}</span>
             {job.disputed && <span className="rounded-full bg-bad-soft px-2.5 py-1 text-[12px] font-medium text-bad">Disputed</span>}
             {job.demo && <span className="rounded-full bg-warn-soft px-2.5 py-1 text-[12px] font-medium text-warn">Judge mode</span>}
@@ -252,6 +287,8 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
                       canDecide={isHome && (l.status === "VERIFIED" || l.status === "NEEDS_REVIEW")}
                       busy={busy}
                       onProve={() => setCamera({ mode: "after", line: l })}
+                      samples={job.demo ? DEMO_SAMPLES[l.code] : undefined}
+                      onSample={(src) => sampleProve(l, src)}
                       onApprove={() => act(() => api(`/api/lines/${l.id}/decision`, { json: { approve: true } }), `${l.code} approved.`)}
                       onFlag={(note) => act(() => api(`/api/lines/${l.id}/decision`, { json: { approve: false, note } }), `${l.code} flagged. It stays held until it's fixed.`)}
                     />
@@ -374,6 +411,9 @@ function LineCard(props: {
   scopeFlag?: JobView["guard"]["scopeFlags"][number];
   currency: string;
   canProve: boolean;
+  /** Judge mode: sample photos that can stand in for the camera. */
+  samples?: Sample[];
+  onSample?: (src: string) => void;
   canDecide: boolean;
   busy: boolean;
   onProve: () => void;
@@ -469,6 +509,26 @@ function LineCard(props: {
           <button onClick={props.onProve} className="press btn-ink mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-full text-[14px] font-medium">
             <CameraIcon /> {l.status === "FAILED" || l.status === "FLAGGED" ? "Re-prove" : "Prove it"}
           </button>
+        )}
+        {props.canProve && props.samples && props.samples.length > 0 && (
+          <div className="mt-2 rounded-2xl bg-violet-soft/60 p-3">
+            <div className="text-[12px] font-medium text-violet">Use sample proof</div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {props.samples.map((smp) => (
+                <button
+                  key={smp.src}
+                  disabled={props.busy}
+                  onClick={() => props.onSample?.(smp.src)}
+                  className="press inline-flex h-10 items-center gap-2 rounded-full bg-white pl-1 pr-3.5 text-[13px] font-medium shadow-[0_0_0_1px_var(--color-line)] hover:shadow-[0_0_0_1px_var(--color-violet)] disabled:opacity-50"
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={smp.src} alt="" className="h-8 w-8 rounded-full object-cover" />
+                  {smp.label}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-[11.5px] leading-snug text-muted">Judged by the real AI check. Only the camera, location and device checks are skipped, and it&apos;s labelled as a sample.</p>
+          </div>
         )}
 
         {props.canDecide && !flagging && (

@@ -16,10 +16,11 @@ export interface DecisionRow {
   decided_at: Date;
 }
 
-export async function insertDecision(q: Queryable, action: MoneyAction, decision: Decision): Promise<DecisionRow> {
+/** `decidedAt` is only for the judge-mode sample history; live decisions take now(). */
+export async function insertDecision(q: Queryable, action: MoneyAction, decision: Decision, decidedAt?: Date): Promise<DecisionRow> {
   const { rows } = await q.query<DecisionRow>(
-    `insert into guard_decisions (request_id, job_id, action, decision, outcome) values ($1, $2, $3, $4, $5) returning *`,
-    [action.request_id, action.job_id, JSON.stringify(action), JSON.stringify(decision), decision.outcome],
+    `insert into guard_decisions (request_id, job_id, action, decision, outcome, decided_at) values ($1, $2, $3, $4, $5, coalesce($6, now())) returning *`,
+    [action.request_id, action.job_id, JSON.stringify(action), JSON.stringify(decision), decision.outcome, decidedAt ?? null],
   );
   return rows[0]!;
 }
