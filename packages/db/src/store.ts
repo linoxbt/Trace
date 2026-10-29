@@ -136,9 +136,17 @@ export const LIVE_CAPTURE_STATUSES: CaptureStatus[] = ["SENDING", "COMPLETED", "
 export async function upsertProfile(q: Queryable, p: { id: string; displayName: string; paypalEmail?: string | null }): Promise<void> {
   await q.query(
     `insert into profiles (id, display_name, paypal_email) values ($1, $2, $3)
-     on conflict (id) do update set display_name = excluded.display_name,
-       paypal_email = coalesce(excluded.paypal_email, profiles.paypal_email)`,
+     on conflict (id) do update set paypal_email = coalesce(excluded.paypal_email, profiles.paypal_email)`,
     [p.id, p.displayName, p.paypalEmail ?? null],
+  );
+}
+
+/** What a person changes on their own Settings page. The sign-in name is only the starting value. */
+export async function updateProfile(q: Queryable, id: string, p: { displayName?: string; paypalEmail?: string | null }): Promise<void> {
+  await q.query(
+    `update profiles set display_name = coalesce($2, display_name),
+       paypal_email = case when $4 then $3 else paypal_email end where id = $1`,
+    [id, p.displayName ?? null, p.paypalEmail ?? null, p.paypalEmail !== undefined],
   );
 }
 

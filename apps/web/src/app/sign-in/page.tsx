@@ -9,7 +9,7 @@ import { supabaseBrowser } from "@/lib/supabase-browser";
 
 function SignInForm() {
   const params = useSearchParams();
-  const next = params.get("next") ?? "/jobs";
+  const next = params.get("next") ?? "/dashboard";
   const expired = !!params.get("error");
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">(expired ? "error" : "idle");

@@ -3,18 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { Logo } from "./logo";
 
 export function ClaimJob({ jobId, address }: { jobId: string; address: string }) {
   const router = useRouter();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   return (
-    <div className="relative grid min-h-dvh place-items-center px-5 py-10">
+    <div className="relative grid place-items-center py-4 sm:py-10">
       <div className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-96 bg-[radial-gradient(ellipse_60%_80%_at_50%_-10%,rgba(198,181,255,0.45),transparent)]" />
       <div className="rise w-full max-w-md">
-        <Logo />
-        <div className="surface mt-8 rounded-[28px] p-6 sm:p-8">
+        <div className="surface rounded-[28px] p-6 sm:p-8">
           <p className="text-[13px] font-medium text-violet">You&apos;ve been sent a repair job</p>
           <h1 className="mt-2 text-[28px] font-semibold leading-tight tracking-[-0.025em]">{address}</h1>
           <ul className="mt-6 space-y-3 text-[15px] text-ink-2">

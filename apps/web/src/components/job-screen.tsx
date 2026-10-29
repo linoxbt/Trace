@@ -16,6 +16,7 @@ import { ScopeEditor } from "./scope-editor";
 import { CloseJob } from "./close-job";
 import { ApprovalCard, GuardBadge, InjectionAlert, releaseMessage, ScopeFlag, ShieldIcon } from "./guard";
 import { RuleComposer } from "./rules";
+import { eventDot as dot, eventLabel as label, GUARD_EVENTS } from "@/lib/events";
 
 type Line = JobView["lines"][number];
 type Toast = { id: number; tone: "ok" | "bad" | "info"; text: string };
@@ -254,7 +255,7 @@ export function JobScreen({ initial, paypalClientId, sandbox }: { initial: JobVi
       </div>
 
       {/* Toasts */}
-      <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex flex-col items-center gap-2 px-4" aria-live="polite">
+      <div className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex flex-col items-center gap-2 px-4 lg:bottom-4 lg:pl-[264px]" aria-live="polite">
         {toasts.map((t) => (
           <div
             key={t.id}
@@ -493,66 +494,6 @@ function Photo({ url, label, region, tone }: { url: string | null; label: string
 }
 
 /* -------------------------------------------------------------- timeline */
-
-const LABELS: Record<string, string> = {
-  JOB_CREATED: "Job created",
-  BEFORE_PHOTO: "Before-photo taken",
-  SCOPE_SENT: "Scope sent for approval",
-  HOMEOWNER_JOINED: "Homeowner joined",
-  ORDER_CREATED: "PayPal order created",
-  ORDER_APPROVED: "Approved in PayPal",
-  AUTHORIZED: "Money held by PayPal",
-  VERDICT: "Photo checked",
-  RELEASE_REQUESTED: "Release requested",
-  LINE_APPROVED: "Line approved",
-  LINE_AUTO_APPROVED: "Line approved when the review window ended",
-  LINE_FLAGGED: "Line flagged",
-  RELEASE_STARTED: "Release sent to PayPal",
-  CAPTURED: "Money released",
-  CAPTURE_FAILED: "Release refused · nothing charged",
-  CAPTURE_DENIED: "Release denied by PayPal",
-  VOIDED: "Hold released",
-  REAUTHORIZED: "Hold renewed",
-  REAUTHORIZE_FAILED: "Hold couldn't be renewed",
-  CLOSE_CONFIRMED: "Close confirmed",
-  CLOSE_AGREED: "Close agreed by both sides",
-  DISPUTE_OPENED: "Dispute opened",
-  DISPUTE_UPDATED: "Dispute updated",
-  DISPUTE_RESOLVED: "Dispute resolved",
-  REFUNDED: "Refunded",
-  GUARD_ALLOWED: "Guard: allowed",
-  GUARD_BLOCKED: "Guard: blocked",
-  GUARD_APPROVAL_NEEDED: "Guard: waiting for approval",
-  GUARD_APPROVED: "Approved",
-  GUARD_DENIED: "Denied",
-  GUARD_APPROVAL_EXPIRED: "Approval request expired",
-  INJECTION_FLAGGED: "Text in a proof was aimed at the inspector",
-  RULE_ADDED: "Rule added",
-};
-
-const GUARD_EVENTS = new Set(["GUARD_ALLOWED", "GUARD_BLOCKED", "GUARD_APPROVAL_NEEDED", "GUARD_APPROVED", "GUARD_DENIED", "GUARD_APPROVAL_EXPIRED", "INJECTION_FLAGGED", "RULE_ADDED"]);
-
-function label(e: JobView["events"][number]): string {
-  const base = LABELS[e.type] ?? e.type;
-  const d = e.data ?? {};
-  if (e.type.startsWith("GUARD_") && Array.isArray(d.reasons) && d.reasons.length) return String(d.reasons[0]);
-  if (e.type === "INJECTION_FLAGGED" && d.line) return `${base} · ${d.line}`;
-  if (e.type === "RULE_ADDED" && d.english) return `${base}: “${d.english}”`;
-  if (e.type === "VERDICT") return `${d.line} ${String(d.verdict).toLowerCase().replace("_", " ")}`;
-  if ((e.type === "CAPTURED" || e.type === "RELEASE_STARTED" || e.type === "AUTHORIZED") && typeof d.amount_cents === "number") return `${base} · ${money(d.amount_cents)}`;
-  if ((e.type === "LINE_APPROVED" || e.type === "LINE_FLAGGED" || e.type === "LINE_AUTO_APPROVED") && d.line) return `${base} · ${d.line}`;
-  return base;
-}
-
-function dot(e: JobView["events"][number]): string {
-  if (e.type === "GUARD_ALLOWED" || e.type === "GUARD_APPROVED") return "bg-ok";
-  if (e.type === "GUARD_BLOCKED" || e.type === "GUARD_DENIED" || e.type === "INJECTION_FLAGGED") return "bg-bad";
-  if (e.type === "GUARD_APPROVAL_NEEDED" || e.type === "GUARD_APPROVAL_EXPIRED") return "bg-warn";
-  if (e.type === "CAPTURED" || e.type === "AUTHORIZED") return "bg-violet";
-  if (e.type.includes("FAILED") || e.type.includes("DENIED") || e.type.startsWith("DISPUTE")) return "bg-bad";
-  if (e.type === "VERDICT") return e.data?.verdict === "VERIFIED" ? "bg-ok" : e.data?.verdict === "FAILED" ? "bg-bad" : "bg-warn";
-  return "bg-line-2";
-}
 
 function Timeline({ events }: { events: JobView["events"] }) {
   const [all, setAll] = useState(false);

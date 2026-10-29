@@ -8,8 +8,8 @@ export async function GET(req: NextRequest) {
   // the per-deploy host, where the session cookie just set here isn't sent.
   const site = env().APP_URL;
   const code = req.nextUrl.searchParams.get("code");
-  const next = req.nextUrl.searchParams.get("next") ?? "/jobs";
-  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/jobs";
+  const next = req.nextUrl.searchParams.get("next") ?? "/dashboard";
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
   if (code) {
     const supabase = await supabaseServer();
     const { error } = await supabase.auth.exchangeCodeForSession(code);

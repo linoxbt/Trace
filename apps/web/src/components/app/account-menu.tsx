@@ -34,8 +34,11 @@ export function AccountMenu({ email }: { email: string | null }) {
           <div className="truncate text-[14px] font-medium">{email ?? "Guest"}</div>
         </div>
         <div className="my-1 h-px bg-line" />
-        <a href="/jobs" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
-          Your jobs
+        <a href="/dashboard" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
+          Overview
+        </a>
+        <a href="/settings" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
+          Settings
         </a>
         <a href="/rules" className="block rounded-xl px-3 py-2 text-[14px] hover:bg-paper">
           Payment rules

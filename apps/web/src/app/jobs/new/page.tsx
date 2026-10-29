@@ -11,7 +11,7 @@ export default async function NewJob() {
   if (!user) redirect("/sign-in?next=/jobs/new");
   if (user.anonymous) redirect("/jobs");
   return (
-    <AppShell email={user.email} back={{ href: "/jobs", label: "Jobs" }}>
+    <AppShell user={user} back={{ href: "/jobs", label: "Jobs" }} wide={false}>
       <NewJobForm />
     </AppShell>
   );
