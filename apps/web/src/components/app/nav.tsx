@@ -7,6 +7,8 @@ import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Logo } from "@/components/logo";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { money } from "@/lib/format";
+import { ProofStrip, type StripLine } from "./proof-strip";
 import { IconActivity, IconDispute, IconHome, IconInbox, IconJobs, IconMore, IconPlus, IconSettings, IconShield, IconWallet } from "./icons";
 
 type Item = { href: string; label: string; icon: (p: { className?: string }) => React.ReactElement; badge?: number };
@@ -36,23 +38,81 @@ function active(path: string, href: string): boolean {
   return path === href || path.startsWith(href + "/");
 }
 
-export function Sidebar({ waiting, name, email, canCreate }: { waiting: number; name: string; email: string | null; canCreate: boolean }) {
+export interface SidebarJob {
+  id: string;
+  address: string;
+  strip: StripLine[];
+}
+
+export function Sidebar({
+  waiting,
+  name,
+  email,
+  canCreate,
+  heldCents,
+  releasedCents,
+  jobs,
+}: {
+  waiting: number;
+  name: string;
+  email: string | null;
+  canCreate: boolean;
+  heldCents: number;
+  releasedCents: number;
+  jobs: SidebarJob[];
+}) {
   const path = usePathname() ?? "";
   const router = useRouter();
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[264px] flex-col border-r border-line bg-card/80 px-4 pb-4 pt-5 backdrop-blur-xl lg:flex">
-      <div className="px-2">
-        <Logo href="/dashboard" />
+    <aside className="fixed inset-y-0 left-0 z-40 hidden w-[272px] flex-col overflow-hidden px-4 pb-4 pt-5 text-white lg:flex">
+      {/* The night material sits behind; .grain sets position, so it can't share the aside's class list. */}
+      <div className="stage grain pointer-events-none !absolute inset-0 -z-10" aria-hidden>
+        <div className="dots-dark absolute inset-0 opacity-60 [mask-image:linear-gradient(to_bottom,black,transparent_45%)]" />
       </div>
+      <div className="px-2">
+        <Logo href="/dashboard" dark />
+      </div>
+
+      {/* The ledger: what's held and released right now, across every job. */}
+      <Link href="/payments" className="group mt-6 block rounded-[20px] border border-white/10 bg-white/[0.04] p-4 transition-colors hover:bg-white/[0.07]">
+        <div className="flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.16em] text-white/45">
+          <span>On the books</span>
+          <span className="flex items-center gap-1 text-lilac">
+            <span className="h-1.5 w-1.5 animate-pulse-soft rounded-full bg-lilac" /> live
+          </span>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-[11px] text-white/50">Held</div>
+            <div className="num text-[17px] font-semibold">{money(heldCents)}</div>
+          </div>
+          <div>
+            <div className="text-[11px] text-white/50">Released</div>
+            <div className="num text-[17px] font-semibold text-lilac">{money(releasedCents)}</div>
+          </div>
+        </div>
+        {jobs.length > 0 && (
+          <ul className="mt-3.5 space-y-2.5 border-t border-white/10 pt-3.5">
+            {jobs.map((j) => (
+              <li key={j.id}>
+                <div className="mb-1 truncate text-[11.5px] text-white/60">{j.address}</div>
+                <ProofStrip lines={j.strip} size="xs" dark />
+              </li>
+            ))}
+          </ul>
+        )}
+      </Link>
+
       {canCreate && (
-        <Link href="/jobs/new" className="press btn-primary mt-6 flex h-11 items-center justify-center gap-2 rounded-full text-[14px] font-medium">
+        <Link href="/jobs/new" className="press mt-4 flex h-11 items-center justify-center gap-2 rounded-full bg-white text-[14px] font-semibold text-ink hover:bg-violet-soft">
           <IconPlus /> New job
         </Link>
       )}
-      <nav className="mt-6 flex-1 space-y-6 overflow-y-auto" aria-label="App">
+
+      <nav className="mt-5 flex-1 space-y-5 overflow-y-auto" aria-label="App">
         {navGroups(waiting).map((g, gi) => (
           <div key={gi}>
-            {g.title && <div className="px-3 pb-2 font-mono text-[10.5px] uppercase tracking-[0.14em] text-faint">{g.title}</div>}
+            {g.title && <div className="px-3 pb-1.5 font-mono text-[10px] uppercase tracking-[0.16em] text-white/35">{g.title}</div>}
             <ul className="space-y-0.5">
               {g.items.map((it) => {
                 const on = active(path, it.href);
@@ -62,13 +122,14 @@ export function Sidebar({ waiting, name, email, canCreate }: { waiting: number; 
                     <Link
                       href={it.href}
                       aria-current={on ? "page" : undefined}
-                      className={`group flex h-10 items-center gap-3 rounded-xl px-3 text-[14px] font-medium transition-colors ${
-                        on ? "bg-violet-soft text-violet" : "text-ink-2 hover:bg-paper hover:text-ink"
+                      className={`group relative flex h-10 items-center gap-3 rounded-xl px-3 text-[14px] font-medium transition-colors ${
+                        on ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/[0.05] hover:text-white"
                       }`}
                     >
-                      <Icon className={`h-[19px] w-[19px] ${on ? "text-violet" : "text-muted group-hover:text-ink"}`} />
+                      {on && <span className="absolute inset-y-2 left-0 w-[3px] rounded-full bg-lilac" aria-hidden />}
+                      <Icon className={`h-[19px] w-[19px] ${on ? "text-lilac" : "text-white/45 group-hover:text-white/80"}`} />
                       <span className="flex-1">{it.label}</span>
-                      {!!it.badge && <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-violet px-1.5 text-[11px] font-semibold text-white">{it.badge}</span>}
+                      {!!it.badge && <span className="num grid h-5 min-w-5 place-items-center rounded-full bg-lilac px-1.5 text-[11px] font-bold text-night">{it.badge}</span>}
                     </Link>
                   </li>
                 );
@@ -77,19 +138,20 @@ export function Sidebar({ waiting, name, email, canCreate }: { waiting: number; 
           </div>
         ))}
       </nav>
-      <div className="space-y-2 border-t border-line pt-4">
+
+      <div className="space-y-2 border-t border-white/10 pt-4">
         <Link
           href="/settings"
           aria-current={active(path, "/settings") ? "page" : undefined}
-          className={`flex h-10 items-center gap-3 rounded-xl px-3 text-[14px] font-medium transition-colors ${active(path, "/settings") ? "bg-violet-soft text-violet" : "text-ink-2 hover:bg-paper"}`}
+          className={`flex h-10 items-center gap-3 rounded-xl px-3 text-[14px] font-medium transition-colors ${active(path, "/settings") ? "bg-white/10 text-white" : "text-white/60 hover:bg-white/[0.05] hover:text-white"}`}
         >
-          <IconSettings className="h-[19px] w-[19px] text-muted" /> Settings
+          <IconSettings className="h-[19px] w-[19px] text-white/45" /> Settings
         </Link>
-        <div className="flex items-center gap-3 rounded-2xl bg-paper p-2.5">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-violet text-[13px] font-semibold text-white">{(name || email || "G")[0]!.toUpperCase()}</span>
+        <div className="flex items-center gap-3 rounded-2xl bg-white/[0.06] p-2.5">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lilac text-[13px] font-bold text-night">{(name || email || "G")[0]!.toUpperCase()}</span>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[13.5px] font-semibold">{name}</div>
-            <div className="truncate text-[12px] text-muted">{email ?? "Guest"}</div>
+            <div className="truncate text-[12px] text-white/50">{email ?? "Guest"}</div>
           </div>
           <button
             onClick={async () => {
@@ -97,7 +159,7 @@ export function Sidebar({ waiting, name, email, canCreate }: { waiting: number; 
               router.push("/");
               router.refresh();
             }}
-            className="press grid h-8 w-8 place-items-center rounded-full text-muted hover:bg-card hover:text-bad"
+            className="press grid h-8 w-8 place-items-center rounded-full text-white/50 hover:bg-white/10 hover:text-white"
             aria-label="Sign out"
             title="Sign out"
           >

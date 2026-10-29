@@ -1,18 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { AppShell, Empty, PageHeader, Panel } from "@/components/app/shell";
-import { IconArrow, IconInbox, IconJobs, IconPlus, IconShield } from "@/components/app/icons";
-import { InboxList } from "@/components/app/inbox";
+import { AppShell, Clause, Empty } from "@/components/app/shell";
+import { IconArrow, IconInbox, IconJobs, IconPlus } from "@/components/app/icons";
+import { InboxTickets } from "@/components/app/inbox";
 import { ActivityList } from "@/components/app/activity";
-import { StatusChip } from "@/components/status";
+import { JobCard } from "@/components/app/job-card";
+import { ProofStrip, StripLegend } from "@/components/app/proof-strip";
+import { ShieldIcon } from "@/components/guard";
 import { money } from "@/lib/format";
 import { currentUser } from "@/server/auth";
 import { activityOf, guardSummaryOf, inboxOf, jobsOf, profileOf } from "@/server/app-data";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Overview" };
-
-const ACTIVE = ["AWAITING_APPROVAL", "AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED", "DRAFT"];
 
 function greeting(): string {
   const h = new Date().getUTCHours();
@@ -22,188 +22,185 @@ function greeting(): string {
 export default async function Dashboard() {
   const user = await currentUser();
   if (!user) redirect("/sign-in?next=/dashboard");
-  const [profile, jobs, inbox, activity, guard] = await Promise.all([profileOf(user.id), jobsOf(user.id), inboxOf(user.id, user.email), activityOf(user.id, 8), guardSummaryOf(user.id)]);
+  const [profile, jobs, inbox, activity, guard] = await Promise.all([profileOf(user.id), jobsOf(user.id), inboxOf(user.id, user.email), activityOf(user.id, 7), guardSummaryOf(user.id)]);
 
   const live = jobs.filter((j) => !["COMPLETED", "CLOSED_VOIDED"].includes(j.status));
-  const held = live.reduce((n, j) => n + Math.max(0, j.heldCents - j.releasedCents), 0);
+  const held = live.filter((j) => j.status !== "DRAFT").reduce((n, j) => n + Math.max(0, j.heldCents - j.releasedCents), 0);
   const released = jobs.reduce((n, j) => n + j.releasedCents, 0);
-  const earning = jobs.filter((j) => j.side === "tradesperson").reduce((n, j) => n + j.releasedCents, 0);
-  const paying = jobs.filter((j) => j.side === "homeowner").reduce((n, j) => n + j.releasedCents, 0);
-  const totalHeld = held + released;
+  const earned = jobs.filter((j) => j.side === "tradesperson").reduce((n, j) => n + j.releasedCents, 0);
+  const paid = jobs.filter((j) => j.side === "homeowner").reduce((n, j) => n + j.releasedCents, 0);
+  const board = live.filter((j) => j.strip.length).slice(0, 4);
   const decided = guard.allowed + guard.asked + guard.blocked;
 
   return (
     <AppShell user={user}>
-      <PageHeader
-        eyebrow={new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}
-        title={
-          <>
-            {greeting()}, <span className="text-violet">{profile.displayName}.</span>
-          </>
-        }
-        body={inbox.length ? `${inbox.length} thing${inbox.length === 1 ? " is" : "s are"} waiting on you.` : "Nothing is waiting on you right now."}
-        actions={
-          !user.anonymous && (
-            <Link href="/jobs/new" className="press btn-primary inline-flex h-11 items-center gap-2 rounded-full px-5 text-[14px] font-medium lg:hidden">
-              <IconPlus /> New job
-            </Link>
-          )
-        }
-      />
-
-      <div className="rise mt-8 grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4" style={{ "--delay": "60ms" } as React.CSSProperties}>
-        <Stat label="Held now" value={money(held)} note="On PayPal holds, not charged" tone="ink" />
-        <Stat label="Released" value={money(released)} note={earning && paying ? `${money(earning)} earned · ${money(paying)} paid` : earning ? "Paid to you" : paying ? "Paid by you" : "Nothing released yet"} tone="violet" />
-        <Stat label="Waiting on you" value={String(inbox.length)} note={inbox.length ? "See the list below" : "All clear"} tone={inbox.length ? "warn" : "ok"} />
-        <Stat label="Active jobs" value={String(live.length)} note={`${jobs.length} job${jobs.length === 1 ? "" : "s"} in total`} tone="ink" />
-      </div>
-
-      <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="flex min-w-0 flex-col gap-6">
-          <Panel
-            title="Waiting on you"
-            action={
-              inbox.length > 5 && (
-                <Link href="/approvals" className="text-[13px] font-medium text-violet">
-                  See all {inbox.length}
+      {/* The ledger: today's money, every live job as a proof strip. */}
+      <section className="rise stage grain relative overflow-hidden rounded-[32px] p-6 text-white sm:p-8 lg:p-10">
+        <div className="gridlines-dark pointer-events-none absolute inset-0" />
+        <div className="relative grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:gap-14">
+          <div className="min-w-0">
+            <p className="eyebrow eyebrow-dark">{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</p>
+            <h1 className="display mt-4 text-[40px] leading-[0.96] sm:text-[56px]">
+              {greeting()},<br />
+              <span className="text-lilac">{profile.displayName}.</span>
+            </h1>
+            <div className="mt-8 grid grid-cols-2 gap-4 border-t border-white/10 pt-6 sm:gap-6">
+              <div>
+                <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-white/45">Held, not charged</div>
+                <div className="num mt-1.5 text-[24px] font-semibold tracking-tight sm:text-[38px]">{money(held)}</div>
+              </div>
+              <div>
+                <div className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-white/45">Released for proved work</div>
+                <div className="num mt-1.5 text-[24px] font-semibold tracking-tight text-lilac sm:text-[38px]">{money(released)}</div>
+                {earned > 0 && paid > 0 && (
+                  <div className="num mt-1 text-[12px] text-white/50">
+                    {money(earned)} in · {money(paid)} out
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              {!user.anonymous && (
+                <Link href="/jobs/new" className="press inline-flex h-11 items-center gap-2 rounded-full bg-white px-5 text-[14px] font-semibold text-ink hover:bg-violet-soft">
+                  <IconPlus /> New job
                 </Link>
-              )
-            }
-          >
-            {inbox.length ? <InboxList items={inbox.slice(0, 5)} /> : <Empty icon={<IconInbox />} title="You're all caught up" body="Scopes to approve, lines to review or prove, and anything the guard asks you about show up here." />}
-          </Panel>
+              )}
+              <Link href="/payments" className="press inline-flex h-11 items-center gap-2 rounded-full border border-white/20 px-5 text-[14px] font-medium hover:bg-white/10">
+                Statement <IconArrow className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
 
-          <Panel
-            title="Active jobs"
+          <div className="relative min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-white/45">Live jobs, line by line</span>
+              {inbox.length > 0 && (
+                <Link href="/approvals" className="stamp text-lilac hover:text-white">
+                  {inbox.length} waiting on you
+                </Link>
+              )}
+            </div>
+            {board.length ? (
+              <ul className="mt-5 space-y-5">
+                {board.map((j) => (
+                  <li key={j.id}>
+                    <Link href={`/jobs/${j.id}`} className="group block">
+                      <div className="mb-2 flex items-baseline justify-between gap-3">
+                        <span className="min-w-0 truncate text-[15px] font-semibold group-hover:text-lilac">{j.address}</span>
+                        <span className="num shrink-0 text-[12.5px] text-white/55">
+                          <span className="text-lilac">{money(j.releasedCents)}</span> / {money(j.heldCents || j.totalCents)}
+                        </span>
+                      </div>
+                      <ProofStrip lines={j.strip} size="lg" dark labels />
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="mt-5 rounded-[20px] border border-dashed border-white/15 p-6 text-[14px] text-white/55">
+                No live jobs yet. Each job you start or are sent shows up here as a strip of its lines: solid when paid, outlined while held.
+              </div>
+            )}
+            <StripLegend dark className="mt-6" />
+          </div>
+        </div>
+      </section>
+
+      {/* What needs you */}
+      <section className="rise mt-10" style={{ "--delay": "80ms" } as React.CSSProperties}>
+        <Clause
+          action={
+            inbox.length > 6 && (
+              <Link href="/approvals" className="font-mono text-[11px] uppercase tracking-[0.12em] text-violet">
+                All {inbox.length} →
+              </Link>
+            )
+          }
+        >
+          Waiting on you · {inbox.length}
+        </Clause>
+        {inbox.length ? (
+          <InboxTickets items={inbox.slice(0, 6)} />
+        ) : (
+          <div className="clay rounded-[24px]">
+            <Empty icon={<IconInbox />} title="You're all caught up" body="Scopes to approve, lines to review or prove, and anything the money guard asks you about land here." />
+          </div>
+        )}
+      </section>
+
+      <div className="mt-10 grid gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <section className="rise min-w-0" style={{ "--delay": "120ms" } as React.CSSProperties}>
+          <Clause
             action={
-              <Link href="/jobs" className="inline-flex items-center gap-1 text-[13px] font-medium text-violet">
-                All jobs <IconArrow className="h-3.5 w-3.5" />
+              <Link href="/jobs" className="font-mono text-[11px] uppercase tracking-[0.12em] text-violet">
+                All jobs →
               </Link>
             }
           >
-            {live.length === 0 ? (
+            On the job · {live.length}
+          </Clause>
+          {live.length ? (
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+              {live.slice(0, 4).map((j, i) => (
+                <JobCard key={j.id} job={j} priority={i < 2} />
+              ))}
+            </div>
+          ) : (
+            <div className="clay rounded-[24px]">
               <Empty
                 icon={<IconJobs />}
-                title={user.anonymous ? "Sign in with your email to start a job" : "No active jobs"}
-                body="Tradespeople start a job and invite the homeowner by email. Homeowners see jobs here as soon as a scope is sent to them."
-                action={
-                  !user.anonymous && (
-                    <Link href="/jobs/new" className="press btn-ink inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-[13.5px] font-medium">
-                      <IconPlus /> Start a job
-                    </Link>
-                  )
-                }
+                title={user.anonymous ? "Sign in with your email to start a job" : "No live jobs"}
+                body="Tradespeople start a job and invite the homeowner by email. Homeowners see a job here as soon as a scope is sent to them."
               />
-            ) : (
-              <ul className="-mx-2 divide-y divide-line">
-                {live.slice(0, 6).map((j) => {
-                  const base = j.heldCents || j.totalCents;
-                  const pct = base ? Math.min(100, (j.releasedCents / base) * 100) : 0;
-                  return (
-                    <li key={j.id}>
-                      <Link href={`/jobs/${j.id}`} className="group grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-2xl px-2 py-3.5 hover:bg-paper sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
-                        <div className="min-w-0">
-                          <div className="truncate text-[15px] font-semibold">{j.address}</div>
-                          <div className="mt-0.5 truncate text-[12.5px] text-muted">
-                            {j.side === "tradesperson" ? `For ${j.otherParty}` : `By ${j.otherParty}`} · {j.status === "DRAFT" ? "scope not sent yet" : `${j.paid} of ${j.lines} lines paid`}
-                          </div>
-                        </div>
-                        <div className={`hidden sm:block ${j.status === "DRAFT" ? "invisible" : ""}`}>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-paper-2">
-                            <div className="h-full rounded-full bg-gradient-to-r from-violet to-[#8a63ff]" style={{ width: `${pct}%` }} />
-                          </div>
-                          <div className="num mt-1.5 text-[11.5px] text-faint">
-                            {money(j.releasedCents)} of {money(base)}
-                          </div>
-                        </div>
-                        <StatusChip status={j.status} size="sm" />
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Panel>
-        </div>
+            </div>
+          )}
+        </section>
 
-        <div className="flex flex-col gap-6">
-          <section className="grain relative overflow-hidden rounded-[24px] bg-night p-6 text-white">
-            <div className="pointer-events-none absolute -right-20 -top-20 h-60 w-60 rounded-full bg-[radial-gradient(closest-side,rgba(91,47,214,0.6),transparent)] blur-xl" />
-            <div className="relative">
-              <div className="text-[12px] uppercase tracking-[0.14em] text-white/50">Across your jobs</div>
-              <div className="num mt-2 text-[34px] font-semibold tracking-tight">{money(totalHeld)}</div>
-              <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-gradient-to-r from-[#8a63ff] to-lilac" style={{ width: `${totalHeld ? (released / totalHeld) * 100 : 0}%` }} />
-              </div>
-              <div className="mt-3 flex justify-between text-[12.5px]">
-                <span className="text-lilac">
-                  Released <span className="num font-semibold">{money(released)}</span>
-                </span>
-                <span className="text-white/60">
-                  Still held <span className="num font-semibold text-white">{money(held)}</span>
+        <aside className="rise flex flex-col gap-8" style={{ "--delay": "160ms" } as React.CSSProperties}>
+          <div>
+            <Clause>Money guard</Clause>
+            <Link href="/rules" className="clay clay-hover block rounded-[24px] p-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <div className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-faint">Inspection record</div>
+                  <div className="mt-1 text-[17px] font-semibold tracking-tight">Every move checked first</div>
+                </div>
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-violet-soft text-violet">
+                  <ShieldIcon className="h-5 w-5" />
                 </span>
               </div>
-              <Link href="/payments" className="press mt-5 inline-flex h-9 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-[13px] font-medium hover:bg-white/15">
-                Payments ledger <IconArrow className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-          </section>
-
-          <Panel
-            title={
-              <span className="flex items-center gap-2">
-                <IconShield className="h-[18px] w-[18px] text-violet" /> Money guard
-              </span>
-            }
-            action={
-              <Link href="/rules" className="text-[13px] font-medium text-violet">
-                Rules
-              </Link>
-            }
-          >
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <Mini n={guard.allowed} label="Allowed" cls="text-ok" />
-              <Mini n={guard.asked} label="Asked you" cls="text-warn" />
-              <Mini n={guard.blocked} label="Blocked" cls="text-bad" />
-            </div>
-            <p className="mt-4 text-[13px] leading-relaxed text-muted">
-              {decided ? `${decided} money move${decided === 1 ? " was" : "s were"} checked against live PayPal state before anything moved.` : "Every release is checked against live PayPal state and your rules before money moves."}{" "}
-              {guard.rules ? `${guard.rules} rule${guard.rules === 1 ? "" : "s"} of your own on top.` : "Add a rule in your own words."}
-            </p>
-          </Panel>
-
-          <Panel
-            title="Recent activity"
-            action={
-              <Link href="/activity" className="text-[13px] font-medium text-violet">
-                All
-              </Link>
-            }
-          >
-            {activity.length ? <ActivityList items={activity} compact /> : <p className="text-[14px] text-muted">Activity on your jobs shows up here.</p>}
-          </Panel>
-        </div>
+              <dl className="mt-5 divide-y divide-dashed divide-line-2 border-y border-dashed border-line-2 font-mono text-[12.5px]">
+                {[
+                  ["Allowed", guard.allowed, "text-ok"],
+                  ["Asked first", guard.asked, "text-warn"],
+                  ["Blocked", guard.blocked, "text-bad"],
+                  ["Your own rules", guard.rules, "text-violet"],
+                ].map(([k, v, cls]) => (
+                  <div key={k as string} className="flex items-center justify-between py-2.5">
+                    <dt className="uppercase tracking-[0.1em] text-muted">{k}</dt>
+                    <dd className={`text-[15px] font-semibold ${cls}`}>{String(v).padStart(2, "0")}</dd>
+                  </div>
+                ))}
+              </dl>
+              <p className="mt-4 text-[13px] leading-relaxed text-muted">
+                {decided ? `${decided} money move${decided === 1 ? "" : "s"} checked against live PayPal state.` : "Releases are checked against live PayPal state and your rules first."}
+              </p>
+            </Link>
+          </div>
+          <div>
+            <Clause
+              action={
+                <Link href="/activity" className="font-mono text-[11px] uppercase tracking-[0.12em] text-violet">
+                  Log →
+                </Link>
+              }
+            >
+              Latest
+            </Clause>
+            <div className="clay rounded-[24px] p-5">{activity.length ? <ActivityList items={activity} compact /> : <p className="text-[14px] text-muted">Activity on your jobs shows up here.</p>}</div>
+          </div>
+        </aside>
       </div>
     </AppShell>
-  );
-}
-
-function Stat({ label, value, note, tone }: { label: string; value: string; note: string; tone: "ink" | "violet" | "warn" | "ok" }) {
-  const cls = { ink: "text-ink", violet: "text-violet", warn: "text-warn", ok: "text-ok" }[tone];
-  return (
-    <div className="surface rounded-[20px] p-4 sm:p-5">
-      <div className="text-[12.5px] font-medium text-muted">{label}</div>
-      <div className={`num mt-1.5 text-[24px] font-semibold tracking-tight sm:text-[28px] ${cls}`}>{value}</div>
-      <div className="mt-1 truncate text-[12px] text-faint">{note}</div>
-    </div>
-  );
-}
-
-function Mini({ n, label, cls }: { n: number; label: string; cls: string }) {
-  return (
-    <div className="rounded-2xl bg-paper px-2 py-3">
-      <div className={`num text-[22px] font-semibold ${cls}`}>{n}</div>
-      <div className="text-[11.5px] text-muted">{label}</div>
-    </div>
   );
 }

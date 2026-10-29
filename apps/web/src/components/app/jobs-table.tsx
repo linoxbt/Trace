@@ -6,6 +6,8 @@ import type { Invite, JobRowView } from "@/server/app-data";
 import { StatusChip } from "@/components/status";
 import { money, when } from "@/lib/format";
 import { IconMail } from "./icons";
+import { JobCard } from "./job-card";
+import { ProofStrip } from "./proof-strip";
 
 const TABS = [
   { id: "all", label: "All" },
@@ -20,6 +22,7 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
   const [tab, setTab] = useState<Tab>("all");
   const [side, setSide] = useState<"any" | "tradesperson" | "homeowner">("any");
   const [q, setQ] = useState("");
+  const [view, setView] = useState<"cards" | "ledger">("cards");
   const count = (t: (typeof TABS)[number]) => jobs.filter((j) => !("match" in t) || (t.match as readonly string[]).includes(j.status)).length;
   const shown = useMemo(() => {
     const t = TABS.find((x) => x.id === tab)!;
@@ -75,6 +78,19 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
           ))}
         </div>
         <div className="flex gap-2">
+          <div role="radiogroup" aria-label="View" className="hidden h-10 shrink-0 rounded-full bg-paper-2 p-1 md:flex">
+            {(["cards", "ledger"] as const).map((v) => (
+              <button
+                key={v}
+                role="radio"
+                aria-checked={view === v}
+                onClick={() => setView(v)}
+                className={`press rounded-full px-3.5 font-mono text-[11px] uppercase tracking-[0.12em] ${view === v ? "bg-card text-ink shadow-[0_1px_3px_rgba(26,19,37,0.15)]" : "text-muted"}`}
+              >
+                {v === "cards" ? "Proof cards" : "Ledger"}
+              </button>
+            ))}
+          </div>
           <select value={side} onChange={(e) => setSide(e.target.value as typeof side)} className="field h-10 w-auto py-0 pr-9 text-[13.5px]" aria-label="Your role">
             <option value="any">Any role</option>
             <option value="tradesperson">As tradesperson</option>
@@ -86,6 +102,12 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
 
       {shown.length === 0 ? (
         <div className="surface mt-4 rounded-[24px] px-6 py-14 text-center text-[14px] text-muted">No jobs match.</div>
+      ) : view === "cards" ? (
+        <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2 2xl:grid-cols-3">
+          {shown.map((j, i) => (
+            <JobCard key={j.id} job={j} priority={i < 4} />
+          ))}
+        </div>
       ) : (
         <>
           {/* Desktop: a table */}
@@ -111,8 +133,6 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
               </thead>
               <tbody className="divide-y divide-line">
                 {shown.map((j) => {
-                  const base = j.heldCents || j.totalCents;
-                  const pct = base ? Math.min(100, (j.releasedCents / base) * 100) : 0;
                   return (
                     <tr key={j.id} className="group cursor-pointer hover:bg-paper">
                       <td className="px-5 py-4">
@@ -135,9 +155,7 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
                           <span className="text-[12.5px] text-faint">Scope not sent yet</span>
                         ) : (
                           <>
-                            <div className="h-1.5 overflow-hidden rounded-full bg-paper-2">
-                              <div className="h-full rounded-full bg-gradient-to-r from-violet to-[#8a63ff]" style={{ width: `${pct}%` }} />
-                            </div>
+                            <ProofStrip lines={j.strip} size="sm" />
                             <div className="mt-1.5 text-[11.5px] text-faint">
                               {j.paid} of {j.lines} lines paid
                             </div>
@@ -157,8 +175,6 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
           {/* Phones: cards */}
           <ul className="mt-4 flex flex-col gap-3 md:hidden">
             {shown.map((j) => {
-              const base = j.heldCents || j.totalCents;
-              const pct = base ? Math.min(100, (j.releasedCents / base) * 100) : 0;
               return (
                 <li key={j.id}>
                   <Link href={`/jobs/${j.id}`} className="surface block rounded-[22px] p-4">
@@ -169,9 +185,7 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
                       </div>
                       <StatusChip status={j.status} size="sm" />
                     </div>
-                    <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-paper-2">
-                      <div className="h-full rounded-full bg-gradient-to-r from-violet to-[#8a63ff]" style={{ width: `${pct}%` }} />
-                    </div>
+                    <ProofStrip lines={j.strip} size="sm" className="mt-4" />
                     <div className="mt-2 flex justify-between text-[12.5px]">
                       <span className="text-faint">{j.status === "DRAFT" ? "Scope not sent yet" : `${j.paid} of ${j.lines} lines paid`}</span>
                       <span className="num">

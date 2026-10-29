@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { AppShell, Empty, PageHeader, Panel } from "@/components/app/shell";
+import { AppShell, Clause, Empty, PageHeader } from "@/components/app/shell";
 import { IconInbox } from "@/components/app/icons";
-import { InboxList } from "@/components/app/inbox";
+import { InboxTickets } from "@/components/app/inbox";
 import { currentUser } from "@/server/auth";
 import { inboxOf, type InboxItem } from "@/server/app-data";
 
@@ -22,7 +22,7 @@ export default async function Approvals() {
   return (
     <AppShell user={user}>
       <PageHeader eyebrow="Waiting on you" title={inbox.length ? `${inbox.length} thing${inbox.length === 1 ? "" : "s"} to do.` : "All caught up."} body="Everything across your jobs that needs you, most urgent first." />
-      <div className="rise mt-8 flex flex-col gap-6" style={{ "--delay": "80ms" } as React.CSSProperties}>
+      <div className="rise mt-10 flex flex-col gap-10" style={{ "--delay": "80ms" } as React.CSSProperties}>
         {inbox.length === 0 ? (
           <div className="surface rounded-[24px]">
             <Empty icon={<IconInbox />} title="Nothing needs you" body="When a scope is sent to you, a line needs review or proof, or the guard asks before releasing money, it lands here." />
@@ -32,10 +32,13 @@ export default async function Approvals() {
             const items = inbox.filter((i) => g.kinds.includes(i.kind));
             if (!items.length) return null;
             return (
-              <Panel key={g.title} title={`${g.title} · ${items.length}`}>
-                <p className="-mt-2 mb-2 text-[13px] text-muted">{g.body}</p>
-                <InboxList items={items} />
-              </Panel>
+              <section key={g.title}>
+                <Clause>
+                  {g.title} · {items.length}
+                </Clause>
+                <p className="-mt-2 mb-4 text-[13.5px] text-muted">{g.body}</p>
+                <InboxTickets items={items} />
+              </section>
             );
           })
         )}

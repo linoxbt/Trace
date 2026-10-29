@@ -48,6 +48,49 @@ export interface JobRowView {
   disputed: boolean;
   createdAt: string;
   updatedAt: string;
+  /** One entry per line, in scope order: the proof strip. */
+  strip: StripLine[];
+  /** The latest after-photo, else a before-photo. */
+  coverUrl: string | null;
+}
+
+export interface StripLine {
+  code: string;
+  title: string;
+  cents: number;
+  status: string;
+}
+
+/** Each job's lines, in scope order. */
+async function stripsFor(jobIds: string[]): Promise<Map<string, StripLine[]>> {
+  const out = new Map<string, StripLine[]>();
+  if (!jobIds.length) return out;
+  const { rows } = await engine().db.query<{ job_id: string; code: string; title: string; price_cents: number; status: string }>(
+    "select job_id, code, title, price_cents, status from lines where job_id = any($1::uuid[]) order by job_id, position",
+    [jobIds],
+  );
+  for (const r of rows) {
+    const list = out.get(r.job_id) ?? [];
+    list.push({ code: r.code, title: r.title, cents: r.price_cents, status: r.status });
+    out.set(r.job_id, list);
+  }
+  return out;
+}
+
+/** A photo per job for its card: the newest proof, else the first before-photo. */
+export async function coversFor(jobIds: string[]): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (!jobIds.length) return out;
+  const { rows } = await engine().db.query<{ job_id: string; storage_path: string }>(
+    `select distinct on (job_id) job_id, storage_path from photos
+      where job_id = any($1::uuid[]) and kind in ('after','during','before')
+      order by job_id, (kind = 'before'), case when kind = 'before' then taken_at end asc, taken_at desc`,
+    [jobIds],
+  );
+  const e = engine();
+  await Promise.all(rows.map(async (r) => out.set(r.job_id, await e.storage.signedUrl(r.storage_path, 600).catch(() => ""))));
+  for (const [k, v] of out) if (!v) out.delete(k);
+  return out;
 }
 
 /** The user's jobs, newest activity first. */
@@ -85,6 +128,8 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
      order by 9 desc limit $2`,
     [userId, limit],
   );
+  const ids = rows.map((r) => r.id);
+  const [strips, covers] = await Promise.all([stripsFor(ids), coversFor(ids)]);
   return rows
     .map((r) => ({
       id: r.id,
@@ -102,6 +147,8 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
       disputed: r.disputed,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
+      strip: strips.get(r.id) ?? [],
+      coverUrl: covers.get(r.id) ?? null,
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -142,6 +189,7 @@ export interface InboxItem {
   at: string;
   /** Lower comes first. */
   rank: number;
+  coverUrl?: string | null;
 }
 
 /** Everything waiting on this person, most urgent first. */
@@ -248,6 +296,9 @@ export async function inboxOf(userId: string, email: string | null): Promise<Inb
     });
   for (const d of disputes.rows)
     items.push({ key: `dsp-${d.id}`, kind: "dispute", jobId: d.job_id, address: d.address, title: "A dispute needs your evidence", detail: `${DISPUTE_REASON[d.reason ?? ""] ?? "The homeowner opened a PayPal dispute"}`, amountCents: null, at: d.created_at.toISOString(), rank: 0 });
+  const covers = await coversFor([...new Set(items.map((i) => i.jobId))]);
+  // An unopened scope isn't the person's job yet, so its photos aren't theirs to load.
+  for (const i of items) i.coverUrl = i.kind === "invite" ? null : (covers.get(i.jobId) ?? null);
   return items.sort((a, b) => a.rank - b.rank || b.at.localeCompare(a.at));
 }
 
