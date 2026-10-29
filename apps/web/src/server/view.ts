@@ -39,6 +39,8 @@ export interface JobView {
   };
   role: Role;
   money: MoneyView;
+  /** Payments PayPal took on this job, oldest first. */
+  captures: { id: string; amountCents: number; status: string; lines: string[]; paypalId: string | null; at: string; final: boolean }[];
   lines: {
     id: string;
     code: string;
@@ -163,6 +165,22 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       authorizationStatus: auth?.status ?? null,
       expiresAt: auth?.expires_at?.toISOString() ?? null,
     },
+    captures: auth
+      ? (
+          await e.db.query<store.CaptureRow>(
+            "select c.* from captures c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status <> 'FAILED' order by c.created_at",
+            [jobId],
+          )
+        ).rows.map((c) => ({
+          id: c.id,
+          amountCents: c.amount_cents,
+          status: c.status,
+          lines: lines.filter((l) => c.line_ids.includes(l.id)).map((l) => l.code),
+          paypalId: c.paypal_capture_id,
+          at: c.created_at.toISOString(),
+          final: c.final,
+        }))
+      : [],
     lines: await Promise.all(
       lines.map(async (l) => {
         const v = verdictBy.get(l.id);

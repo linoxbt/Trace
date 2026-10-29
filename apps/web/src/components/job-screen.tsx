@@ -246,6 +246,22 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
           <div className="rise empty:hidden" style={{ "--delay": "120ms" } as React.CSSProperties}>
             {nextStep}
           </div>
+          {view.captures.length > 0 && (
+            <div className="rise" style={{ "--delay": "140ms" } as React.CSSProperties}>
+              <PaymentsCard
+                captures={view.captures}
+                currency={job.currency}
+                busy={busy}
+                canRefund={!job.disputed}
+                onRefund={(id, amountCents) =>
+                  act(async () => {
+                    const r = await api<{ outcome: string; reasons: string[]; refunded: boolean }>(`/api/captures/${id}/refund`, { json: amountCents ? { amountCents } : {} });
+                    toast(r.refunded ? "ok" : r.outcome === "DENY" ? "bad" : "info", r.refunded ? "Refunded through PayPal." : r.outcome === "DENY" ? r.reasons.join(" ") : "Refund requested. Both of you approve it below before anything moves.");
+                  })
+                }
+              />
+            </div>
+          )}
           {held && (
             <div className="rise hidden lg:block" style={{ "--delay": "160ms" } as React.CSSProperties}>
               <CloseJob view={view} onDone={refresh} />
@@ -603,6 +619,74 @@ function Photo({ url, label, region, tone }: { url: string | null; label: string
 }
 
 /* -------------------------------------------------------------- timeline */
+
+function PaymentsCard({
+  captures,
+  currency,
+  busy,
+  canRefund,
+  onRefund,
+}: {
+  captures: JobView["captures"];
+  currency: string;
+  busy: boolean;
+  canRefund: boolean;
+  onRefund: (captureId: string, amountCents?: number) => void;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [amount, setAmount] = useState("");
+  const LABEL: Record<string, string> = { COMPLETED: "Paid", PENDING: "Pending at PayPal", SENDING: "Sending", REFUNDED: "Refunded", PARTIALLY_REFUNDED: "Part refunded", DECLINED: "Refused" };
+  return (
+    <div className="surface rounded-[24px] p-5">
+      <h2 className="text-[16px] font-semibold tracking-tight">Payments</h2>
+      <ul className="mt-3 divide-y divide-line">
+        {captures.map((c) => (
+          <li key={c.id} className="py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="num text-[15px] font-semibold">{money(c.amountCents, currency)}</div>
+                <div className="truncate text-[12.5px] text-muted">
+                  {c.lines.join(", ")} · {LABEL[c.status] ?? c.status}
+                  {c.paypalId ? ` · ${c.paypalId}` : ""}
+                </div>
+              </div>
+              {canRefund && c.status === "COMPLETED" && open !== c.id && (
+                <button disabled={busy} onClick={() => { setOpen(c.id); setAmount((c.amountCents / 100).toFixed(2)); }} className="press h-8 shrink-0 rounded-full px-3 text-[13px] font-medium text-muted hover:bg-bad-soft hover:text-bad disabled:opacity-50">
+                  Refund
+                </button>
+              )}
+            </div>
+            {open === c.id && (
+              <div className="mt-3 rounded-2xl bg-paper p-3">
+                <label className="grid gap-1.5 text-[12.5px] font-medium text-muted">
+                  Amount to refund
+                  <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="field num text-[15px]" />
+                </label>
+                <p className="mt-2 text-[12px] leading-snug text-muted">A refund always needs both of you to approve it. Nothing moves until you both have.</p>
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => setOpen(null)} className="press h-9 rounded-full bg-card px-4 text-[13px] font-medium shadow-[0_0_0_1px_var(--color-line)]">
+                    Cancel
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => {
+                      const cents = Math.round(Number(amount.replace(/[^0-9.]/g, "")) * 100);
+                      setOpen(null);
+                      onRefund(c.id, cents > 0 && cents < c.amountCents ? cents : undefined);
+                    }}
+                    className="press h-9 rounded-full bg-bad px-4 text-[13px] font-semibold text-white disabled:opacity-50"
+                  >
+                    Ask to refund
+                  </button>
+                </div>
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function Timeline({ events }: { events: JobView["events"] }) {
   const [all, setAll] = useState(false);
