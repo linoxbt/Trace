@@ -12,6 +12,9 @@
 
 [build.environment]
   NODE_VERSION = "22"
+  # The PayPal client ID is public by design: the browser needs it for the
+  # PayPal button, so it is in the built pages. The secret never is.
+  SECRETS_SCAN_OMIT_KEYS = "NEXT_PUBLIC_PAYPAL_CLIENT_ID,PAYPAL_CLIENT_ID"
 
 [functions]
   directory = "netlify/functions"
