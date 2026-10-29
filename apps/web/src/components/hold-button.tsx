@@ -66,8 +66,12 @@ export function HoldButton(props: {
   sandbox: boolean;
   /** What this job calls the person doing the work. */
   pro?: string;
+  /** A change order: its own order and authorize routes, and a heading. */
+  changeOrder?: { id: string; code: string };
   onHeld: () => void;
 }) {
+  const orderPath = props.changeOrder ? `/api/change-orders/${props.changeOrder.id}/order` : `/api/jobs/${props.jobId}/order`;
+  const authorizePath = props.changeOrder ? `/api/change-orders/${props.changeOrder.id}/authorize` : `/api/jobs/${props.jobId}/authorize`;
   const [state, setState] = useState<State>("loading");
   const [message, setMessage] = useState("");
   const session = useRef<PayPalSession | null>(null);
@@ -92,7 +96,7 @@ export function HoldButton(props: {
           async onApprove({ orderId }) {
             setState("working");
             try {
-              await api(`/api/jobs/${props.jobId}/authorize`, { json: { orderId } });
+              await api(authorizePath, { json: { orderId } });
               setState("held");
               props.onHeld();
             } catch (e) {
@@ -118,13 +122,13 @@ export function HoldButton(props: {
     return () => {
       live = false;
     };
-  }, [props.clientId, props.sandbox, props.currency, props.jobId, props.merchantId, props.bnCode]);
+  }, [props.clientId, props.sandbox, props.currency, props.jobId, props.merchantId, props.bnCode, authorizePath]);
 
   async function start() {
     if (!session.current) return;
     setMessage("");
     // The order request starts inside the click, as PayPal's popup requires.
-    const order = api<{ orderId: string }>(`/api/jobs/${props.jobId}/order`, { json: {} }).then((r) => ({ orderId: r.orderId }));
+    const order = api<{ orderId: string }>(orderPath, { json: {} }).then((r) => ({ orderId: r.orderId }));
     try {
       await session.current.start({ presentationMode: "auto" }, order);
     } catch (e) {
@@ -136,7 +140,7 @@ export function HoldButton(props: {
   return (
     <div className="surface overflow-hidden rounded-[24px]">
       <div className="p-5">
-        <div className="text-[13px] font-medium text-violet">Your approval</div>
+        <div className="text-[13px] font-medium text-violet">{props.changeOrder ? `Change order ${props.changeOrder.code}` : "Your approval"}</div>
         <div className="mt-1 text-[22px] font-semibold tracking-tight">
           Approve and hold <span className="num">{money(props.totalCents, props.currency)}</span>
         </div>

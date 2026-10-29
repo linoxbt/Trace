@@ -99,10 +99,10 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
        (select count(*)::int8 from lines where job_id = j.id) as lines,
        (select count(*)::int8 from lines where job_id = j.id and status = 'CAPTURED') as paid,
        (select count(*)::int8 from lines where job_id = j.id and status not in ('CAPTURED','DROPPED')) as open,
-       a.amount_cents as held,
-       coalesce((select sum(c.amount_cents) from captures c where c.authorization_id = a.id and c.status in ('COMPLETED','PENDING')),0)::int8 as released,
+       (select sum(a.amount_cents)::int8 from authorizations a where a.job_id = j.id) as held,
+       coalesce((select sum(c.amount_cents) from captures c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING')),0)::int8 as released,
        j.category
-     from jobs j left join authorizations a on a.job_id = j.id and a.kind = 'base'
+     from jobs j
      where $1 in (j.trades_id, j.homeowner_id)
      order by 9 desc limit $2`,
     [userId, limit],

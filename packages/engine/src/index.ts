@@ -11,6 +11,7 @@ export * from "./payee.ts";
 export * from "./demo.ts";
 export * from "./disputes.ts";
 export * from "./scope-draft.ts";
+export * from "./change-orders.ts";
 export * from "./guard/execute.ts";
 export { forgetDisputes } from "./guard/preflight.ts";
 export * from "./webhooks.ts";

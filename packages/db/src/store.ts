@@ -55,6 +55,8 @@ export interface LineRow {
   /** How the line is proved, and the type's details (section 6.2). */
   proof_type: ProofType;
   proof_spec: ProofSpec | null;
+  /** Set for lines a change order added; they're paid from that order's own hold. */
+  change_order_id: string | null;
 }
 
 export type AuthorizationStatus = "CREATED" | "PARTIALLY_CAPTURED" | "CAPTURED" | "VOIDED" | "DENIED" | "PENDING";
@@ -262,6 +264,45 @@ export interface NewLine {
   proofSpec?: ProofSpec | null;
 }
 
+/** Add a change order's lines after the job's existing ones. */
+export async function appendLines(q: Queryable, jobId: string, lines: readonly NewLine[], changeOrderId: string): Promise<LineRow[]> {
+  const { rows: pos } = await q.query<{ n: number }>("select coalesce(max(position), -1)::int + 1 as n from lines where job_id = $1", [jobId]);
+  const out: LineRow[] = [];
+  for (const [i, l] of lines.entries()) {
+    const { rows } = await q.query<LineRow>(
+      `insert into lines (job_id, code, title, description, price_cents, acceptance, verifiable_by_photo, position, proof_type, proof_spec, change_order_id)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning *`,
+      [jobId, l.code, l.title, l.description ?? null, l.priceCents, JSON.stringify(l.acceptance), l.verifiableByPhoto, pos[0]!.n + i, l.proofType ?? "photo", l.proofSpec ? JSON.stringify(l.proofSpec) : null, changeOrderId],
+    );
+    out.push(rows[0]!);
+  }
+  return out;
+}
+
+export interface ChangeOrderRow {
+  id: string;
+  job_id: string;
+  code: string;
+  status: "AWAITING_APPROVAL" | "AUTHORIZED" | "DECLINED" | "CANCELLED";
+  lines: NewLine[];
+  total_cents: number;
+  scope_hash: string;
+  paypal_order_id: string | null;
+  authorization_id: string | null;
+  created_at: Date;
+  updated_at: Date;
+}
+
+export async function getChangeOrder(q: Queryable, id: string, opts: { lock?: boolean } = {}): Promise<ChangeOrderRow | null> {
+  const { rows } = await q.query<ChangeOrderRow>(`select * from change_orders where id = $1${opts.lock ? " for update" : ""}`, [id]);
+  return rows[0] ?? null;
+}
+
+export async function changeOrdersForJob(q: Queryable, jobId: string): Promise<ChangeOrderRow[]> {
+  const { rows } = await q.query<ChangeOrderRow>("select * from change_orders where job_id = $1 order by created_at", [jobId]);
+  return rows;
+}
+
 /** Replace a draft job's lines. */
 export async function replaceLines(q: Queryable, jobId: string, lines: readonly NewLine[]): Promise<LineRow[]> {
   await q.query("delete from lines where job_id = $1", [jobId]);
@@ -319,14 +360,40 @@ export async function lapsedVerifiedLines(q: Queryable, now: Date, limit = 100):
 
 export async function insertAuthorization(
   q: Queryable,
-  a: { jobId: string; orderId: string; authId: string; amountCents: number; currency: string; status: AuthorizationStatus; honorUntil: Date | null; expiresAt: Date | null },
+  a: { jobId: string; orderId: string; authId: string; amountCents: number; currency: string; status: AuthorizationStatus; honorUntil: Date | null; expiresAt: Date | null; kind?: "base" | "change_order" },
 ): Promise<AuthorizationRow> {
   const { rows } = await q.query<AuthorizationRow>(
-    `insert into authorizations (job_id, paypal_order_id, paypal_auth_id, amount_cents, currency, status, honor_until, expires_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-    [a.jobId, a.orderId, a.authId, a.amountCents, a.currency, a.status, a.honorUntil, a.expiresAt],
+    `insert into authorizations (job_id, paypal_order_id, paypal_auth_id, amount_cents, currency, status, honor_until, expires_at, kind)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+    [a.jobId, a.orderId, a.authId, a.amountCents, a.currency, a.status, a.honorUntil, a.expiresAt, a.kind ?? "base"],
   );
   return rows[0]!;
+}
+
+/** The lines an authorization pays for: the base hold covers the original scope, a change order's hold its own lines. */
+export async function linesOfAuthorization(q: Queryable, auth: AuthorizationRow, opts: { lock?: boolean } = {}): Promise<LineRow[]> {
+  const { rows } = await q.query<LineRow>(
+    auth.kind === "base"
+      ? `select * from lines where job_id = $1 and change_order_id is null order by position${opts.lock ? " for update" : ""}`
+      : `select l.* from lines l join change_orders c on c.id = l.change_order_id where l.job_id = $1 and c.authorization_id = $2 order by l.position${opts.lock ? " for update of l" : ""}`,
+    auth.kind === "base" ? [auth.job_id] : [auth.job_id, auth.id],
+  );
+  return rows;
+}
+
+/** The authorization a line is paid from. */
+export async function authorizationForLine(q: Queryable, line: Pick<LineRow, "job_id" | "change_order_id">, opts: { lock?: boolean } = {}): Promise<AuthorizationRow | null> {
+  if (!line.change_order_id) return getBaseAuthorization(q, line.job_id, opts);
+  const { rows } = await q.query<AuthorizationRow>(
+    `select a.* from authorizations a join change_orders c on c.authorization_id = a.id where c.id = $1${opts.lock ? " for update of a" : ""}`,
+    [line.change_order_id],
+  );
+  return rows[0] ?? null;
+}
+
+export async function authorizationsForJob(q: Queryable, jobId: string): Promise<AuthorizationRow[]> {
+  const { rows } = await q.query<AuthorizationRow>("select * from authorizations where job_id = $1 order by created_at", [jobId]);
+  return rows;
 }
 
 export async function getBaseAuthorization(q: Queryable, jobId: string, opts: { lock?: boolean } = {}): Promise<AuthorizationRow | null> {
@@ -364,7 +431,9 @@ export async function authorizationsToReauthorize(q: Queryable, now: Date): Prom
      where a.status in ('CREATED','PARTIALLY_CAPTURED') and a.reauth_attempted_at is null
        and a.honor_until is not null and a.honor_until <= $1
        and j.status in ('AUTHORIZED','IN_PROGRESS','PARTIALLY_RELEASED')
-       and exists (select 1 from lines l where l.job_id = a.job_id and l.status not in ('CAPTURED','DROPPED'))
+       and exists (select 1 from lines l where l.job_id = a.job_id and l.status not in ('CAPTURED','DROPPED')
+                     and case when a.kind = 'base' then l.change_order_id is null
+                              else l.change_order_id = (select c.id from change_orders c where c.authorization_id = a.id) end)
      order by a.honor_until`,
     [now],
   );

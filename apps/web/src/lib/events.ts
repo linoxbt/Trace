@@ -15,7 +15,7 @@ export const LABELS: Record<string, string> = {
   ORDER_CREATED: "PayPal order created",
   ORDER_APPROVED: "Approved in PayPal",
   AUTHORIZED: "Money held by PayPal",
-  VERDICT: "Photo checked",
+  VERDICT: "Proof checked",
   SAMPLE_HISTORY: "Sample history added",
   RELEASE_REQUESTED: "Release requested",
   LINE_APPROVED: "Line approved",
@@ -42,6 +42,15 @@ export const LABELS: Record<string, string> = {
   GUARD_APPROVAL_EXPIRED: "Approval request expired",
   INJECTION_FLAGGED: "Text in a proof was aimed at the inspector",
   RULE_ADDED: "Rule added",
+  SCOPE_DRAFTED: "Scope drafted with AI",
+  CHANGE_ORDER_SENT: "Change order sent",
+  CHANGE_ORDER_DECLINED: "Change order declined",
+  CHANGE_ORDER_WITHDRAWN: "Change order withdrawn",
+  ATTESTATION_REQUESTED: "Sign-off link sent",
+  EVIDENCE_DRAFTED: "Dispute response drafted",
+  EVIDENCE_FILED: "Dispute evidence filed",
+  WEBHOOK_AUTHORIZATION_CREATED: "PayPal confirmed the hold",
+  WEBHOOK_AUTHORIZATION_VOIDED: "PayPal released the hold",
 };
 
 export const GUARD_EVENTS = new Set(["GUARD_ALLOWED", "GUARD_BLOCKED", "GUARD_APPROVAL_NEEDED", "GUARD_APPROVED", "GUARD_DENIED", "GUARD_APPROVAL_EXPIRED", "INJECTION_FLAGGED", "RULE_ADDED"]);
@@ -53,6 +62,8 @@ export function eventLabel(e: EventLike): string {
   if (e.type === "INJECTION_FLAGGED" && d.line) return `${base} · ${d.line}`;
   if (e.type === "RULE_ADDED" && d.english) return `${base}: “${d.english}”`;
   if (e.type === "VERDICT") return `${d.line} ${String(d.verdict).toLowerCase().replace("_", " ")}${d.sample ? " · sample proof" : ""}`;
+  if (e.type.startsWith("CHANGE_ORDER_") && d.change_order) return `${base} · ${d.change_order}`;
+  if (e.type === "AUTHORIZED" && d.change_order && typeof d.amount_cents === "number") return `${d.change_order} held by PayPal · ${money(d.amount_cents)}`;
   if ((e.type === "CAPTURED" || e.type === "RELEASE_STARTED" || e.type === "AUTHORIZED") && typeof d.amount_cents === "number") return `${base} · ${money(d.amount_cents)}`;
   if ((e.type === "LINE_APPROVED" || e.type === "LINE_FLAGGED" || e.type === "LINE_AUTO_APPROVED") && d.line) return `${base} · ${d.line}`;
   return base;

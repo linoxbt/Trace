@@ -35,6 +35,7 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
   const seq = useRef(0);
   const { job, role } = view;
   // Judge mode: one person plays both sides, one side at a time.
+  const [addingWork, setAddingWork] = useState(false);
   const [playing, setPlaying] = useState<"homeowner" | "tradesperson">(job.status === "AWAITING_APPROVAL" ? "homeowner" : "tradesperson");
   const isTrades = role === "tradesperson" || (role === "both" && playing === "tradesperson");
   const isHome = role === "homeowner" || (role === "both" && playing === "homeowner");
@@ -145,6 +146,50 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
       {pending.map((a) => (
         <ApprovalCard key={a.id} a={a} currency={job.currency} busy={busy} words={w} onAnswer={(ok) => answer(a.id, ok)} />
       ))}
+      {job.changeOrders
+        .filter((c) => c.status === "AWAITING_APPROVAL")
+        .map((c) =>
+          isHome ? (
+            <div key={c.id} className="flex flex-col gap-2">
+              <div className="surface rounded-[24px] p-5">
+                <div className="text-[13px] font-medium text-violet">Added work · {c.code}</div>
+                <ul className="mt-2 divide-y divide-line text-[14px]">
+                  {c.lines.map((l) => (
+                    <li key={l.code} className="flex items-start justify-between gap-3 py-2">
+                      <span className="min-w-0">
+                        <span className="num text-[12px] text-faint">{l.code}</span> <span className="font-medium">{l.title}</span>
+                        <span className="block text-[12.5px] text-muted">{l.criterion}</span>
+                      </span>
+                      <span className="num shrink-0 font-semibold">{money(l.priceCents, job.currency)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <HoldButton
+                jobId={job.id}
+                totalCents={c.totalCents}
+                currency={job.currency}
+                clientId={paypalClientId}
+                merchantId={job.demo ? null : job.payee.merchantId}
+                bnCode={bnCode}
+                sandbox={sandbox}
+                pro={w.pro}
+                changeOrder={{ id: c.id, code: c.code }}
+                onHeld={() => { toast("ok", `${c.code} held by PayPal. Nothing has been charged.`); refresh(); }}
+              />
+              <button disabled={busy} onClick={() => act(() => api(`/api/change-orders/${c.id}/close`, { json: {} }), `${c.code} declined.`)} className="press h-10 rounded-full text-[13.5px] font-medium text-muted hover:text-bad">
+                Decline {c.code}
+              </button>
+            </div>
+          ) : (
+            <div key={c.id} className="flex flex-col gap-2">
+              <Waiting title={`${c.code} is with the ${w.client}`} body={`${c.lines.length} added line${c.lines.length === 1 ? "" : "s"}, ${money(c.totalCents, job.currency)}. They approve a separate PayPal hold for it.`} />
+              <button disabled={busy} onClick={() => act(() => api(`/api/change-orders/${c.id}/close`, { json: {} }), `${c.code} withdrawn.`)} className="press h-10 rounded-full text-[13.5px] font-medium text-muted hover:text-bad">
+                Withdraw {c.code}
+              </button>
+            </div>
+          ),
+        )}
       {job.status === "DRAFT" && !isTrades && <Waiting title="The scope is being written" body="You'll be able to review every line and its price here." />}
       {job.status === "AWAITING_APPROVAL" && isHome && (job.demo || job.payee.state === "ready") && (
         <HoldButton
@@ -347,6 +392,23 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
             </section>
           )}
 
+          {held && isTrades && !job.disputed && !job.changeOrders.some((c) => c.status === "AWAITING_APPROVAL") &&
+            (addingWork ? (
+              <ScopeEditor
+                view={view}
+                mode="change"
+                onCancel={() => setAddingWork(false)}
+                onSaved={() => {
+                  setAddingWork(false);
+                  toast("ok", `Change order sent. The ${w.client} approves its hold.`);
+                  refresh();
+                }}
+              />
+            ) : (
+              <button onClick={() => setAddingWork(true)} className="press flex h-12 w-full items-center justify-center gap-2 rounded-[22px] border border-dashed border-line-2 text-[14px] font-medium text-muted hover:border-violet hover:text-violet">
+                <span className="text-[18px] leading-none">+</span> Add work (change order)
+              </button>
+            ))}
           {held && (
             <div className="lg:hidden">
               <CloseJob view={view} onDone={refresh} />
@@ -492,6 +554,7 @@ function LineCard(props: {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="num text-[12px] text-faint">{l.code}</span>
+              {l.changeOrder && <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] font-medium text-warn">{l.changeOrder}</span>}
               {l.proof.type !== "photo" && <span className="rounded-full bg-violet-soft px-2 py-0.5 text-[11px] font-medium text-violet">{PROOF_LABEL[l.proof.type]}</span>}
               <h3 className={`truncate text-[16px] font-semibold tracking-tight ${l.status === "DROPPED" ? "text-faint line-through" : ""}`}>{l.title}</h3>
             </div>

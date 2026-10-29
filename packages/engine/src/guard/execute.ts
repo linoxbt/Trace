@@ -151,13 +151,18 @@ export async function guardedCapture(
   e: Engine,
   jobId: string,
   init: Initiator,
-  opts: { final?: boolean; lineIds?: string[]; requestId?: string; approvalEventIds?: number[] } = {},
+  opts: { final?: boolean; lineIds?: string[]; requestId?: string; approvalEventIds?: number[]; authorizationId?: string } = {},
 ): Promise<ReleaseResult> {
   const job = await store.mustGetJob(e.db, jobId);
   if (!RELEASABLE_JOB.includes(job.status)) throw conflict("not_releasable", `nothing can be released while the job is ${job.status}`);
-  const auth = await store.getBaseAuthorization(e.db, jobId);
+  // The hold this release draws on: the one asked for, the one the given lines belong to, or the original.
+  const named = opts.authorizationId
+    ? (await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1 and job_id = $2", [opts.authorizationId, jobId])).rows[0]
+    : undefined;
+  const firstLine = !named && opts.lineIds?.length ? await store.getLine(e.db, opts.lineIds[0]!) : null;
+  const auth = named ?? (firstLine ? await store.authorizationForLine(e.db, firstLine) : await store.getBaseAuthorization(e.db, jobId));
   if (!auth) throw conflict("no_hold", "there is no open hold on this job");
-  const lines = await store.getLines(e.db, jobId);
+  const lines = await store.linesOfAuthorization(e.db, auth);
   const take = opts.lineIds ? lines.filter((l) => opts.lineIds!.includes(l.id)) : releasableLines(moneyLines(lines)).map((m) => lines.find((l) => l.id === m.id)!);
   if (take.length === 0) return { kind: "nothing" };
   const ids = take.map((l) => l.id);
@@ -180,7 +185,14 @@ export async function guardedCapture(
   let cap: store.CaptureRow;
   try {
     cap = await e.db.tx((q) =>
-      reserveExactCapture(q, jobId, { requestId: a.request_id, lineIds: ids, amountCents: a.amount_cents, final, actor: init.kind === "homeowner" ? "homeowner" : init.kind === "tradesperson" ? "tradesperson" : "system" }),
+      reserveExactCapture(q, jobId, {
+        requestId: a.request_id,
+        lineIds: ids,
+        amountCents: a.amount_cents,
+        final,
+        actor: init.kind === "homeowner" ? "homeowner" : init.kind === "tradesperson" ? "tradesperson" : "system",
+        authorizationId: auth.id,
+      }),
     );
   } catch (err) {
     await store.markDecisionExecuted(e.db, verdict.decisionId, { error: err instanceof Error ? err.message : String(err) });
@@ -269,7 +281,7 @@ export async function guardedVoid(
 /** Renew a hold past its honor period, once, through the guard. */
 export async function guardedReauthorize(e: Engine, auth: store.AuthorizationRow): Promise<"reauthorized" | "failed" | "retry" | "blocked"> {
   const job = await store.mustGetJob(e.db, auth.job_id);
-  const lines = await store.getLines(e.db, auth.job_id);
+  const lines = await store.linesOfAuthorization(e.db, auth);
   const openCents = sum(lines.filter((l) => !isResolvedLine(l.status)).map((l) => l.price_cents));
   const { provenance } = await buildProvenance(e, job.id, []);
   const a = action("REAUTHORIZE", job, { kind: "worker" }, provenance, {
@@ -423,7 +435,7 @@ export async function answerApproval(e: Engine, approvalId: string, userId: stri
   const a = step.action;
   const init: Initiator = { kind: a.initiator.kind, userId: a.initiator.user_id, deviceId: a.initiator.device_id };
   if (CAPTURE_TYPES.includes(a.type)) {
-    const release = await guardedCapture(e, a.job_id, init, { final: a.final, lineIds: a.line_ids, requestId: a.request_id, approvalEventIds: step.eventIds });
+    const release = await guardedCapture(e, a.job_id, init, { final: a.final, lineIds: a.line_ids, requestId: a.request_id, approvalEventIds: step.eventIds, authorizationId: a.authorization_id });
     const outcome = release.kind === "blocked" ? "DENY" : release.kind === "needs_approval" ? "REQUIRE_APPROVAL" : "ALLOW";
     return { kind: "ran", outcome, reasons: "reasons" in release ? release.reasons : [], release };
   }

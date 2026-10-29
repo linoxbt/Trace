@@ -77,11 +77,10 @@ export interface ScopeLineInput {
   proofSpec?: unknown;
 }
 
-/** Save the edited lines on a draft job. */
-export async function saveScope(e: Engine, jobId: string, tradesId: string, lines: ScopeLineInput[]): Promise<store.LineRow[]> {
-  if (lines.length === 0 || lines.length > MAX_LINES) throw badRequest("bad_scope", `a scope has 1 to ${MAX_LINES} lines`);
+/** Check and normalise proposed lines (a scope or a change order). Throws a plain-words error on the first problem. */
+export function cleanLines(lines: ScopeLineInput[]) {
   const codes = new Set<string>();
-  const clean = lines.map((l) => {
+  return lines.map((l) => {
     if (!Number.isSafeInteger(l.priceCents) || l.priceCents <= 0) throw badRequest("bad_price", `${l.code}: price must be a positive number of cents`);
     if (!l.title.trim()) throw badRequest("bad_title", `${l.code}: title is required`);
     if (codes.has(l.code)) throw badRequest("bad_scope", `duplicate line code ${l.code}`);
@@ -102,6 +101,12 @@ export async function saveScope(e: Engine, jobId: string, tradesId: string, line
       verifiableByPhoto: type.data === "photo" ? l.verifiableByPhoto : false,
     };
   });
+}
+
+/** Save the edited lines on a draft job. */
+export async function saveScope(e: Engine, jobId: string, tradesId: string, lines: ScopeLineInput[]): Promise<store.LineRow[]> {
+  if (lines.length === 0 || lines.length > MAX_LINES) throw badRequest("bad_scope", `a scope has 1 to ${MAX_LINES} lines`);
+  const clean = cleanLines(lines);
   if (sum(clean.map((l) => l.priceCents)) > MAX_JOB_CENTS) throw badRequest("bad_scope", "a job is capped at $10,000");
   return e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId, { lock: true });

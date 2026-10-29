@@ -44,13 +44,16 @@ export function noteToPayer(lines: store.LineRow[], currency: string): string {
 export async function reserveExactCapture(
   q: Queryable,
   jobId: string,
-  want: { requestId: string; lineIds: string[]; amountCents: number; final: boolean; actor: store.Actor },
+  want: { requestId: string; lineIds: string[]; amountCents: number; final: boolean; actor: store.Actor; authorizationId?: string },
 ): Promise<store.CaptureRow> {
   const job = await store.mustGetJob(q, jobId, { lock: true });
   if (!RELEASABLE_JOB.includes(job.status)) throw conflict("not_releasable", `nothing can be released while the job is ${job.status}`);
-  const auth = await store.getBaseAuthorization(q, jobId, { lock: true });
+  const auth = want.authorizationId
+    ? (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 and job_id = $2 for update", [want.authorizationId, jobId])).rows[0]
+    : await store.getBaseAuthorization(q, jobId, { lock: true });
   if (!auth || !CAPTURABLE_AUTH.includes(auth.status)) throw conflict("no_hold", "there is no open hold on this job");
-  const lines = await store.getLines(q, jobId, { lock: true });
+  // Only the lines this hold pays for.
+  const lines = await store.linesOfAuthorization(q, auth, { lock: true });
   const take = lines.filter((l) => want.lineIds.includes(l.id));
   if (take.length !== want.lineIds.length || take.some((l) => l.status !== "APPROVED" || l.capture_id !== null)) {
     throw conflict("lines_changed", "the lines changed since this release was checked; release again");
@@ -59,10 +62,12 @@ export async function reserveExactCapture(
   const captured = await store.capturedCents(q, auth.id);
   if (captured + want.amountCents > auth.amount_cents) throw conflict("over_hold", "that would capture more than is held");
   const n = (await store.countCaptures(q, auth.id)) + 1;
+  // Invoice ids are unique at PayPal: a change order's captures carry its code.
+  const co = auth.kind === "base" ? null : (await q.query<{ code: string }>("select code from change_orders where authorization_id = $1", [auth.id])).rows[0]?.code;
   const cap = await store.insertCapture(q, {
     authorizationId: auth.id,
     requestId: want.requestId,
-    invoiceId: `${jobId}-r${n}`,
+    invoiceId: co ? `${jobId}-${co}-r${n}` : `${jobId}-r${n}`,
     amountCents: want.amountCents,
     final: want.final,
     lineIds: want.lineIds,
@@ -77,10 +82,24 @@ export async function reserveExactCapture(
   return cap;
 }
 
-/** Release every approved line now (homeowner's button, or the worker after a review window), through the guard. */
+/**
+ * Release every approved line now (homeowner's button, or the worker after a
+ * review window), through the guard. Each hold is captured on its own: the
+ * original scope from the base authorization, a change order's lines from its.
+ */
 export async function release(e: Engine, jobId: string, actor: store.Actor = "homeowner", userId?: string): Promise<ReleaseResult> {
   const init: Initiator = actor === "homeowner" ? { kind: "homeowner", userId } : actor === "tradesperson" ? { kind: "tradesperson", userId } : { kind: "worker" };
-  return guardedCapture(e, jobId, init);
+  const holds = (await store.authorizationsForJob(e.db, jobId)).filter((a) => CAPTURABLE_AUTH.includes(a.status));
+  if (holds.length <= 1) return guardedCapture(e, jobId, init, holds[0] ? { authorizationId: holds[0].id } : {});
+  let out: ReleaseResult = { kind: "nothing" };
+  for (const auth of holds) {
+    const r = await guardedCapture(e, jobId, init, { authorizationId: auth.id });
+    if (r.kind === "nothing") continue;
+    // A hold that needs approval, was blocked or failed is reported as is; the others still went.
+    if (r.kind !== "captured") return r;
+    out = out.kind === "captured" ? { ...r, amountCents: out.amountCents + r.amountCents } : r;
+  }
+  return out;
 }
 
 export async function findCaptureOnOrder(e: Engine, orderId: string, invoiceId: string): Promise<Capture | null> {
@@ -199,7 +218,7 @@ export async function settleCapture(e: Engine, captureRowId: string, pp: Capture
 export async function voidIfDone(e: Engine, authorizationId: string): Promise<boolean> {
   const auth = (await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [authorizationId])).rows[0];
   if (!auth || !CAPTURABLE_AUTH.includes(auth.status)) return false;
-  const lines = await store.getLines(e.db, auth.job_id);
+  const lines = await store.linesOfAuthorization(e.db, auth);
   if (!lines.every((l) => isResolvedLine(l.status))) return false;
   const inflight = await e.db.query("select 1 from captures where authorization_id = $1 and status = 'SENDING'", [auth.id]);
   if (inflight.rowCount) return false;
@@ -404,34 +423,40 @@ export async function confirmClose(e: Engine, jobId: string, userId: string, dro
         await store.updateLine(q, l.id, { status: nextLineStatus(l.status, "DROP"), review_due_at: null });
       }
     }
-    const auth = await store.getBaseAuthorization(q, jobId, { lock: true });
-    if (!auth) throw conflict("no_hold", "there is no hold on this job");
-    const after = await store.getLines(q, jobId);
-    const captured = await store.capturedCents(q, auth.id);
-    let plan;
-    try {
-      plan = planClose({ authorizedCents: auth.amount_cents, capturedCents: captured }, moneyLines(after));
-    } catch (err) {
-      throw conflict("lines_open", err instanceof Error ? err.message : String(err));
+    // Each open hold is closed on its own: the original scope's, and each change order's.
+    const holds = (await store.authorizationsForJob(q, jobId)).filter((x) => CAPTURABLE_AUTH.includes(x.status));
+    if (!holds.length) throw conflict("no_hold", "there is no hold on this job");
+    const plans: { auth: store.AuthorizationRow; plan: "capture" | "void" | "nothing" }[] = [];
+    for (const auth of holds) {
+      const captured = await store.capturedCents(q, auth.id);
+      try {
+        plans.push({ auth, plan: planClose({ authorizedCents: auth.amount_cents, capturedCents: captured }, moneyLines(await store.linesOfAuthorization(q, auth))).kind });
+      } catch (err) {
+        throw conflict("lines_open", err instanceof Error ? err.message : String(err));
+      }
     }
-    await store.appendEvent(q, { jobId, actor: "system", type: "CLOSE_AGREED", data: { plan: plan.kind } });
+    await store.appendEvent(q, { jobId, actor: "system", type: "CLOSE_AGREED", data: { plan: plans.map((p) => p.plan).join(",") } });
     // The two confirmations of this exact proposal are the approvals the guard sees.
     const confirmations = (await store.getEvents(q, jobId))
       .filter((ev) => ev.type === "CLOSE_CONFIRMED" && JSON.stringify(ev.data?.drop ?? []) === JSON.stringify(dropCodes))
       .map((ev) => ev.id);
-    return { step: "go" as const, plan: plan.kind, auth, confirmations, side };
+    return { step: "go" as const, plans, confirmations, side };
   });
 
   if (ready.step === "wait") return { kind: "waiting", for: ready.who };
   const init: Initiator = { kind: ready.side === "trades" ? "tradesperson" : "homeowner", userId };
-  if (ready.plan === "capture") {
-    const res = await guardedCapture(e, jobId, init, { final: true, approvalEventIds: ready.confirmations });
-    return { kind: "closed", release: res, voided: false };
+  let release: ReleaseResult | null = null;
+  let voided = false;
+  const reasons: string[] = [];
+  for (const { auth, plan } of ready.plans) {
+    if (plan === "capture") {
+      release = await guardedCapture(e, jobId, init, { final: true, authorizationId: auth.id, approvalEventIds: ready.confirmations });
+    } else if (plan === "void") {
+      const v = await guardedVoid(e, jobId, init, { auth }, { approvalEventIds: ready.confirmations });
+      voided ||= v.voided;
+      if (!v.voided) reasons.push(...v.reasons);
+    }
   }
-  if (ready.plan === "void") {
-    const v = await guardedVoid(e, jobId, init, { auth: ready.auth }, { approvalEventIds: ready.confirmations });
-    return { kind: "closed", release: null, voided: v.voided, ...(v.voided ? {} : { reasons: v.reasons }) };
-  }
-  return { kind: "closed", release: null, voided: false };
+  return { kind: "closed", release, voided, ...(reasons.length ? { reasons } : {}) };
 }
 

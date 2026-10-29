@@ -128,7 +128,7 @@ export async function loadEvidence(e: Engine, disputeId: string): Promise<Eviden
     tradesName: trades.rows[0]?.display_name ?? "The tradesperson",
     scopeSentAt: firstAt("SCOPE_SENT"),
     authorizedAt: firstAt("AUTHORIZED"),
-    heldCents: (await store.getBaseAuthorization(e.db, job.id))?.amount_cents ?? 0,
+    heldCents: (await store.authorizationsForJob(e.db, job.id)).reduce((n, a) => n + a.amount_cents, 0),
     lines: out,
     captures: captures.rows.map((c) => ({
       id: c.id,

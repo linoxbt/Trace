@@ -98,9 +98,10 @@ const isBlank = (d: Draft) => !d.title.trim() && !d.price.trim() && !d.criterion
 const list = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 const cents = (s: string) => Math.round(Number(s.replace(/[^0-9.]/g, "")) * 100);
 
-export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: boolean) => void }) {
+export function ScopeEditor({ view, onSaved, mode = "scope", onCancel }: { view: JobView; onSaved: (sent: boolean) => void; mode?: "scope" | "change"; onCancel?: () => void }) {
+  const change = mode === "change";
   const [lines, setLines] = useState<Draft[]>(
-    view.lines.length
+    !change && view.lines.length
       ? view.lines.map((l) => ({
           key: ++keys,
           title: l.title,
@@ -185,6 +186,23 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
     setBusy(send ? "send" : "save");
     setError("");
     try {
+      if (change) {
+        // A change order: the added lines only; codes continue the job's, set by the server.
+        await api(`/api/jobs/${view.job.id}/change-orders`, {
+          json: {
+            lines: lines.map((l) => ({
+              title: l.title,
+              priceCents: cents(l.price),
+              verifiableByPhoto: l.proofType === "photo" ? l.verifiableByPhoto : false,
+              proofType: l.proofType,
+              proofSpec: specOut(l),
+              acceptance: { criterion: l.criterion, must_show: list(l.mustShow), must_not_show: list(l.mustNotShow), framing: l.framing },
+            })),
+          },
+        });
+        onSaved(true);
+        return;
+      }
       await api(`/api/jobs/${view.job.id}/scope`, {
         method: "PUT",
         json: {
@@ -211,11 +229,14 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
   return (
     <section className="rise">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[18px] font-semibold tracking-tight">Scope</h2>
+        <h2 className="text-[18px] font-semibold tracking-tight">{change ? "Add work" : "Scope"}</h2>
         <span className="text-[13px] text-muted">{lines.length} of 8 lines</span>
       </div>
-      <p className="mt-1 text-[14px] text-muted">One visible outcome per line. Write what a camera would need to see.</p>
+      <p className="mt-1 text-[14px] text-muted">
+        {change ? `A change order: the ${w.client} approves a separate hold for these lines. The original scope stays as agreed.` : "One visible outcome per line. Write what a camera would need to see."}
+      </p>
 
+      {!change && (
       <div className="surface mt-4 rounded-[22px] p-5">
         <div className="text-[15px] font-semibold">Draft with AI</div>
         <p className="mt-0.5 text-[13px] text-muted">Describe the job; the AI looks at your before-photos and drafts lines, prices and how each is proved. You edit everything before sending.</p>
@@ -245,6 +266,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
         </button>
         {drafted && <p className="mt-3 rounded-xl bg-violet-soft px-3 py-2 text-[13px] text-violet">{drafted}</p>}
       </div>
+      )}
 
       <div className="mt-4">
         <div className="text-[12.5px] font-medium text-muted">Or start from a {category.label.toLowerCase()} line</div>
@@ -267,7 +289,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
         {lines.map((l, i) => (
           <div key={l.key} className="surface rounded-[22px] p-5">
             <div className="flex items-center justify-between">
-              <span className="num rounded-full bg-paper-2 px-2 py-0.5 text-[12px] font-medium text-muted">L{i + 1}</span>
+              <span className="num rounded-full bg-paper-2 px-2 py-0.5 text-[12px] font-medium text-muted">{change ? `New ${i + 1}` : `L${i + 1}`}</span>
               {lines.length > 1 && (
                 <button onClick={() => setLines((ls) => ls.filter((_, j) => j !== i))} className="press h-8 rounded-full px-3 text-[13px] text-bad hover:bg-bad-soft">
                   Remove
@@ -346,7 +368,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
 
       <div className="surface sticky bottom-4 z-10 mt-5 rounded-[22px] p-4">
         <div className="flex items-center justify-between">
-          <span className="text-[14px] text-muted">Total to hold</span>
+          <span className="text-[14px] text-muted">{change ? "Extra to hold" : "Total to hold"}</span>
           <span className="num text-[22px] font-semibold tracking-tight">{money(total, view.job.currency)}</span>
         </div>
         {error && (
@@ -355,14 +377,22 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
           </p>
         )}
         <div className="mt-3 grid grid-cols-[auto_1fr] gap-2">
-          <button disabled={!!busy} onClick={() => save(false)} className="press h-12 rounded-full border border-line bg-card px-5 text-[14px] font-medium disabled:opacity-60">
-            {busy === "save" ? "Saving…" : "Save draft"}
-          </button>
+          {change ? (
+            <button disabled={!!busy} onClick={onCancel} className="press h-12 rounded-full border border-line bg-card px-5 text-[14px] font-medium disabled:opacity-60">
+              Cancel
+            </button>
+          ) : (
+            <button disabled={!!busy} onClick={() => save(false)} className="press h-12 rounded-full border border-line bg-card px-5 text-[14px] font-medium disabled:opacity-60">
+              {busy === "save" ? "Saving…" : "Save draft"}
+            </button>
+          )}
           <button disabled={!!busy} onClick={() => save(true)} className="press btn-primary h-12 rounded-full text-[14px] font-medium disabled:opacity-70">
-            {busy === "send" ? "Sending…" : "Send for approval"}
+            {busy === "send" ? "Sending…" : change ? "Send change order" : "Send for approval"}
           </button>
         </div>
-        <p className="mt-2.5 text-[12px] text-faint">Sending freezes the scope. The {w.client} then approves it and PayPal holds the total.</p>
+        <p className="mt-2.5 text-[12px] text-faint">
+          {change ? `The ${w.client} approves these lines and PayPal holds their total separately.` : `Sending freezes the scope. The ${w.client} then approves it and PayPal holds the total.`}
+        </p>
       </div>
     </section>
   );
