@@ -22,7 +22,7 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_migrations");
-    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql"]);
+    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql"]);
   });
 
   it("lowercases the homeowner email and enforces money checks", async () => {

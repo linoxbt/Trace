@@ -12,6 +12,7 @@ import { DEMO_SAMPLES, type Sample } from "@/lib/demo-samples";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobView } from "@/server/view";
 import { api, deviceId } from "@/lib/api";
+import { useLiveEvents } from "@/lib/live";
 import { money, when } from "@/lib/format";
 import { MoneyCard } from "./money-bar";
 import { LINE_RAIL, StatusChip } from "./status";
@@ -57,12 +58,14 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
     }
   }, [job.id]);
 
-  // Verdicts and captures also arrive from the worker and PayPal's webhooks.
+  // Verdicts and captures also arrive from the worker and PayPal's webhooks:
+  // instantly over Realtime, and by a poll as the fallback (slower while live).
+  const live = useLiveEvents(refresh, job.id);
   useEffect(() => {
     if (job.status === "COMPLETED" || job.status === "CLOSED_VOIDED") return;
-    const t = setInterval(() => document.visibilityState === "visible" && refresh(), 5000);
+    const t = setInterval(() => document.visibilityState === "visible" && refresh(), live ? 30_000 : 5000);
     return () => clearInterval(t);
-  }, [refresh, job.status]);
+  }, [refresh, job.status, live]);
 
   async function act(fn: () => Promise<unknown>, ok?: string) {
     setBusy(true);

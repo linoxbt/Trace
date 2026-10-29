@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { SessionUser } from "@/server/auth";
 import { profileOf, waitingCount } from "@/server/app-data";
+import { LiveRefresh } from "./live-refresh";
 import { TabBar, TopNav } from "./nav";
 
 /**
@@ -31,6 +32,7 @@ export async function AppShell({
         {children}
       </main>
       <TabBar waiting={waiting} />
+      <LiveRefresh />
     </div>
   );
 }
