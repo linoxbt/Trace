@@ -11,6 +11,7 @@ import {
 import * as store from "@trace/db";
 import { authorizationOf } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
+import { guardedVoid } from "./guard/execute.ts";
 import { DEMO_REVIEW_WINDOW_S, HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 
@@ -148,7 +149,9 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
   const got = auth.amount ? fromPayPalValue(auth.amount.value) : -1;
   if (got !== expected || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== job.scope_hash)) {
     // The hold doesn't match the frozen scope. Release it rather than keep a wrong one.
-    await e.paypal.voidAuthorization(auth.id, `void-mismatch-${auth.id}`).catch((err) => e.log.error("void after mismatch failed", { err: String(err) }));
+    await guardedVoid(e, jobId, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
+      e.log.error("void after mismatch failed", { err: String(err) }),
+    );
     throw new EngineError("amount_mismatch", `PayPal authorized ${got} ${auth.amount?.currency_code}, expected ${expected} ${job.currency}`, 502);
   }
   if (auth.status !== "CREATED") throw new EngineError("authorization_not_created", `PayPal returned an authorization in status ${auth.status}`, 502);

@@ -6,6 +6,7 @@ import * as store from "@trace/db";
 import { webhookHeaders, type Capture, type WebhookEvent } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
 import { EngineError } from "./errors.ts";
+import { forgetDisputes } from "./guard/preflight.ts";
 import { settleCapture } from "./money.ts";
 
 export class WebhookRejected extends EngineError {
@@ -123,6 +124,8 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
         });
         return auth.job_id;
       });
+      // The next money decision on this job asks PayPal afresh.
+      forgetDisputes(jobId);
       return { result: "processed", type, jobId };
     }
 

@@ -40,7 +40,7 @@ export default async () => {
   try {
     const report = await db.withLock(727_002, () => tick(engine));
     if (report === null) consoleLogger.info("tick skipped: another run holds the lock");
-    else if (report.approved || report.released || report.retried || report.reauthorized.length || report.reauthorizeFailed.length) {
+    else if (report.approved || report.released || report.retried || report.reauthorized.length || report.reauthorizeFailed.length || report.approvalsExpired) {
       consoleLogger.info("tick", { ...report });
     }
   } catch (err) {

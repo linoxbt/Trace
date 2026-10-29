@@ -41,7 +41,7 @@ async function loop(): Promise<void> {
       const report = await db.withLock(727_002, () => tick(engine));
       if (report) {
         last = { ...report, at: new Date().toISOString() };
-        if (report.approved || report.released || report.retried || report.reauthorized.length || report.reauthorizeFailed.length) {
+        if (report.approved || report.released || report.retried || report.reauthorized.length || report.reauthorizeFailed.length || report.approvalsExpired) {
           log.info("tick", { ...report });
         }
       }

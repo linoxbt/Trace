@@ -148,17 +148,18 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
   });
 
-  it("says nothing was charged when PayPal refuses, and lets the lines go again", async () => {
+  it("blocks a release before PayPal is asked when the hold is no longer live (B4), and keeps the lines", async () => {
     const h = await heldJob(e);
     await prove(e, h, "L1");
     await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
     e.paypal.expire(h.authId);
     const r = await release(e, h.jobId);
-    expect(r).toMatchObject({ kind: "failed", reason: "the hold is voided at PayPal" });
+    expect(r).toMatchObject({ kind: "blocked", reasons: ["Release of $120.00 blocked.", "The hold is voided at PayPal."] });
+    expect(e.paypal.calls.filter((c) => c.op === "captureAuthorization")).toHaveLength(0);
     const line = await store.getLine(e.db, h.lines.L1!.id);
     expect(line).toMatchObject({ status: "APPROVED", capture_id: null });
-    const ev = (await store.getEvents(e.db, h.jobId)).find((x) => x.type === "CAPTURE_FAILED");
-    expect(ev?.data).toMatchObject({ charged: false });
+    const ev = (await store.getEvents(e.db, h.jobId)).find((x) => x.type === "GUARD_BLOCKED");
+    expect(ev?.data).toMatchObject({ action: "CAPTURE", amount_cents: 12000 });
   });
 
   it("closes with a dropped line: captures what is approved as final, no void needed", async () => {

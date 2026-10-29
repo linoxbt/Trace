@@ -1,4 +1,4 @@
-import { autoRelease, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
+import { autoRelease, expireApprovals, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
 
 export interface TickReport {
   approved: number;
@@ -6,6 +6,7 @@ export interface TickReport {
   retried: number;
   reauthorized: string[];
   reauthorizeFailed: string[];
+  approvalsExpired: number;
 }
 
 /** One pass of the worker's periodic jobs. Each step is idempotent. */
@@ -13,6 +14,7 @@ export async function tick(e: Engine): Promise<TickReport> {
   const retried = await retrySendingCaptures(e);
   const auto = await autoRelease(e);
   const re = await reauthorizeDue(e);
+  const approvalsExpired = await expireApprovals(e);
   // Keeps Supabase from pausing an idle project between submission and judging.
   await e.db.query("select 1 from jobs limit 1");
   return {
@@ -21,5 +23,6 @@ export async function tick(e: Engine): Promise<TickReport> {
     retried: retried.length,
     reauthorized: re.reauthorized,
     reauthorizeFailed: re.failed,
+    approvalsExpired,
   };
 }

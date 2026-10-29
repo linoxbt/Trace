@@ -1,26 +1,20 @@
-// Flow D and the close: every capture, void and reauthorization. Amounts are
-// recomputed from line states inside a locked transaction; a capture is put on
-// record (SENDING, with its PayPal-Request-Id) before it is sent, so a lost
-// response is retried with the same ID and never becomes a second capture.
-// Every transaction here locks the job row first, then authorization, lines
-// and captures, so two of them on one job queue instead of deadlocking.
+// Flow D and the close: the records behind every capture, void and
+// reauthorization. The money calls themselves go through the Tripwire guard
+// (guard/execute.ts), which decides before anything moves. A capture is put
+// on record (SENDING, with its PayPal-Request-Id) only after the guard allows
+// it, so a lost response is retried with the same ID and never becomes a
+// second capture. Every transaction here locks the job row first, then
+// authorization, lines and captures, so two of them on one job queue instead
+// of deadlocking.
 
-import { randomUUID } from "node:crypto";
-import {
-  formatMoney,
-  isResolvedLine,
-  nextJobStatus,
-  nextLineStatus,
-  planClose,
-  planRelease,
-  sum,
-  type MoneyLine,
-} from "@trace/core";
+import { formatMoney, isResolvedLine, nextJobStatus, nextLineStatus, planClose, sum, type MoneyLine } from "@trace/core";
 import * as store from "@trace/db";
-import { isRetryable, PayPalError, type Capture } from "@trace/paypal";
+import type { Authorization, Capture } from "@trace/paypal";
 import type { Queryable } from "@trace/db";
 import type { Engine } from "./deps.ts";
 import { conflict, EngineError, forbidden } from "./errors.ts";
+// The guard and this file call each other (functions only, never at load time).
+import { guardedCapture, guardedReauthorize, guardedVoid, sendCapture, type Initiator } from "./guard/execute.ts";
 
 const CAPTURABLE_AUTH: store.AuthorizationStatus[] = ["CREATED", "PARTIALLY_CAPTURED"];
 const RELEASABLE_JOB = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
@@ -29,109 +23,72 @@ export type ReleaseResult =
   | { kind: "nothing" }
   | { kind: "captured"; captureId: string; amountCents: number; status: store.CaptureStatus }
   | { kind: "sending"; captureId: string; amountCents: number }
-  | { kind: "failed"; captureId: string; amountCents: number; reason: string };
+  | { kind: "failed"; captureId: string; amountCents: number; reason: string }
+  | { kind: "needs_approval"; approvalId: string; reasons: string[]; decisionId: number }
+  | { kind: "blocked"; reasons: string[]; decisionId: number };
 
-function moneyLines(lines: store.LineRow[]): MoneyLine[] {
+export function moneyLines(lines: store.LineRow[]): MoneyLine[] {
   return lines.map((l) => ({ id: l.id, status: l.status, priceCents: l.price_cents, captureRef: l.capture_id }));
 }
 
-function noteToPayer(lines: store.LineRow[], currency: string): string {
+export function noteToPayer(lines: store.LineRow[], currency: string): string {
   return `Trace: verified work released: ${lines.map((l) => `${l.code} ${l.title} ${formatMoney(l.price_cents, currency)}`).join("; ")}`;
 }
 
-/** Reserve the releasable lines in one locked transaction and put the capture on record. */
-async function reserveCapture(
+/**
+ * Reserve exactly the lines and amount the guard allowed, in one locked
+ * transaction, and put the capture on record. If anything moved since the
+ * decision (a line no longer approved, a different total, too little left on
+ * the hold), nothing is reserved.
+ */
+export async function reserveExactCapture(
   q: Queryable,
   jobId: string,
-  opts: { forceFinal?: boolean; actor: store.Actor },
-): Promise<store.CaptureRow | null> {
+  want: { requestId: string; lineIds: string[]; amountCents: number; final: boolean; actor: store.Actor },
+): Promise<store.CaptureRow> {
   const job = await store.mustGetJob(q, jobId, { lock: true });
   if (!RELEASABLE_JOB.includes(job.status)) throw conflict("not_releasable", `nothing can be released while the job is ${job.status}`);
   const auth = await store.getBaseAuthorization(q, jobId, { lock: true });
   if (!auth || !CAPTURABLE_AUTH.includes(auth.status)) throw conflict("no_hold", "there is no open hold on this job");
   const lines = await store.getLines(q, jobId, { lock: true });
+  const take = lines.filter((l) => want.lineIds.includes(l.id));
+  if (take.length !== want.lineIds.length || take.some((l) => l.status !== "APPROVED" || l.capture_id !== null)) {
+    throw conflict("lines_changed", "the lines changed since this release was checked; release again");
+  }
+  if (sum(take.map((l) => l.price_cents)) !== want.amountCents) throw conflict("amount_mismatch", "the amount doesn't match the lines; release again");
   const captured = await store.capturedCents(q, auth.id);
-  const plan = planRelease({ authorizedCents: auth.amount_cents, capturedCents: captured }, moneyLines(lines));
-  if (!plan) return null;
+  if (captured + want.amountCents > auth.amount_cents) throw conflict("over_hold", "that would capture more than is held");
   const n = (await store.countCaptures(q, auth.id)) + 1;
   const cap = await store.insertCapture(q, {
     authorizationId: auth.id,
-    requestId: `capture-${randomUUID()}`,
+    requestId: want.requestId,
     invoiceId: `${jobId}-r${n}`,
-    amountCents: plan.amountCents,
-    final: plan.final || !!opts.forceFinal,
-    lineIds: plan.lineIds,
+    amountCents: want.amountCents,
+    final: want.final,
+    lineIds: want.lineIds,
   });
-  for (const id of plan.lineIds) await store.updateLine(q, id, { capture_id: cap.id });
+  for (const id of want.lineIds) await store.updateLine(q, id, { capture_id: cap.id });
   await store.appendEvent(q, {
     jobId,
-    actor: opts.actor,
+    actor: want.actor,
     type: "RELEASE_STARTED",
-    data: { capture: cap.id, amount_cents: cap.amount_cents, final: cap.final, lines: lines.filter((l) => plan.lineIds.includes(l.id)).map((l) => l.code) },
+    data: { capture: cap.id, amount_cents: cap.amount_cents, final: cap.final, lines: take.map((l) => l.code) },
   });
   return cap;
 }
 
-/** Release every approved line now (homeowner's button, or the worker after a review window). */
-export async function release(e: Engine, jobId: string, actor: store.Actor = "homeowner"): Promise<ReleaseResult> {
-  const cap = await e.db.tx((q) => reserveCapture(q, jobId, { actor }));
-  if (!cap) return { kind: "nothing" };
-  return sendCapture(e, cap.id);
+/** Release every approved line now (homeowner's button, or the worker after a review window), through the guard. */
+export async function release(e: Engine, jobId: string, actor: store.Actor = "homeowner", userId?: string): Promise<ReleaseResult> {
+  const init: Initiator = actor === "homeowner" ? { kind: "homeowner", userId } : actor === "tradesperson" ? { kind: "tradesperson", userId } : { kind: "worker" };
+  return guardedCapture(e, jobId, init);
 }
 
-/** Send a capture that is on record as SENDING. Retries reuse its request ID. */
-export async function sendCapture(e: Engine, captureId: string): Promise<ReleaseResult> {
-  const cap = await store.getCapture(e.db, captureId);
-  if (!cap) throw new EngineError("not_found", `capture ${captureId} not found`, 404);
-  if (cap.status !== "SENDING") return settledResult(cap);
-  const auth = (await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [cap.authorization_id])).rows[0]!;
-  const lines = (await store.getLines(e.db, auth.job_id)).filter((l) => cap.line_ids.includes(l.id));
-  await store.updateCapture(e.db, cap.id, { bumpAttempts: true });
-
-  // Status check before the first send (spec section 5). Retries skip it: a
-  // capture of ours that already landed can make the authorization look spent.
-  if (cap.attempts === 0) {
-    try {
-      const live = await e.paypal.getAuthorization(auth.paypal_auth_id);
-      if (live.status === "VOIDED" || live.status === "DENIED") {
-        return failCapture(e, cap, `the hold is ${live.status.toLowerCase()} at PayPal`);
-      }
-    } catch (err) {
-      if (!isRetryable(err)) throw err;
-      await store.updateCapture(e.db, cap.id, { last_error: String(err) });
-      return { kind: "sending", captureId: cap.id, amountCents: cap.amount_cents };
-    }
-  }
-
-  let result: Capture;
-  try {
-    result = await e.paypal.captureAuthorization(
-      auth.paypal_auth_id,
-      { amountCents: cap.amount_cents, currency: auth.currency, invoiceId: cap.invoice_id, finalCapture: cap.final, noteToPayer: noteToPayer(lines, auth.currency) },
-      cap.request_id,
-    );
-  } catch (err) {
-    if (isRetryable(err)) {
-      e.log.warn("capture outcome unknown, will retry", { capture: cap.id, err: String(err) });
-      await store.updateCapture(e.db, cap.id, { last_error: String(err) });
-      return { kind: "sending", captureId: cap.id, amountCents: cap.amount_cents };
-    }
-    if (err instanceof PayPalError && err.has("DUPLICATE_INVOICE_ID")) {
-      // Our invoice ID is already on a capture: an earlier attempt landed. Find it on the order.
-      const found = await findCaptureOnOrder(e, auth.paypal_order_id, cap.invoice_id);
-      if (found) return settleCapture(e, cap.id, found);
-    }
-    return failCapture(e, cap, err instanceof Error ? err.message : String(err));
-  }
-  return settleCapture(e, cap.id, result);
-}
-
-async function findCaptureOnOrder(e: Engine, orderId: string, invoiceId: string): Promise<Capture | null> {
+export async function findCaptureOnOrder(e: Engine, orderId: string, invoiceId: string): Promise<Capture | null> {
   const order = await e.paypal.getOrder(orderId);
   return order.purchase_units?.flatMap((u) => u.payments?.captures ?? []).find((c) => c.invoice_id === invoiceId) ?? null;
 }
 
-function settledResult(cap: store.CaptureRow): ReleaseResult {
+export function settledResult(cap: store.CaptureRow): ReleaseResult {
   if (cap.status === "SENDING") return { kind: "sending", captureId: cap.id, amountCents: cap.amount_cents };
   if (cap.status === "FAILED" || cap.status === "DECLINED") {
     return { kind: "failed", captureId: cap.id, amountCents: cap.amount_cents, reason: cap.last_error ?? cap.status };
@@ -140,7 +97,7 @@ function settledResult(cap: store.CaptureRow): ReleaseResult {
 }
 
 /** PayPal refused the capture: nothing was charged. Its lines go back to releasable. */
-async function failCapture(e: Engine, cap: store.CaptureRow, reason: string): Promise<ReleaseResult> {
+export async function failCapture(e: Engine, cap: store.CaptureRow, reason: string): Promise<ReleaseResult> {
   const jobId = await store.jobIdOfCapture(e.db, cap.id);
   const out = await e.db.tx(async (q) => {
     if (jobId) await store.mustGetJob(q, jobId, { lock: true });
@@ -237,7 +194,7 @@ export async function settleCapture(e: Engine, captureRowId: string, pp: Capture
 
 /**
  * Once every line is resolved, release whatever is still held (dropped lines'
- * money) unless a final capture already did.
+ * money) unless a final capture already did. The void goes through the guard.
  */
 export async function voidIfDone(e: Engine, authorizationId: string): Promise<boolean> {
   const auth = (await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [authorizationId])).rows[0];
@@ -246,15 +203,11 @@ export async function voidIfDone(e: Engine, authorizationId: string): Promise<bo
   if (!lines.every((l) => isResolvedLine(l.status))) return false;
   const inflight = await e.db.query("select 1 from captures where authorization_id = $1 and status = 'SENDING'", [auth.id]);
   if (inflight.rowCount) return false;
-  return voidAuthorization(e, auth, "system");
+  return (await guardedVoid(e, auth.job_id, { kind: "worker" }, { auth })).voided;
 }
 
-async function voidAuthorization(e: Engine, auth: store.AuthorizationRow, actor: store.Actor): Promise<boolean> {
-  try {
-    await e.paypal.voidAuthorization(auth.paypal_auth_id, `void-${auth.paypal_auth_id}`);
-  } catch (err) {
-    if (!(err instanceof PayPalError && err.has("PREVIOUSLY_VOIDED"))) throw err;
-  }
+/** Record a void PayPal accepted. The money call itself is the guard's. */
+export async function recordVoid(e: Engine, auth: store.AuthorizationRow, actor: store.Actor): Promise<void> {
   await e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, auth.job_id, { lock: true });
     const locked = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 for update", [auth.id])).rows[0]!;
@@ -271,7 +224,6 @@ async function voidAuthorization(e: Engine, auth: store.AuthorizationRow, actor:
       data: { authorization_id: auth.paypal_auth_id, released_cents: auth.amount_cents - captured },
     });
   });
-  return true;
 }
 
 // ---------- review window ----------
@@ -316,12 +268,14 @@ export async function decideLine(
     const note = decision.note.trim().slice(0, 500);
     if (!note) throw new EngineError("note_required", "say what's wrong with this line", 400);
     const out = await store.updateLine(q, lineId, { status: nextLineStatus(line.status, "FLAG"), review_due_at: null, flag_note: note });
-    await store.appendEvent(q, { jobId: job.id, actor: "homeowner", type: "LINE_FLAGGED", data: { line: line.code, note, notify: "tradesperson" } });
+    const eventId = await store.appendEvent(q, { jobId: job.id, actor: "homeowner", type: "LINE_FLAGGED", data: { line: line.code, note, notify: "tradesperson" } });
+    // The note is the homeowner's own words, but it's free text: anything a model reads from it is untrusted.
+    await store.labelInput(q, { ref: `note:${eventId}`, jobId: job.id, trust: "untrusted_content" });
     return out;
   });
 }
 
-/** Worker: silence approves VERIFIED lines whose window lapsed, then releases their jobs. */
+/** Worker: silence approves VERIFIED lines whose window lapsed, then releases their jobs through the guard. */
 export async function autoRelease(e: Engine): Promise<{ approved: number; released: ReleaseResult[] }> {
   const lapsed = await store.lapsedVerifiedLines(e.db, e.now());
   const jobs = new Set<string>();
@@ -365,64 +319,49 @@ export async function retrySendingCaptures(e: Engine, staleS = 30): Promise<Rele
 
 // ---------- reauthorization ----------
 
-/** Worker: past the 3-day honor period with lines still open, reauthorize once (spec section 5). */
+/** Worker: past the 3-day honor period with lines still open, reauthorize once (spec section 5), through the guard. */
 export async function reauthorizeDue(e: Engine): Promise<{ reauthorized: string[]; failed: string[] }> {
   const reauthorized: string[] = [];
   const failed: string[] = [];
   for (const auth of await store.authorizationsToReauthorize(e.db, e.now())) {
     const inflight = await e.db.query("select 1 from captures where authorization_id = $1 and status = 'SENDING'", [auth.id]);
     if (inflight.rowCount) continue;
-    const lines = await store.getLines(e.db, auth.job_id);
-    const openCents = sum(lines.filter((l) => !isResolvedLine(l.status)).map((l) => l.price_cents));
-    try {
-      const fresh = await e.paypal.reauthorize(auth.paypal_auth_id, { cents: openCents, currency: auth.currency }, `reauthorize-${auth.paypal_auth_id}`);
-      await e.db.tx(async (q) => {
-        const created = fresh.create_time ? new Date(fresh.create_time) : e.now();
-        await store.updateAuthorization(q, auth.id, {
-          paypal_auth_id: fresh.id,
-          reauth_attempted_at: e.now(),
-          honor_until: new Date(created.getTime() + 3 * 86_400_000),
-          expires_at: fresh.expiration_time ? new Date(fresh.expiration_time) : auth.expires_at,
-        });
-        await store.appendEvent(q, {
-          jobId: auth.job_id,
-          actor: "system",
-          type: "REAUTHORIZED",
-          data: { from: auth.paypal_auth_id, to: fresh.id, amount_cents: openCents },
-        });
-      });
-      reauthorized.push(auth.id);
-    } catch (err) {
-      if (isRetryable(err)) {
-        e.log.warn("reauthorize will retry", { authorization: auth.id, err: String(err) });
-        continue;
-      }
-      // Not allowed (section 17 open question): record it once and alert. The
-      // fallback is to capture what is approved and open a new order for the rest.
-      await e.db.tx(async (q) => {
-        await store.updateAuthorization(q, auth.id, { reauth_attempted_at: e.now() });
-        await store.appendEvent(q, {
-          jobId: auth.job_id,
-          actor: "system",
-          type: "REAUTHORIZE_FAILED",
-          data: { authorization_id: auth.paypal_auth_id, reason: err instanceof Error ? err.message : String(err), alert: "both" },
-        });
-      });
-      failed.push(auth.id);
-    }
+    const r = await guardedReauthorize(e, auth);
+    if (r === "reauthorized") reauthorized.push(auth.id);
+    else if (r === "failed" || r === "blocked") failed.push(auth.id);
   }
   return { reauthorized, failed };
+}
+
+/** Record a renewed hold. The money call itself is the guard's. */
+export async function recordReauthorized(e: Engine, auth: store.AuthorizationRow, fresh: Authorization, openCents: number): Promise<void> {
+  await e.db.tx(async (q) => {
+    const created = fresh.create_time ? new Date(fresh.create_time) : e.now();
+    await store.updateAuthorization(q, auth.id, {
+      paypal_auth_id: fresh.id,
+      reauth_attempted_at: e.now(),
+      honor_until: new Date(created.getTime() + 3 * 86_400_000),
+      expires_at: fresh.expiration_time ? new Date(fresh.expiration_time) : auth.expires_at,
+    });
+    await store.appendEvent(q, {
+      jobId: auth.job_id,
+      actor: "system",
+      type: "REAUTHORIZED",
+      data: { from: auth.paypal_auth_id, to: fresh.id, amount_cents: openCents },
+    });
+  });
 }
 
 // ---------- close ----------
 
 export type CloseResult =
   | { kind: "waiting"; for: "tradesperson" | "homeowner" }
-  | { kind: "closed"; release: ReleaseResult | null; voided: boolean };
+  | { kind: "closed"; release: ReleaseResult | null; voided: boolean; reasons?: string[] };
 
 /**
  * Close needs both sides to confirm the same set of dropped lines. Dropped
- * lines' money is released: by the final capture if one is due, else by a void.
+ * lines' money is released: by the final capture if one is due, else by a
+ * void. Both go through the guard, carrying both confirmations as approvals.
  */
 export async function confirmClose(e: Engine, jobId: string, userId: string, dropLineIds: string[]): Promise<CloseResult> {
   const drop = [...new Set(dropLineIds)].sort();
@@ -449,11 +388,12 @@ export async function confirmClose(e: Engine, jobId: string, userId: string, dro
     if (side === "trades" || both) patch.close_trades_at = now;
     if (side === "homeowner" || both) patch.close_homeowner_at = now;
     const updated = await store.updateJob(q, jobId, patch);
+    const dropCodes = lines.filter((l) => drop.includes(l.id)).map((l) => l.code);
     await store.appendEvent(q, {
       jobId,
       actor: side === "trades" ? "tradesperson" : "homeowner",
       type: "CLOSE_CONFIRMED",
-      data: { drop: lines.filter((l) => drop.includes(l.id)).map((l) => l.code) },
+      data: { drop: dropCodes, ...(both ? { by: "both" } : {}) },
     });
     if (!updated.close_trades_at) return { step: "wait" as const, who: "tradesperson" as const };
     if (!updated.close_homeowner_at) return { step: "wait" as const, who: "homeowner" as const };
@@ -475,18 +415,23 @@ export async function confirmClose(e: Engine, jobId: string, userId: string, dro
       throw conflict("lines_open", err instanceof Error ? err.message : String(err));
     }
     await store.appendEvent(q, { jobId, actor: "system", type: "CLOSE_AGREED", data: { plan: plan.kind } });
-    if (plan.kind === "capture") {
-      const cap = await reserveCapture(q, jobId, { forceFinal: true, actor: "system" });
-      return { step: "go" as const, captureId: cap?.id ?? null, auth, voidNow: false };
-    }
-    return { step: "go" as const, captureId: null, auth, voidNow: plan.kind === "void" };
+    // The two confirmations of this exact proposal are the approvals the guard sees.
+    const confirmations = (await store.getEvents(q, jobId))
+      .filter((ev) => ev.type === "CLOSE_CONFIRMED" && JSON.stringify(ev.data?.drop ?? []) === JSON.stringify(dropCodes))
+      .map((ev) => ev.id);
+    return { step: "go" as const, plan: plan.kind, auth, confirmations, side };
   });
 
   if (ready.step === "wait") return { kind: "waiting", for: ready.who };
-  if (ready.captureId) {
-    const res = await sendCapture(e, ready.captureId);
+  const init: Initiator = { kind: ready.side === "trades" ? "tradesperson" : "homeowner", userId };
+  if (ready.plan === "capture") {
+    const res = await guardedCapture(e, jobId, init, { final: true, approvalEventIds: ready.confirmations });
     return { kind: "closed", release: res, voided: false };
   }
-  const voided = ready.voidNow ? await voidAuthorization(e, ready.auth, "system") : false;
-  return { kind: "closed", release: null, voided };
+  if (ready.plan === "void") {
+    const v = await guardedVoid(e, jobId, init, { auth: ready.auth }, { approvalEventIds: ready.confirmations });
+    return { kind: "closed", release: null, voided: v.voided, ...(v.voided ? {} : { reasons: v.reasons }) };
+  }
+  return { kind: "closed", release: null, voided: false };
 }
+
