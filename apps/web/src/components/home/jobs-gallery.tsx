@@ -30,7 +30,7 @@ function Card({ job }: { job: (typeof JOBS)[number] }) {
   return (
     <div ref={ref} className="group" onMouseEnter={() => setWipe(true)} onMouseLeave={() => setWipe(false)} data-cursor="Before">
       <div className="clay relative overflow-hidden rounded-[28px] p-2.5">
-        <div className="relative aspect-[16/10] overflow-hidden rounded-[20px]">
+        <div className="relative aspect-[4/3] overflow-hidden rounded-[20px]">
           <Art state="after" className="absolute inset-0 h-full w-full transition-transform duration-[1.2s] ease-[cubic-bezier(0.16,1,0.3,1)] group-hover:scale-[1.04]" />
           <div
             className="absolute inset-0 transition-[clip-path] duration-[900ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
