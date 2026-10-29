@@ -26,7 +26,8 @@ export interface JobRow {
   close_trades_at: Date | null;
   close_homeowner_at: Date | null;
   /** Tripwire scope-time check: line text that read as instructions to the AI. */
-  scope_flags: { line: string; excerpt: string }[] | null;
+  /** Scope-time check: lines whose text speaks to the AI (Tripwire section 7). */
+  scope_flags: { line: string; text: string; why: string }[] | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -176,7 +177,8 @@ export async function updateJob(
   const sets = keys.map((k, i) => `${k} = $${i + 2}`);
   const { rows } = await q.query<JobRow>(
     `update jobs set ${sets.join(", ")}, updated_at = now() where id = $1 returning *`,
-    [id, ...keys.map((k) => patch[k])],
+    // jsonb columns go in as JSON text; pg would send a JS array as a Postgres array.
+    [id, ...keys.map((k) => (k === "scope_flags" && patch[k] ? JSON.stringify(patch[k]) : patch[k]))],
   );
   if (!rows[0]) throw new NotFound("job", id);
   return rows[0];
@@ -420,7 +422,7 @@ export async function beforePhotoFor(q: Queryable, line: Pick<LineRow, "id" | "j
 export async function nearestOtherHamming(q: Queryable, dhash: string, excludePhotoIds: string[]): Promise<number | null> {
   const { rows } = await q.query<{ d: number | null }>(
     `select min(bit_count(('x' || dhash)::bit(64) # ('x' || $1)::bit(64)))::int8 as d
-     from photos where not (id = any($2::uuid[]))`,
+     from photos where kind <> 'masked' and not (id = any($2::uuid[]))`,
     [dhash, excludePhotoIds],
   );
   return rows[0]?.d ?? null;

@@ -1,6 +1,7 @@
 import type { Db } from "@trace/db";
 import type { PayPalApi } from "@trace/paypal";
 import type { PhotoStorage } from "./storage.ts";
+import type { TextScanner } from "./inject/text-scan.ts";
 import type { Verifier } from "./verifier.ts";
 
 export interface Logger {
@@ -24,6 +25,8 @@ export interface Engine {
   paypal: PayPalApi;
   storage: PhotoStorage;
   verifier: Verifier;
+  /** Finds text in proof photos (Tripwire section 7). Without one, a proof can't end Verified on its own. */
+  scanner?: TextScanner;
   settings: EngineSettings;
   now: () => Date;
   log: Logger;

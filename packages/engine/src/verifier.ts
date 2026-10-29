@@ -11,6 +11,8 @@ export interface InspectInput {
   after: Uint8Array;
   /** Second pass: a 2x crop of the region the first pass pointed at. */
   crop?: Uint8Array;
+  /** The re-judge on copies with the text painted over (Tripwire section 7). */
+  masked?: boolean;
 }
 
 export interface Verifier {

@@ -10,7 +10,7 @@ export interface PhotoStorage {
   signedUrl(path: string, expiresInS?: number): Promise<string>;
 }
 
-export function photoPath(jobId: string, kind: "before" | "after" | "during", photoId: string): string {
+export function photoPath(jobId: string, kind: "before" | "after" | "during" | "masked", photoId: string): string {
   return `job/${jobId}/${kind}/${photoId}.jpg`;
 }
 

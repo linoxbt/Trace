@@ -3,21 +3,25 @@
 
 import { randomBytes, randomUUID } from "node:crypto";
 import {
+  afterMaskedRejudge,
   CAPTURE_TOKEN_TTL_S,
   combinePasses,
   decideVerdict,
   evaluateIntegrity,
+  isFlagged,
   needsSecondPass,
   nextJobStatus,
   nextLineStatus,
   type IntegrityReport,
   type LineObservation,
+  type TextScan,
   type Verdict,
 } from "@trace/core";
 import * as store from "@trace/db";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { cropRegion, dHash, normalizePhoto } from "./image.ts";
+import { maskText } from "./inject/mask.ts";
 import { photoPath } from "./storage.ts";
 
 const PROVABLE_JOB = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
@@ -131,12 +135,16 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   let observation: LineObservation | null = null;
   let decision: { verdict: Verdict; reasons: string[] };
   const passes: { obs: LineObservation; pass: number }[] = [];
+  let scan: TextScan | null = null;
+  let injection: Injection | null = null;
   if (integrity.status === "fail") {
     decision = { verdict: "FAILED", reasons: integrity.checks.filter((c) => c.result === "fail").map((c) => c.detail) };
   } else {
     const beforeBytes = await e.storage.get(before.storage_path);
     const base = { lineId: line.id, title: line.title, acceptance: line.acceptance, before: beforeBytes, after };
-    const first = await inspect(e, base);
+    // The text scan runs beside the first look.
+    const [first, found] = await Promise.all([inspect(e, base), scanText(e, after)]);
+    scan = found;
     passes.push({ obs: first, pass: 1 });
     observation = first;
     decision = decideVerdict(line.acceptance, first, integrity, e.settings.confidenceThreshold);
@@ -146,14 +154,55 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
       observation = second;
       decision = combinePasses(line.acceptance, first, second, integrity, e.settings.confidenceThreshold);
     }
+    injection = await rejudgeWithoutText(e, { base, before, after, scan, decision, integrity });
+    decision = injection.decision;
   }
+
+  // The masked copy is stored beside the original, which is never changed.
+  let maskedPhoto: store.PhotoRow | null = null;
+  if (injection?.masked) {
+    const maskedId = randomUUID();
+    const maskedPath = photoPath(job.id, "masked", maskedId);
+    await e.storage.put(maskedPath, injection.masked.after, "image/jpeg");
+    maskedPhoto = await store.insertPhoto(e.db, {
+      ...photo,
+      id: maskedId,
+      kind: "masked",
+      storage_path: maskedPath,
+      dhash: await dHash(injection.masked.after),
+      capture_token: null,
+      integrity: null,
+      masked_of: photo.id,
+    });
+  }
+  const steered = !!injection && (injection.flagged || injection.depended);
 
   await e.db.tx(async (q) => {
     const j = await store.mustGetJob(q, job.id, { lock: true });
     const locked = await store.getLine(q, line.id, { lock: true });
     if (!locked || locked.status !== "PROVING") throw conflict("not_proving", `${line.code} changed while it was being checked`);
     const event = decision.verdict === "VERIFIED" ? "VERDICT_VERIFIED" : decision.verdict === "FAILED" ? "VERDICT_FAILED" : "VERDICT_NEEDS_REVIEW";
-    await store.updateLine(q, line.id, { status: nextLineStatus(locked.status, event), review_due_at: null, flag_note: null });
+    await store.updateLine(q, line.id, {
+      status: nextLineStatus(locked.status, event),
+      review_due_at: null,
+      flag_note: null,
+      // The latest proof decides: a clean re-proof clears an earlier flag.
+      injection_flag: steered,
+      injection_excerpt: steered ? (injection!.excerpt ?? null) : null,
+    });
+    if (scan) await store.setPhotoScan(q, photo.id, scan, !!injection?.flagged);
+    if (injection?.masked && maskedPhoto) {
+      await store.insertVerdict(q, {
+        lineId: line.id,
+        photoId: maskedPhoto.id,
+        observation: injection.masked.observation,
+        verdict: injection.masked.verdict,
+        reasons: [],
+        model: e.verifier.model,
+        pass: 1,
+        masked: true,
+      });
+    }
     for (const p of passes) {
       await store.insertVerdict(q, {
         lineId: line.id,
@@ -183,6 +232,26 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
       type: "VERDICT",
       data: { line: line.code, verdict: decision.verdict, reasons: decision.reasons, sample: !!input.sample, photo: photo.id },
     });
+    if (steered) {
+      await store.appendEvent(q, {
+        jobId: job.id,
+        actor: "system",
+        type: "INJECTION_FLAGGED",
+        data: {
+          line: line.code,
+          photo: photo.id,
+          masked_photo: maskedPhoto?.id ?? null,
+          excerpt: injection!.excerpt ?? null,
+          boxes: (scan?.texts ?? []).map((t) => t.box),
+          depended: injection!.depended,
+          alert: "homeowner",
+          homeowner_message: injection!.masked
+            ? "Text in this proof was addressed to the inspector. We hid it and re-checked the work. Please look before releasing."
+            : "Text in this proof was addressed to the inspector. It was ignored.",
+          tradesperson_message: "Text in your proof was ignored. This line needs the homeowner's review.",
+        },
+      });
+    }
   });
 
   return { verdict: decision.verdict, reasons: decision.reasons, photoId: photo.id, integrity, observation };
@@ -223,8 +292,11 @@ export async function addBeforePhoto(
     sample: false,
     taken_at: e.now(),
   });
+  // Scanned now, so a re-judge can paint out text in the before-photo too.
+  const scan = await scanText(e, bytes);
   return e.db.tx(async (q) => {
     const j = await store.mustGetJob(q, job.id, { lock: true });
+    if (scan) await store.setPhotoScan(q, photo.id, scan, isFlagged(scan).flagged);
     if (j.anchor_lat == null && input.gps) await store.updateJob(q, job.id, { anchor_lat: input.gps.lat, anchor_lng: input.gps.lng });
     await store.appendEvent(q, { jobId: job.id, actor: "tradesperson", type: "BEFORE_PHOTO", data: { photo: photo.id } });
     return photo;
@@ -238,4 +310,88 @@ async function inspect(e: Engine, input: Parameters<Engine["verifier"]["inspect"
     e.log.error("verifier failed", { line: input.lineId, err: String(err) });
     throw new EngineError("verifier_unavailable", "the photo check is unavailable; open the camera and try again", 503);
   }
+}
+
+// ---------- injection defence (Tripwire section 7) ----------
+
+interface Injection {
+  decision: { verdict: Verdict; reasons: string[] };
+  flagged: boolean;
+  /** The verdict changed once the text was hidden: the words were steering it. */
+  depended: boolean;
+  excerpt?: string;
+  masked?: { after: Buffer; observation: LineObservation; verdict: Verdict };
+}
+
+/** Stage A. Null when the scan couldn't run, which is never read as "no text". */
+async function scanText(e: Engine, image: Uint8Array): Promise<TextScan | null> {
+  if (!e.scanner) return null;
+  try {
+    return await e.scanner.scanImage(image);
+  } catch (err) {
+    e.log.warn("text scan failed", { err: String(err) });
+    return null;
+  }
+}
+
+/**
+ * Stages B and C: when a Verified proof (or its before-photo) has text, paint
+ * the text out and judge the line again on the masked pair. A verdict only
+ * ever moves from Verified to Needs review here, never the other way.
+ */
+async function rejudgeWithoutText(
+  e: Engine,
+  p: {
+    base: { lineId: string; title: string; acceptance: store.LineRow["acceptance"]; before: Uint8Array; after: Uint8Array };
+    before: store.PhotoRow;
+    after: Buffer;
+    scan: TextScan | null;
+    decision: { verdict: Verdict; reasons: string[] };
+    integrity: IntegrityReport;
+  },
+): Promise<Injection> {
+  const { decision } = p;
+  if (!p.scan) {
+    if (decision.verdict !== "VERIFIED") return { decision, flagged: false, depended: false };
+    return {
+      decision: { verdict: "NEEDS_REVIEW", reasons: ["The check for text in the photo didn't run, so a person should look."] },
+      flagged: false,
+      depended: false,
+    };
+  }
+  const beforeScan = (p.before.text_scan as TextScan | null) ?? null;
+  const afterFlag = isFlagged(p.scan);
+  const beforeFlag = beforeScan ? isFlagged(beforeScan) : { flagged: false as const };
+  const flagged = afterFlag.flagged || beforeFlag.flagged;
+  const excerpt = afterFlag.excerpt ?? beforeFlag.excerpt;
+  const anyText = p.scan.texts.length > 0 || (beforeScan?.texts.length ?? 0) > 0;
+  if (!anyText) return { decision, flagged: false, depended: false };
+  // The table only changes a Verified line, so other verdicts skip the second model call.
+  if (decision.verdict !== "VERIFIED") return { decision, flagged, depended: false, ...(excerpt ? { excerpt } : {}) };
+
+  let masked: Injection["masked"];
+  try {
+    const after = await maskText(p.after, p.scan.texts);
+    const before = beforeScan?.texts.length ? await maskText(p.base.before, beforeScan.texts) : p.base.before;
+    const observation = await e.verifier.inspect({ ...p.base, before, after, masked: true });
+    masked = { after, observation, verdict: decideVerdict(p.base.acceptance, observation, p.integrity, e.settings.confidenceThreshold).verdict };
+  } catch (err) {
+    e.log.warn("masked re-judge failed", { line: p.base.lineId, err: String(err) });
+    return {
+      decision: { verdict: "NEEDS_REVIEW", reasons: ["The photo had text in it and the re-check without it didn't run, so a person should look."] },
+      flagged,
+      depended: false,
+      ...(excerpt ? { excerpt } : {}),
+    };
+  }
+  const out = afterMaskedRejudge(decision.verdict, masked.verdict, flagged);
+  const depended = masked.verdict !== "VERIFIED";
+  const reason = out.reason ? out.reason.charAt(0).toUpperCase() + out.reason.slice(1) + "." : null;
+  return {
+    decision: out.verdict === decision.verdict ? decision : { verdict: out.verdict, reasons: reason ? [reason] : decision.reasons },
+    flagged,
+    depended,
+    masked,
+    ...(excerpt ? { excerpt } : {}),
+  };
 }

@@ -2,11 +2,12 @@
 // storage, a scripted verifier and a settable clock.
 
 import sharp from "sharp";
-import type { Acceptance, LineObservation } from "@trace/core";
+import type { Acceptance, LineObservation, TextScan } from "@trace/core";
 import { type Db } from "@trace/db";
 import { freshDb, makeUser } from "@trace/db/testing";
 import { FakePayPal } from "@trace/paypal/fake";
 import type { Engine, Logger } from "./deps.ts";
+import type { ScopeFlag, ScopeLineText, TextScanner } from "./inject/text-scan.ts";
 import { MemoryStorage } from "./storage.ts";
 import type { InspectInput, Verifier } from "./verifier.ts";
 
@@ -21,6 +22,25 @@ export class ScriptedVerifier implements Verifier {
     const s = this.script.get(input.lineId);
     const over = typeof s === "function" ? s(input) : (s?.shift() ?? {});
     return { ...passing(input.lineId, input.acceptance), ...over };
+  }
+}
+
+/** Finds no text unless told to: queue scans for the next photos, or flags for the next scope. */
+export class ScriptedScanner implements TextScanner {
+  readonly model = "scripted-scan";
+  readonly images: (TextScan | Error)[] = [];
+  readonly scopes: ScopeFlag[][] = [];
+  scanned = 0;
+
+  async scanImage(_image: Uint8Array): Promise<TextScan> {
+    this.scanned += 1;
+    const next = this.images.shift() ?? { texts: [] };
+    if (next instanceof Error) throw next;
+    return next;
+  }
+
+  async scanScope(_lines: ScopeLineText[]): Promise<ScopeFlag[]> {
+    return this.scopes.shift() ?? [];
   }
 }
 
@@ -45,6 +65,7 @@ export interface TestEngine extends Engine {
   paypal: FakePayPal;
   storage: MemoryStorage;
   verifier: ScriptedVerifier;
+  scanner: ScriptedScanner;
   clock: { t: Date };
 }
 
@@ -56,6 +77,7 @@ export async function testEngine(): Promise<TestEngine> {
     paypal: new FakePayPal(() => clock.t),
     storage: new MemoryStorage(),
     verifier: new ScriptedVerifier(),
+    scanner: new ScriptedScanner(),
     settings: { webhookId: "WH-TEST", demoMode: false, confidenceThreshold: 0.8, brandName: "Trace" },
     now: () => clock.t,
     log: quietLog,

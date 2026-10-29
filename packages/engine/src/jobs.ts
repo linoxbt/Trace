@@ -11,6 +11,7 @@ import {
 import * as store from "@trace/db";
 import { authorizationOf } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
+import type { ScopeFlag } from "./inject/text-scan.ts";
 import { guardedVoid } from "./guard/execute.ts";
 import { DEMO_REVIEW_WINDOW_S, HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
@@ -82,6 +83,7 @@ export async function saveScope(e: Engine, jobId: string, tradesId: string, line
 
 /** Send the scope: hash and freeze it. DRAFT -> AWAITING_APPROVAL. */
 export async function sendScope(e: Engine, jobId: string, tradesId: string): Promise<store.JobRow> {
+  const flags = await checkScope(e, jobId);
   return e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId, { lock: true });
     if (job.trades_id !== tradesId) throw forbidden();
@@ -92,7 +94,13 @@ export async function sendScope(e: Engine, jobId: string, tradesId: string): Pro
       currency: job.currency,
       lines: lines.map((l) => ({ code: l.code, title: l.title, priceCents: l.price_cents, acceptance: l.acceptance, verifiableByPhoto: l.verifiable_by_photo })),
     });
-    const out = await store.updateJob(q, jobId, { status: nextJobStatus(job.status, "SCOPE_SENT"), scope_hash: hash });
+    // Flags only count for lines that still read as they did when checked.
+    const current = flags?.filter((f) => lines.some((l) => l.code === f.line && l.title === f.title));
+    const out = await store.updateJob(q, jobId, {
+      status: nextJobStatus(job.status, "SCOPE_SENT"),
+      scope_hash: hash,
+      scope_flags: current ? current.map(({ line, text, why }) => ({ line, text, why })) : null,
+    });
     await store.appendEvent(q, {
       jobId,
       actor: "tradesperson",
@@ -184,4 +192,22 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
 
 export function newRequestId(prefix: string): string {
   return `${prefix}-${randomUUID()}`;
+}
+
+/**
+ * Scope-time check (Tripwire section 7): instructions aimed at the AI in the
+ * lines are flagged for the homeowner to see beside them. Null when the check
+ * couldn't run; sending isn't held up for it.
+ */
+async function checkScope(e: Engine, jobId: string): Promise<(ScopeFlag & { title: string })[] | null> {
+  if (!e.scanner) return null;
+  const lines = await store.getLines(e.db, jobId);
+  if (lines.length === 0) return null;
+  try {
+    const flags = await e.scanner.scanScope(lines.map((l) => ({ code: l.code, title: l.title, acceptance: l.acceptance })));
+    return flags.map((f) => ({ ...f, title: lines.find((l) => l.code === f.line)!.title }));
+  } catch (err) {
+    e.log.warn("scope check failed", { job: jobId, err: String(err) });
+    return null;
+  }
 }
