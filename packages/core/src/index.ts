@@ -6,3 +6,4 @@ export * from "./integrity.ts";
 export * from "./verdict.ts";
 export * from "./scope.ts";
 export * from "./guard.ts";
+export * from "./categories.ts";

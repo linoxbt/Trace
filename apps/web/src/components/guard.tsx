@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import type { JobView } from "@/server/view";
 import { money, when } from "@/lib/format";
+import { wordsFor, type Words } from "@/lib/words";
 
 type Guard = JobView["guard"];
 type Approval = Guard["approvals"][number];
@@ -154,14 +155,15 @@ function useCountdown(iso: string): string {
 }
 
 /** A money move the guard held back. Approving re-runs every check; it never skips one. */
-export function ApprovalCard({ a, currency, busy, onAnswer }: { a: Approval; currency: string; busy: boolean; onAnswer: (approve: boolean) => void }) {
+export function ApprovalCard({ a, currency, busy, onAnswer, words = wordsFor(null) }: { a: Approval; currency: string; busy: boolean; onAnswer: (approve: boolean) => void; words?: Words }) {
   const left = useCountdown(a.expiresAt);
-  const waitingFor = a.approver === "both" ? (["homeowner", "tradesperson"] as const).filter((x) => !a.approvedBy.includes(x)) : [a.approver];
+  const name = (side: "homeowner" | "tradesperson") => (side === "homeowner" ? words.client : words.pro);
+  const waitingFor = (a.approver === "both" ? (["homeowner", "tradesperson"] as const).filter((x) => !a.approvedBy.includes(x)) : [a.approver]).map(name);
   return (
     <div className="surface relative overflow-hidden rounded-[24px] p-5 shadow-[0_0_0_2px_var(--color-violet)]">
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-violet-soft px-2.5 py-1 text-[12px] font-medium text-violet">
-          <ShieldIcon /> Needs {a.approver === "both" ? "both of you" : `the ${a.approver}`}
+          <ShieldIcon /> Needs {a.approver === "both" ? "both of you" : `the ${name(a.approver)}`}
         </span>
         <span className="num text-[12px] text-muted">{left}</span>
       </div>
@@ -197,7 +199,7 @@ export function ApprovalCard({ a, currency, busy, onAnswer }: { a: Approval; cur
 /* -------------------------------------------------------- injection alert */
 
 /** The original proof with the text outlined, and the masked copy the work was re-checked on. */
-export function InjectionAlert({ line, role }: { line: Line; role: JobView["role"] }) {
+export function InjectionAlert({ line, role, client = "homeowner" }: { line: Line; role: JobView["role"]; client?: string }) {
   const inj = line.injection;
   if (!inj) return null;
   const trades = role === "tradesperson";
@@ -208,7 +210,7 @@ export function InjectionAlert({ line, role }: { line: Line; role: JobView["role
       </div>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-2">
         {trades
-          ? "This line needs the homeowner's review."
+          ? `This line needs the ${client}'s review.`
           : inj.maskedUrl
             ? "We hid it and re-checked the work. Please look before releasing."
             : "It was ignored. Please look before releasing."}

@@ -26,7 +26,7 @@ export default async function Jobs() {
           <JobsTable jobs={jobs} invites={invites} />
         ) : (
           <Card>
-            <Empty icon={<IconJobs />} title={user.anonymous ? "Sign in to start a job" : "No jobs yet"} body="Tradespeople start a job and invite the homeowner by email. A scope sent to your email appears here." action={newJob} />
+            <Empty icon={<IconJobs />} title={user.anonymous ? "Sign in to start a job" : "No jobs yet"} body="Whoever does the work starts a job and invites the client by email. A scope sent to your email appears here." action={newJob} />
           </Card>
         )}
       </div>

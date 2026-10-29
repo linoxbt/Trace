@@ -46,6 +46,8 @@ export interface JobRowView {
   openLines: number;
   demo: boolean;
   disputed: boolean;
+  /** The job type (home_repair, cleaning, car, ...). */
+  category: string;
   createdAt: string;
   updatedAt: string;
   /** The latest after-photo, else a before-photo. */
@@ -88,6 +90,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
     released: number;
     created_at: Date;
     updated_at: Date;
+    category: string;
   }>(
     `select j.id, j.address, j.status, j.trades_id, j.homeowner_id, j.homeowner_email, j.demo, j.disputed, j.created_at,
        greatest(j.updated_at, coalesce((select max(at) from events e where e.job_id = j.id), j.updated_at)) as updated_at,
@@ -97,7 +100,8 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
        (select count(*)::int8 from lines where job_id = j.id and status = 'CAPTURED') as paid,
        (select count(*)::int8 from lines where job_id = j.id and status not in ('CAPTURED','DROPPED')) as open,
        a.amount_cents as held,
-       coalesce((select sum(c.amount_cents) from captures c where c.authorization_id = a.id and c.status in ('COMPLETED','PENDING')),0)::int8 as released
+       coalesce((select sum(c.amount_cents) from captures c where c.authorization_id = a.id and c.status in ('COMPLETED','PENDING')),0)::int8 as released,
+       j.category
      from jobs j left join authorizations a on a.job_id = j.id and a.kind = 'base'
      where $1 in (j.trades_id, j.homeowner_id)
      order by 9 desc limit $2`,
@@ -111,7 +115,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
       address: r.address,
       status: r.status,
       side: (r.trades_id === userId ? "tradesperson" : "homeowner") as Side,
-      otherParty: r.trades_id === userId ? r.homeowner_email : (r.trades_name ?? "Your tradesperson"),
+      otherParty: r.trades_id === userId ? r.homeowner_email : (r.trades_name ?? "Who does the work"),
       totalCents: r.total,
       heldCents: r.held ?? 0,
       releasedCents: r.released,
@@ -120,6 +124,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
       openLines: r.open,
       demo: r.demo,
       disputed: r.disputed,
+      category: r.category,
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
       coverUrl: covers.get(r.id) ?? null,
@@ -149,7 +154,7 @@ export async function invitesFor(email: string | null): Promise<Invite[]> {
      order by sent desc limit 20`,
     [email],
   );
-  return rows.map((r) => ({ id: r.id, address: r.address, from: r.from_name ?? "A tradesperson", totalCents: r.total, lines: r.lines, sentAt: r.sent.toISOString() }));
+  return rows.map((r) => ({ id: r.id, address: r.address, from: r.from_name ?? "Someone", totalCents: r.total, lines: r.lines, sentAt: r.sent.toISOString() }));
 }
 
 export interface InboxItem {
@@ -240,7 +245,7 @@ export async function inboxOf(userId: string, email: string | null): Promise<Inb
   }
   for (const j of jobs.rows) {
     if (j.status === "DRAFT" && j.trades_id === userId)
-      items.push({ key: `draft-${j.id}`, kind: "finish_scope", jobId: j.id, address: j.address, title: "Finish the scope", detail: "Add before-photos and lines, then send it to the homeowner", amountCents: j.total || null, at: j.updated_at.toISOString(), rank: 4 });
+      items.push({ key: `draft-${j.id}`, kind: "finish_scope", jobId: j.id, address: j.address, title: "Finish the scope", detail: "Add before-photos and lines, then send it to your client", amountCents: j.total || null, at: j.updated_at.toISOString(), rank: 4 });
     if (j.status === "AWAITING_APPROVAL" && j.trades_id !== userId)
       items.push({ key: `hold-${j.id}`, kind: "approve_hold", jobId: j.id, address: j.address, title: "Approve the scope and hold the money", detail: "Nothing is charged until each line is proved", amountCents: j.total, at: j.updated_at.toISOString(), rank: 1 });
   }
@@ -269,7 +274,7 @@ export async function inboxOf(userId: string, email: string | null): Promise<Inb
       rank: 3,
     });
   for (const d of disputes.rows)
-    items.push({ key: `dsp-${d.id}`, kind: "dispute", jobId: d.job_id, address: d.address, title: "A dispute needs your evidence", detail: `${DISPUTE_REASON[d.reason ?? ""] ?? "The homeowner opened a PayPal dispute"}`, amountCents: null, at: d.created_at.toISOString(), rank: 0 });
+    items.push({ key: `dsp-${d.id}`, kind: "dispute", jobId: d.job_id, address: d.address, title: "A dispute needs your evidence", detail: `${DISPUTE_REASON[d.reason ?? ""] ?? "Your client opened a PayPal dispute"}`, amountCents: null, at: d.created_at.toISOString(), rank: 0 });
   const covers = await coversFor([...new Set(items.map((i) => i.jobId))]);
   // An unopened scope isn't the person's job yet, so its photos aren't theirs to load.
   for (const i of items) i.coverUrl = i.kind === "invite" ? null : (covers.get(i.jobId) ?? null);

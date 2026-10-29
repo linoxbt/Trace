@@ -7,6 +7,8 @@ import { JobsGallery } from "@/components/home/jobs-gallery";
 import { RingsRow } from "@/components/home/rings-row";
 import { GeofenceMap } from "@/components/home/geofence-map";
 import { Reveal } from "@/components/ui/reveal";
+import { CategoryIcon } from "@/components/category-icon";
+import { CATEGORIES, JOB_CATEGORIES } from "@trace/core/categories";
 
 export default function Home() {
   return (
@@ -25,7 +27,7 @@ export default function Home() {
       <Cta
         title={
           <>
-            Got a repair that <span className="text-lilac">needs paying fairly?</span>
+            Got a job that <span className="text-lilac">needs paying fairly?</span>
           </>
         }
         body="Run a whole job in your browser: approve the hold, prove the work, release the money. No sign-up, nothing charged."
@@ -43,7 +45,7 @@ function Hero() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-5 sm:px-8 lg:grid-cols-[1.3fr_1fr] lg:gap-4">
         <div>
           <div className="rise">
-            <Eyebrow>Home repairs · paid on proof · PayPal</Eyebrow>
+            <Eyebrow>On-site work · paid on proof · PayPal</Eyebrow>
           </div>
           <h1 className="display rise mt-6 text-[56px] leading-[0.92] sm:text-[84px] lg:text-[72px] xl:text-[86px]" style={{ "--delay": "60ms" } as React.CSSProperties}>
             <span className="sm:whitespace-nowrap">
@@ -53,7 +55,7 @@ function Hero() {
             <span className="sm:whitespace-nowrap">not promises.</span>
           </h1>
           <p className="rise mt-7 max-w-[480px] text-[17px] leading-relaxed text-ink-2 sm:text-[18.5px]" style={{ "--delay": "140ms" } as React.CSSProperties}>
-            Trace holds a homeowner&apos;s payment with PayPal and releases it line by line, only when AI confirms the work from photos taken on site.
+            Repairs, cleans, car work, gardens, installs. Trace holds the client&apos;s payment with PayPal and releases it line by line, only when AI confirms the work from photos taken on site.
           </p>
           <div className="rise mt-9 flex flex-wrap gap-3" style={{ "--delay": "220ms" } as React.CSSProperties}>
             <PillLink href="/demo" tone="ink">
@@ -205,7 +207,7 @@ function Why() {
           <div className="mt-20">
             <RingsRow
               items={[
-                { title: "Held by PayPal", body: "One authorization per job. The homeowner's money waits at PayPal, not in an account Trace controls." },
+                { title: "Held by PayPal", body: "One authorization per job. The client's money waits at PayPal, not in an account Trace controls." },
                 { title: "Proved from the site", body: "Photos come from the job's phone, inside 150 m, through a camera token that works once." },
                 { title: "Paid line by line", body: "Each proved line is captured on its own. Unfinished work is never charged and the rest is released." },
               ]}
@@ -219,15 +221,6 @@ function Why() {
 
 /* -------------------------------------------------------------- trades */
 
-const TRADES: [string, string, React.ReactNode][] = [
-  ["Plumbing", "Taps, leaks, cisterns", <path key="p" d="M7 4v5a3 3 0 0 0 3 3h7M17 9v6M14 20s3-3 3-5" />],
-  ["Tiling & grout", "Joints, cracks, regrouts", <path key="p" d="M4 4h16v16H4zM12 4v16M4 12h16" />],
-  ["Sealant & baths", "Beads, gaps, mould", <path key="p" d="M3 14h18v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-3ZM6 14V6a2 2 0 0 1 4 0" />],
-  ["Fixtures", "Rails, shelves, mirrors", <path key="p" d="M4 9h16M6 9V6M18 9V6M7 9v9h10V9" />],
-  ["Painting & patching", "Walls, ceilings, trim", <path key="p" d="M5 4h12v5H5zM11 9v3h-1v8M17 6h2v5h-8" />],
-  ["Doors & windows", "Hinges, locks, seals", <path key="p" d="M6 3h12v18H6zM14 12h1" />],
-];
-
 function Trades() {
   return (
     <section className="py-16 sm:py-24">
@@ -236,30 +229,31 @@ function Trades() {
           clause="Jobs that fit"
           title={
             <>
-              Any repair a <span className="text-violet">photo can prove.</span>
+              Any job a <span className="text-violet">photo can prove.</span>
             </>
           }
-          body="Trace works best for work you can see when it's finished. Write each line's pass criterion in plain words; the camera does the rest."
+          body="Trace works for on-site work you can see when it's finished, paid in stages. Each job type starts with lines that photograph well; write your own in plain words and the camera does the rest."
         />
         <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {TRADES.map(([t, sub, icon], i) => (
-            <Reveal key={t} delay={(i % 3) * 80}>
-              <div className="clay clay-hover flex items-center gap-4 rounded-[22px] p-4">
-                <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${i === 0 ? "bg-violet text-white" : "bg-paper text-ink-2"}`}>
-                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                    {icon}
-                  </svg>
-                </span>
-                <span>
-                  <span className="block text-[15.5px] font-semibold">{t}</span>
-                  <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
-                    <span className={`h-1.5 w-1.5 rounded-full ${i % 2 ? "bg-brass" : "bg-violet"}`} />
-                    {sub}
+          {JOB_CATEGORIES.map((id, i) => {
+            const c = CATEGORIES[id];
+            return (
+              <Reveal key={id} delay={(i % 3) * 80}>
+                <Link href={`/jobs/new?type=${id}`} className="clay clay-hover flex items-center gap-4 rounded-[22px] p-4">
+                  <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${i === 0 ? "bg-violet text-white" : "bg-paper text-ink-2"}`}>
+                    <CategoryIcon id={id} className="h-[22px] w-[22px]" />
                   </span>
-                </span>
-              </div>
-            </Reveal>
-          ))}
+                  <span className="min-w-0">
+                    <span className="block text-[15.5px] font-semibold">{c.label}</span>
+                    <span className="flex items-center gap-1.5 text-[12.5px] text-muted">
+                      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${i % 2 ? "bg-brass" : "bg-violet"}`} />
+                      <span className="truncate">{c.blurb}</span>
+                    </span>
+                  </span>
+                </Link>
+              </Reveal>
+            );
+          })}
         </div>
       </div>
     </section>

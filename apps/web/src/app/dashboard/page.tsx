@@ -5,6 +5,7 @@ import { IconActivity, IconInbox, IconJobs, IconPlus, IconShield, IconWallet } f
 import { InboxRows } from "@/components/app/inbox";
 import { ActivityRows } from "@/components/app/activity";
 import { BigMoney, Card, CardHead, Empty, IconCircle, Progress, QuickAction, SeeAll } from "@/components/app/ui";
+import { categoryOf } from "@trace/core/categories";
 import { money } from "@/lib/format";
 import { currentUser } from "@/server/auth";
 import { activityOf, guardSummaryOf, inboxOf, jobsOf, profileOf } from "@/server/app-data";
@@ -127,7 +128,7 @@ export default async function Home() {
                           </IconCircle>
                           <div className="min-w-0 flex-1">
                             <div className="truncate text-[14.5px] font-medium">{j.address}</div>
-                            <div className="truncate text-[12.5px] text-muted">{STATUS[j.status] ?? j.status}</div>
+                            <div className="truncate text-[12.5px] text-muted">{categoryOf(j.category).label} · {STATUS[j.status] ?? j.status}</div>
                           </div>
                           <div className="text-right">
                             <div className="text-[14.5px] font-semibold tabular-nums">{money(j.releasedCents)}</div>
@@ -144,7 +145,7 @@ export default async function Home() {
               <Empty
                 icon={<IconJobs />}
                 title={user.anonymous ? "Sign in to start a job" : "No jobs yet"}
-                body="Start a job and invite the homeowner, or open a scope sent to your email."
+                body="Start a job and invite your client, or open a scope sent to your email."
                 action={
                   !user.anonymous && (
                     <Link href="/jobs/new" className="press inline-flex h-10 items-center gap-1.5 rounded-full bg-violet px-4 text-[14px] font-semibold text-white">

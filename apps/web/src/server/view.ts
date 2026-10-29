@@ -24,6 +24,8 @@ export interface JobView {
     homeownerEmail: string;
     currency: string;
     demo: boolean;
+    /** The job type: sets the words for each side and the starting lines. */
+    category: store.JobRow["category"];
     disputed: boolean;
     reviewWindowS: number;
     totalCents: number;
@@ -135,6 +137,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       homeownerEmail: job.homeowner_email,
       currency: job.currency,
       demo: job.demo,
+      category: job.category,
       disputed: job.disputed,
       reviewWindowS: job.review_window_s,
       totalCents: sum(lines.map((l) => l.price_cents)),

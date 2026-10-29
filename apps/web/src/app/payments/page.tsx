@@ -43,7 +43,7 @@ export default async function Payments() {
           <div className="sm:pl-6">
             <div className="text-[14px] font-medium text-muted">Paid by you</div>
             <div className="mt-1 text-[26px] font-semibold tabular-nums">{money(paid)}</div>
-            <div className="mt-1 text-[13px] text-muted">As homeowner</div>
+            <div className="mt-1 text-[13px] text-muted">For work done for you</div>
           </div>
         </div>
       </Card>
@@ -52,7 +52,7 @@ export default async function Payments() {
           <PaymentsList ledger={ledger} />
         ) : (
           <Card>
-            <Empty icon={<IconWallet />} title="No payments yet" body="When a homeowner approves a scope with PayPal, the hold appears here, then each payment as lines are proved." />
+            <Empty icon={<IconWallet />} title="No payments yet" body="When a client approves a scope with PayPal, the hold appears here, then each payment as lines are proved." />
           </Card>
         )}
       </div>

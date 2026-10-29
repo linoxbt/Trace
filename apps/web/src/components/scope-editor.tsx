@@ -1,11 +1,13 @@
 "use client";
 
-// Spec screen 3. Until the scope model lands, the tradesperson writes the lines;
-// each one needs a criterion a camera can check.
+// Spec screen 3. The person doing the work writes the lines, starting from the
+// job type's ready-made ones if they like; each needs a criterion a camera can check.
 
 import { useState } from "react";
+import { categoryOf, type LineTemplate } from "@trace/core/categories";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
+import { wordsFor } from "@/lib/words";
 import type { JobView } from "@/server/view";
 
 interface Draft {
@@ -21,6 +23,17 @@ interface Draft {
 
 let keys = 0;
 const blank = (): Draft => ({ key: ++keys, title: "", price: "", criterion: "", mustShow: "", mustNotShow: "", framing: "Same angle as the before-photo", verifiableByPhoto: true });
+const fromTemplate = (t: LineTemplate): Draft => ({
+  key: ++keys,
+  title: t.title,
+  price: (t.priceCents / 100).toFixed(2),
+  criterion: t.criterion,
+  mustShow: t.mustShow.join("\n"),
+  mustNotShow: t.mustNotShow.join("\n"),
+  framing: t.framing,
+  verifiableByPhoto: true,
+});
+const isBlank = (d: Draft) => !d.title.trim() && !d.price.trim() && !d.criterion.trim() && !d.mustShow.trim();
 const list = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 const cents = (s: string) => Math.round(Number(s.replace(/[^0-9.]/g, "")) * 100);
 
@@ -43,6 +56,16 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
   const [error, setError] = useState("");
   const total = lines.reduce((n, l) => n + (cents(l.price) || 0), 0);
   const set = (i: number, patch: Partial<Draft>) => setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+  const category = categoryOf(view.job.category);
+  const w = wordsFor(view.job.category);
+  const eg = category.templates[0]!;
+  const used = new Set(lines.map((l) => l.title.trim()));
+  // A starter line fills the first empty line, or is added after the others.
+  const addTemplate = (t: LineTemplate) =>
+    setLines((ls) => {
+      const i = ls.findIndex(isBlank);
+      return i >= 0 ? ls.map((l, j) => (j === i ? fromTemplate(t) : l)) : ls.length < 8 ? [...ls, fromTemplate(t)] : ls;
+    });
 
   async function save(send: boolean) {
     setBusy(send ? "send" : "save");
@@ -77,6 +100,23 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
       </div>
       <p className="mt-1 text-[14px] text-muted">One visible outcome per line. Write what a camera would need to see.</p>
 
+      <div className="mt-4">
+        <div className="text-[12.5px] font-medium text-muted">Start from a {category.label.toLowerCase()} line</div>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {category.templates.map((t) => (
+            <button
+              key={t.title}
+              type="button"
+              disabled={used.has(t.title) || (lines.length >= 8 && !lines.some(isBlank))}
+              onClick={() => addTemplate(t)}
+              className="press inline-flex h-9 items-center gap-1.5 rounded-full border border-line bg-card px-3.5 text-[13px] font-medium text-ink-2 hover:border-violet hover:text-violet disabled:opacity-40"
+            >
+              <span aria-hidden className="text-[15px] leading-none">+</span> {t.title}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="mt-4 flex flex-col gap-3">
         {lines.map((l, i) => (
           <div key={l.key} className="surface rounded-[22px] p-5">
@@ -90,7 +130,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
             </div>
             <div className="mt-3 grid grid-cols-[1fr_8rem] gap-2">
               <Field label="Line">
-                <input value={l.title} maxLength={60} onChange={(e) => set(i, { title: e.target.value })} placeholder="Regrout shower wall" className="field" />
+                <input value={l.title} maxLength={60} onChange={(e) => set(i, { title: e.target.value })} placeholder={eg.title} className="field" />
               </Field>
               <Field label="Price (USD)">
                 <input inputMode="decimal" value={l.price} onChange={(e) => set(i, { price: e.target.value })} placeholder="0.00" className="field num text-right" />
@@ -98,15 +138,15 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
             </div>
             <div className="mt-3">
               <Field label="Done looks like">
-                <input value={l.criterion} maxLength={200} onChange={(e) => set(i, { criterion: e.target.value })} placeholder="Continuous grout in every joint, no visible cracks" className="field" />
+                <input value={l.criterion} maxLength={200} onChange={(e) => set(i, { criterion: e.target.value })} placeholder={eg.criterion} className="field" />
               </Field>
             </div>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <Field label="Must show · one per line">
-                <textarea rows={3} value={l.mustShow} onChange={(e) => set(i, { mustShow: e.target.value })} placeholder={"continuous grout in every joint"} className="field text-[14px]" />
+                <textarea rows={3} value={l.mustShow} onChange={(e) => set(i, { mustShow: e.target.value })} placeholder={eg.mustShow.join("\n")} className="field text-[14px]" />
               </Field>
               <Field label="Must not show">
-                <textarea rows={3} value={l.mustNotShow} onChange={(e) => set(i, { mustNotShow: e.target.value })} placeholder={"visible cracks in the grout"} className="field text-[14px]" />
+                <textarea rows={3} value={l.mustNotShow} onChange={(e) => set(i, { mustNotShow: e.target.value })} placeholder={eg.mustNotShow.join("\n")} className="field text-[14px]" />
               </Field>
             </div>
             <div className="mt-3">
@@ -117,7 +157,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
             <label className="mt-4 flex cursor-pointer items-center justify-between gap-3 rounded-xl bg-paper px-3.5 py-3 text-[14px]">
               <span>
                 Visible in an after-photo
-                <span className="block text-[12px] text-faint">Off for hidden work: it goes to the homeowner to review.</span>
+                <span className="block text-[12px] text-faint">Off for hidden work: it goes to the {w.client} to review.</span>
               </span>
               <span className="relative inline-flex">
                 <input type="checkbox" className="peer sr-only" checked={l.verifiableByPhoto} onChange={(e) => set(i, { verifiableByPhoto: e.target.checked })} />
@@ -153,7 +193,7 @@ export function ScopeEditor({ view, onSaved }: { view: JobView; onSaved: (sent: 
             {busy === "send" ? "Sending…" : "Send for approval"}
           </button>
         </div>
-        <p className="mt-2.5 text-[12px] text-faint">Sending freezes the scope. The homeowner then approves it and PayPal holds the total.</p>
+        <p className="mt-2.5 text-[12px] text-faint">Sending freezes the scope. The {w.client} then approves it and PayPal holds the total.</p>
       </div>
     </section>
   );

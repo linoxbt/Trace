@@ -5,6 +5,8 @@
 // Phone: money first, then the next step, the lines and the timeline.
 
 import Link from "next/link";
+import { categoryOf } from "@trace/core/categories";
+import { wordsFor } from "@/lib/words";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobView } from "@/server/view";
 import { api } from "@/lib/api";
@@ -32,6 +34,8 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
   const { job, role } = view;
   const isTrades = role === "tradesperson" || role === "both";
   const isHome = role === "homeowner" || role === "both";
+  const w = wordsFor(job.category);
+  const category = categoryOf(job.category);
   const held = HELD.includes(job.status);
 
   const toast = useCallback((tone: Toast["tone"], text: string) => {
@@ -71,9 +75,9 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
   function cameraDone(r: CameraResult) {
     setCamera(null);
     if (!r.verdict) toast("ok", "Photo saved.");
-    else if (r.verdict === "VERIFIED") toast("ok", "Verified. The homeowner can release it now.");
+    else if (r.verdict === "VERIFIED") toast("ok", `Verified. The ${w.client} can release it now.`);
     else if (r.verdict === "FAILED") toast("bad", `Didn't pass: ${r.reasons?.join("; ")}`);
-    else toast("info", `Sent to the homeowner for review: ${r.reasons?.join("; ")}`);
+    else toast("info", `Sent to the ${w.client} for review: ${r.reasons?.join("; ")}`);
     refresh();
   }
 
@@ -117,7 +121,7 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
   const nextStep = (
     <NextStep>
       {pending.map((a) => (
-        <ApprovalCard key={a.id} a={a} currency={job.currency} busy={busy} onAnswer={(ok) => answer(a.id, ok)} />
+        <ApprovalCard key={a.id} a={a} currency={job.currency} busy={busy} words={w} onAnswer={(ok) => answer(a.id, ok)} />
       ))}
       {job.status === "DRAFT" && !isTrades && <Waiting title="The scope is being written" body="You'll be able to review every line and its price here." />}
       {job.status === "AWAITING_APPROVAL" && isHome && (job.demo || job.payee.state === "ready") && (
@@ -129,14 +133,15 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
           merchantId={job.demo ? null : job.payee.merchantId}
           bnCode={bnCode}
           sandbox={sandbox}
+          pro={w.pro}
           onHeld={() => { toast("ok", "Held by PayPal. Nothing has been charged."); refresh(); }}
         />
       )}
       {job.status === "AWAITING_APPROVAL" && isHome && !job.demo && job.payee.state !== "ready" && (
-        <Waiting title="Waiting for the tradesperson's PayPal" body="Payments go straight into the tradesperson's own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is." />
+        <Waiting title={`Waiting for the ${w.proPos} PayPal`} body={`Payments go straight into the ${w.proPos} own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is.`} />
       )}
       {job.status === "AWAITING_APPROVAL" && !isHome && (
-        <Waiting title="Waiting for the homeowner" body={`We've asked ${job.homeownerEmail} to review the scope and approve the hold with PayPal.`} />
+        <Waiting title={`Waiting for the ${w.client}`} body={`We've asked ${job.homeownerEmail} to review the scope and approve the hold with PayPal.`} />
       )}
       {isHome && held && approvedCents > 0 && pending.length === 0 && (
         <ActionCard
@@ -153,14 +158,14 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
       {isTrades && held && proved.length > 0 && (
         <ActionCard
           title="Ask for release"
-          body={`${proved.length} proved line${proved.length > 1 ? "s" : ""} will go to the homeowner for review.`}
+          body={`${proved.length} proved line${proved.length > 1 ? "s" : ""} will go to the ${w.client} for review.`}
           cta="Request release"
           busy={busy}
-          onClick={() => act(() => api(`/api/jobs/${job.id}/release-request`, { json: {} }), "The homeowner has been asked to review.")}
+          onClick={() => act(() => api(`/api/jobs/${job.id}/release-request`, { json: {} }), `The ${w.client} has been asked to review.`)}
         />
       )}
       {job.status === "COMPLETED" && <Waiting title="Job complete" body="Every line is paid or dropped. The full record stays on the timeline." done />}
-      {job.status === "CLOSED_VOIDED" && <Waiting title="Closed" body="The hold was released back to the homeowner." done />}
+      {job.status === "CLOSED_VOIDED" && <Waiting title="Closed" body={`The hold was released back to the ${w.client}.`} done />}
     </NextStep>
   );
 
@@ -171,8 +176,9 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-[13px] text-muted">
             <span className="rounded-full bg-card px-2.5 py-1 text-[12px] font-medium text-ink-2 shadow-[0_0_0_1px_var(--color-line)]">
-              {role === "both" ? "Demo · both sides" : role === "tradesperson" ? "Tradesperson" : "Homeowner"}
+              {role === "both" ? "Demo · both sides" : role === "tradesperson" ? w.Pro : w.Client}
             </span>
+            <span className="rounded-full bg-violet-soft px-2.5 py-1 text-[12px] font-medium text-violet">{category.label}</span>
             {job.disputed && <span className="rounded-full bg-bad-soft px-2.5 py-1 text-[12px] font-medium text-bad">Disputed</span>}
             {job.demo && <span className="rounded-full bg-warn-soft px-2.5 py-1 text-[12px] font-medium text-warn">Judge mode</span>}
           </div>
@@ -188,7 +194,7 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
         {/* Rail (first on phones) */}
         <aside className="flex flex-col gap-4 lg:order-2">
           <div className="rise" style={{ "--delay": "60ms" } as React.CSSProperties}>
-            <MoneyCard m={view.money} totalCents={job.totalCents} badge={view.money.authorizationStatus ? <GuardBadge guard={view.guard} demo={job.demo} /> : null} />
+            <MoneyCard m={view.money} totalCents={job.totalCents} client={w.client} badge={view.money.authorizationStatus ? <GuardBadge guard={view.guard} demo={job.demo} /> : null} />
           </div>
           <div className="rise empty:hidden" style={{ "--delay": "120ms" } as React.CSSProperties}>
             {nextStep}
@@ -223,7 +229,7 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
                 </button>
               </section>
               {!job.demo && job.payee.state !== "ready" && <ConnectPayPal pending={job.payee.state === "pending"} />}
-              <ScopeEditor view={view} onSaved={(sent) => { toast("ok", sent ? "Sent. The homeowner can approve now." : "Draft saved."); refresh(); }} />
+              <ScopeEditor view={view} onSaved={(sent) => { toast("ok", sent ? `Sent. The ${w.client} can approve now.` : "Draft saved."); refresh(); }} />
             </>
           )}
 
@@ -239,6 +245,7 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
                     <LineCard
                       line={l}
                       role={role}
+                      client={w.client}
                       scopeFlag={view.guard.scopeFlags.find((f) => f.line === l.code)}
                       currency={job.currency}
                       canProve={isTrades && held && ["PENDING", "PROVING", "FAILED", "FLAGGED"].includes(l.status)}
@@ -362,6 +369,8 @@ function Waiting({ title, body, done }: { title: string; body: string; done?: bo
 function LineCard(props: {
   line: Line;
   role: JobView["role"];
+  /** What this job calls the person paying. */
+  client: string;
   scopeFlag?: JobView["guard"]["scopeFlags"][number];
   currency: string;
   canProve: boolean;
@@ -401,7 +410,7 @@ function LineCard(props: {
 
         {l.reviewDueAt && (l.status === "VERIFIED" || l.status === "NEEDS_REVIEW") && (
           <p className="mt-3 text-[12.5px] text-muted">
-            {l.status === "VERIFIED" ? "Releases on its own" : "Waits for the homeowner"} · review until <span className="num">{when(l.reviewDueAt)}</span>
+            {l.status === "VERIFIED" ? "Releases on its own" : `Waits for the ${props.client}`} · review until <span className="num">{when(l.reviewDueAt)}</span>
           </p>
         )}
 
@@ -448,7 +457,7 @@ function LineCard(props: {
         )}
 
         {props.scopeFlag && !settled && <ScopeFlag flag={props.scopeFlag} />}
-        {l.injection && proof && <InjectionAlert line={l} role={props.role} />}
+        {l.injection && proof && <InjectionAlert line={l} role={props.role} client={props.client} />}
 
         {l.flagNote && l.status === "FLAGGED" && (
           <p className="mt-3 rounded-2xl bg-warn-soft px-3.5 py-2.5 text-[14px] text-warn">

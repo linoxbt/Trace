@@ -7,6 +7,7 @@ import { money, when } from "@/lib/format";
 import { IconChevron, IconMail } from "./icons";
 import { Segmented } from "./segmented";
 import { IconCircle, Pill, Progress, type Tone } from "./ui";
+import { categoryOf } from "@trace/core/categories";
 
 const GROUPS = {
   all: null,
@@ -76,8 +77,8 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
         <div className="flex gap-2">
           <select value={side} onChange={(e) => setSide(e.target.value as typeof side)} className="h-10 rounded-full border border-[#e3e3ea] bg-white px-4 text-[13.5px] outline-none focus:border-violet" aria-label="Your role">
             <option value="any">Any role</option>
-            <option value="tradesperson">As tradesperson</option>
-            <option value="homeowner">As homeowner</option>
+            <option value="tradesperson">Doing the work</option>
+            <option value="homeowner">Paying</option>
           </select>
           <input
             value={q}
@@ -109,7 +110,7 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
                         {j.disputed && <Pill tone="red">Disputed</Pill>}
                       </div>
                       <div className="truncate text-[13px] text-muted">
-                        {j.side === "tradesperson" ? `You're the tradesperson · for ${j.otherParty}` : `You're the homeowner · ${j.otherParty}`}
+                        {categoryOf(j.category).label} · {j.side === "tradesperson" ? `for ${j.otherParty}` : `by ${j.otherParty}`}
                       </div>
                     </div>
                     <div className="hidden md:block">

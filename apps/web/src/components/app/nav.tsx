@@ -26,7 +26,7 @@ export function TopNav({ waiting, name, email, canCreate }: { waiting: number; n
   return (
     <header className="sticky top-0 z-30 border-b border-[#ebebf0] bg-white/90 backdrop-blur-xl">
       <div className="mx-auto flex h-16 max-w-[1120px] items-center gap-6 px-4 sm:px-6">
-        <Logo href="/dashboard" size={26} />
+        <Logo href="/" size={26} />
         <nav className="hidden h-full items-stretch gap-1 md:flex" aria-label="App">
           {TABS.map((t) => {
             const on = active(path, t.href);

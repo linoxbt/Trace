@@ -1,7 +1,7 @@
 // Row types and the queries the engine and the web app share. Every function
 // takes a Queryable, so it runs inside a caller's transaction or on the pool.
 
-import type { Acceptance, JobStatus, LineObservation, LineStatus, IntegrityReport, TextScan, Verdict } from "@trace/core";
+import type { Acceptance, JobCategory, JobStatus, LineObservation, LineStatus, IntegrityReport, TextScan, Verdict } from "@trace/core";
 import type { Queryable } from "./db.ts";
 
 export type Actor = "tradesperson" | "homeowner" | "system" | "paypal";
@@ -29,6 +29,8 @@ export interface JobRow {
   scope_flags: { line: string; text: string; why: string }[] | null;
   /** The tradesperson's PayPal merchant ID, frozen when the order is created. Null pays Trace's own account (demo jobs). */
   payee_merchant_id: string | null;
+  /** The kind of job: sets the words for each side and the starting lines. */
+  category: JobCategory;
   created_at: Date;
   updated_at: Date;
 }
@@ -191,12 +193,22 @@ export async function profileIdByMerchant(q: Queryable, merchantId: string): Pro
 
 export async function insertJob(
   q: Queryable,
-  j: { tradesId: string; homeownerEmail: string; address: string; currency?: string; reviewWindowS?: number; deviceId?: string | null; demo?: boolean; homeownerId?: string | null },
+  j: {
+    tradesId: string;
+    homeownerEmail: string;
+    address: string;
+    currency?: string;
+    reviewWindowS?: number;
+    deviceId?: string | null;
+    demo?: boolean;
+    homeownerId?: string | null;
+    category?: JobCategory;
+  },
 ): Promise<JobRow> {
   const { rows } = await q.query<JobRow>(
-    `insert into jobs (trades_id, homeowner_email, address, currency, review_window_s, trades_device_id, demo, homeowner_id)
-     values ($1, $2, $3, $4, $5, $6, $7, $8) returning *`,
-    [j.tradesId, j.homeownerEmail.toLowerCase(), j.address, j.currency ?? "USD", j.reviewWindowS ?? 43_200, j.deviceId ?? null, j.demo ?? false, j.homeownerId ?? null],
+    `insert into jobs (trades_id, homeowner_email, address, currency, review_window_s, trades_device_id, demo, homeowner_id, category)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9) returning *`,
+    [j.tradesId, j.homeownerEmail.toLowerCase(), j.address, j.currency ?? "USD", j.reviewWindowS ?? 43_200, j.deviceId ?? null, j.demo ?? false, j.homeownerId ?? null, j.category ?? "home_repair"],
   );
   return rows[0]!;
 }

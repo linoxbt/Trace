@@ -64,6 +64,8 @@ export function HoldButton(props: {
   merchantId: string | null;
   bnCode: string;
   sandbox: boolean;
+  /** What this job calls the person doing the work. */
+  pro?: string;
   onHeld: () => void;
 }) {
   const [state, setState] = useState<State>("loading");
@@ -139,7 +141,7 @@ export function HoldButton(props: {
           Approve and hold <span className="num">{money(props.totalCents, props.currency)}</span>
         </div>
         <ul className="mt-3 space-y-1.5 text-[14px] text-ink-2">
-          {["PayPal holds it: nothing is charged now", "Each line is paid only after its photos pass", "Payments go straight to the tradesperson's PayPal", "Anything unfinished is released back to you"].map((t) => (
+          {["PayPal holds it: nothing is charged now", "Each line is paid only after its photos pass", `Payments go straight to the ${props.pro ?? "tradesperson"}'s PayPal`, "Anything unfinished is released back to you"].map((t) => (
             <li key={t} className="flex gap-2">
               <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-violet" />
               {t}

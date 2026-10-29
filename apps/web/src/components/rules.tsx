@@ -100,7 +100,7 @@ export function RuleComposer(props: { side?: Side; scope: "job" | "account"; job
               }}
               className={`press rounded-full px-3.5 py-1.5 font-medium ${side === s ? "bg-card text-ink shadow-[0_1px_3px_rgba(26,19,37,0.15)]" : "text-muted"}`}
             >
-              When I&apos;m the {s}
+              {s === "homeowner" ? "When I\u2019m paying" : "When I\u2019m doing the work"}
             </button>
           ))}
         </div>
@@ -231,7 +231,7 @@ export function RulesScreen({ initial }: { initial: RulesData }) {
       <aside className="flex flex-col gap-6">
         <section className="surface rounded-[24px] p-5">
           <h2 className="text-[16px] font-semibold tracking-tight">Presets</h2>
-          <p className="mt-1 text-[13px] text-muted">On by default for jobs where you&apos;re the homeowner.</p>
+          <p className="mt-1 text-[13px] text-muted">On by default for jobs where you&apos;re paying.</p>
           <ul className="mt-3 space-y-3">
             {data.presets.map((p) => (
               <li key={p.id} className="flex items-start justify-between gap-3">

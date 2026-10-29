@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Logo } from "@/components/logo";
 import { ArrowDisc } from "./blocks";
 import { getLenis } from "@/components/motion/smooth-scroll";
+import { supabaseBrowser } from "@/lib/supabase-browser";
 
 export const SITE_LINKS = [
   { href: "/", label: "Home" },
@@ -19,6 +20,19 @@ export function Nav() {
   const path = usePathname();
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
+  // Signed in: the header leads back into the app instead of to sign-in.
+  const [signedIn, setSignedIn] = useState(false);
+  useEffect(() => {
+    try {
+      supabaseBrowser()
+        .auth.getSession()
+        .then(({ data }) => setSignedIn(!!data.session))
+        .catch(() => {});
+    } catch {
+      // No Supabase config in this build: stay on "Sign in".
+    }
+  }, []);
+  const account = signedIn ? { href: "/dashboard", label: "Open app" } : { href: "/sign-in", label: "Sign in" };
 
   // Tuck the bar away while reading down; bring it back on any scroll up.
   useEffect(() => {
@@ -64,8 +78,8 @@ export function Nav() {
           })}
         </div>
         <div className="hidden items-center gap-1 lg:flex">
-          <Link href="/sign-in" className="press rounded-full px-4 py-2 text-[14px] font-medium text-ink-2 hover:text-ink">
-            Sign in
+          <Link href={account.href} className="press rounded-full px-4 py-2 text-[14px] font-medium text-ink-2 hover:text-ink">
+            {account.label}
           </Link>
           <Link href="/demo" className="pill press btn-primary inline-flex h-12 items-center gap-2.5 rounded-full pl-5 pr-1.5 text-[14px] font-semibold">
             Try the demo <ArrowDisc tone="white" size={36} />
@@ -106,8 +120,8 @@ export function Nav() {
           <Link href="/demo" className="pill press btn-primary flex h-14 items-center justify-between rounded-full pl-6 pr-2 font-semibold">
             Try the demo <ArrowDisc tone="white" size={40} />
           </Link>
-          <Link href="/sign-in" className="press flex h-14 items-center justify-center rounded-full bg-paper font-semibold">
-            Sign in
+          <Link href={account.href} className="press flex h-14 items-center justify-center rounded-full bg-paper font-semibold">
+            {account.label}
           </Link>
         </div>
       </div>

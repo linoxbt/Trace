@@ -7,7 +7,7 @@ import { Money } from "@/components/ui/count";
  * Money state is always visible (spec section 11): Held, Released, Still held,
  * as a white balance card whose figures glide when a capture lands.
  */
-export function MoneyCard({ m, totalCents, badge }: { m: MoneyView; totalCents: number; badge?: React.ReactNode }) {
+export function MoneyCard({ m, totalCents, badge, client = "homeowner" }: { m: MoneyView; totalCents: number; badge?: React.ReactNode; client?: string }) {
   const held = m.heldCents;
   const pct = held ? Math.min(100, (m.releasedCents / held) * 100) : 0;
   const placed = !!m.authorizationStatus;
@@ -36,7 +36,7 @@ export function MoneyCard({ m, totalCents, badge }: { m: MoneyView; totalCents: 
           </div>
         </>
       )}
-      {!placed && <p className="mt-3 text-[13.5px] text-muted">Nothing is held yet. The homeowner approves the scope with PayPal to place the hold.</p>}
+      {!placed && <p className="mt-3 text-[13.5px] text-muted">Nothing is held yet. The {client} approves the scope with PayPal to place the hold.</p>}
     </section>
   );
 }

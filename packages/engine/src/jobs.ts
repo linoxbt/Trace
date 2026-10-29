@@ -3,6 +3,7 @@
 import { randomUUID } from "node:crypto";
 import {
   Acceptance,
+  isJobCategory,
   fromPayPalValue,
   nextJobStatus,
   scopeHash,
@@ -22,17 +23,28 @@ export const MAX_JOB_CENTS = 10_000_00;
 
 export async function createJob(
   e: Engine,
-  input: { tradesId: string; homeownerEmail: string; address: string; currency?: string; deviceId?: string | null; demo?: boolean; homeownerId?: string | null },
+  input: {
+    tradesId: string;
+    homeownerEmail: string;
+    address: string;
+    currency?: string;
+    deviceId?: string | null;
+    demo?: boolean;
+    homeownerId?: string | null;
+    category?: string;
+  },
 ): Promise<store.JobRow> {
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.homeownerEmail)) throw badRequest("bad_email", "homeowner email is not valid");
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.homeownerEmail)) throw badRequest("bad_email", "the client's email is not valid");
   if (!input.address.trim()) throw badRequest("bad_address", "address is required");
+  if (input.category !== undefined && !isJobCategory(input.category)) throw badRequest("bad_category", "that job type isn't one Trace takes");
   return e.db.tx(async (q) => {
     const job = await store.insertJob(q, {
       ...input,
       address: input.address.trim(),
+      category: isJobCategory(input.category) ? input.category : undefined,
       reviewWindowS: e.settings.demoMode ? DEMO_REVIEW_WINDOW_S : undefined,
     });
-    await store.appendEvent(q, { jobId: job.id, actor: "tradesperson", type: "JOB_CREATED", data: { address: job.address } });
+    await store.appendEvent(q, { jobId: job.id, actor: "tradesperson", type: "JOB_CREATED", data: { address: job.address, category: job.category } });
     return job;
   });
 }

@@ -1,6 +1,6 @@
 # Trace
 
-**Payment that follows proof.** Trace turns a home-repair job into a contract a camera can check. The homeowner's PayPal payment is authorized, not charged. Money is captured line by line, and only for work an AI has verified from photos.
+**Payment that follows proof.** Trace turns an on-site job (a home repair, a clean, car work, gardening, a removal, an install or an event set-up) into a contract a camera can check. The client's PayPal payment is authorized, not charged. Money is captured line by line, and only for work an AI has verified from photos.
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/). MIT licensed.
 
@@ -26,6 +26,10 @@ The PayPal client is written by hand. The spec plans to generate it with the API
 ## Brand
 
 The mark is two bars on a violet squircle: a solid one for money released, an outlined one for money still held. Logo files, colours and type are in [`brand/`](brand/README.md).
+
+## Job types
+
+A job has a type: home repair, cleaning and turnovers, car repair and detailing, garden and outdoor, removals and clear-outs, installations, or event set-up (`packages/core/src/categories.ts`). The type names the two sides in the app (homeowner and tradesperson, client and cleaner, car owner and mechanic, host and vendor) and offers starting lines whose acceptance criteria photograph well. Inside the code the sides stay `homeowner` (pays) and `tradesperson` (does the work). The AI prompts describe on-site work in general, not home repair alone.
 
 ## How the money moves
 

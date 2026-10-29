@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import type { JobView } from "@/server/view";
+import { wordsFor } from "@/lib/words";
 
 /** Both sides confirm the same lines to drop; then Trace makes the final capture or voids the rest. */
 export function CloseJob({ view, onDone }: { view: JobView; onDone: () => void }) {
@@ -73,7 +74,7 @@ export function CloseJob({ view, onDone }: { view: JobView; onDone: () => void }
             <p className="mt-3 text-[13px] text-muted">
               {drop.size ? (
                 <>
-                  Dropping <span className="num font-medium text-ink">{money(dropCents, view.job.currency)}</span>. It goes back to the homeowner. Every other open line must be approved first.
+                  Dropping <span className="num font-medium text-ink">{money(dropCents, view.job.currency)}</span>. It goes back to the {wordsFor(view.job.category).client}. Every other open line must be approved first.
                 </>
               ) : (
                 "Tick the lines to drop. Every other open line must be approved first."

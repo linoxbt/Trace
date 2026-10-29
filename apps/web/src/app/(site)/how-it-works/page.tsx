@@ -33,7 +33,7 @@ export default function HowItWorks() {
             From a dripping tap to a <span className="text-violet">paid invoice.</span>
           </>
         }
-        lede="Trace turns a home repair into a short contract a camera can check, then lets PayPal move the money only as each line is proved."
+        lede="Trace turns an on-site job, from a repair to a deep clean, into a short contract a camera can check, then lets PayPal move the money only as each line is proved."
       >
         <PillLink href="/demo" tone="ink">
           Run it yourself in the demo

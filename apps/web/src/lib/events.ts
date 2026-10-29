@@ -11,7 +11,7 @@ export const LABELS: Record<string, string> = {
   JOB_CREATED: "Job created",
   BEFORE_PHOTO: "Before-photo taken",
   SCOPE_SENT: "Scope sent for approval",
-  HOMEOWNER_JOINED: "Homeowner joined",
+  HOMEOWNER_JOINED: "Client joined",
   ORDER_CREATED: "PayPal order created",
   ORDER_APPROVED: "Approved in PayPal",
   AUTHORIZED: "Money held by PayPal",

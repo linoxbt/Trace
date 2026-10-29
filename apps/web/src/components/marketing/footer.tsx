@@ -27,7 +27,7 @@ export function Footer() {
               <span className="font-display text-[26px] font-bold tracking-[-0.06em]">trace</span>
             </div>
             <p className="mt-5 max-w-xs text-[14.5px] leading-relaxed text-white/55">
-              Home-repair payments held with PayPal and released line by line, only for work that photos taken on site prove.
+              Payments for on-site work (repairs, cleaning, car care, gardens, installs) held with PayPal and released line by line, only for work that photos taken on site prove.
             </p>
           </div>
           <div className="grid grid-cols-2 gap-8 sm:grid-cols-4">

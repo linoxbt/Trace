@@ -18,7 +18,7 @@ export default async function Disputes() {
       <PageTitle title="Disputes" sub="PayPal disputes on your jobs. The photos, checks and approvals are already on record as evidence." />
       <Card className="mt-6 overflow-hidden">
         {disputes.length === 0 ? (
-          <Empty icon={<IconDispute />} title="No disputes" body="If a homeowner opens a PayPal dispute, it appears here with the evidence Trace has already collected." />
+          <Empty icon={<IconDispute />} title="No disputes" body="If a client opens a PayPal dispute, it appears here with the evidence Trace has already collected." />
         ) : (
           <div className="divide-y divide-[#f0f0f4] py-1">
             {disputes.map((d) => (

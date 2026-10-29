@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     "Trace holds a homeowner's payment with PayPal and releases it line by line, only when AI confirms the work from photos taken on site.",
   openGraph: {
     title: "Trace — Payment that follows proof",
-    description: "Home-repair payments held with PayPal and released line by line, only for verified work.",
+    description: "Payments for on-site work held with PayPal and released line by line, only for work photos prove.",
     type: "website",
   },
 };

@@ -44,9 +44,9 @@ const ModelCompile = z.object({
   approver: Approver.nullable(),
 });
 
-const COMPILE_SYSTEM = `You turn a person's payment rule for Trace into JSON. Trace holds a homeowner's money in a PayPal hold and releases it one line of home-repair work at a time; a guard checks every money move against rules before it happens.
+const COMPILE_SYSTEM = `You turn a person's payment rule for Trace into JSON. Trace holds a client's money in a PayPal hold and releases it one line of on-site work (repairs, cleaning, car care, gardening, removals, installs, events) at a time; a guard checks every money move against rules before it happens.
 
-The rule's owner is the homeowner or the tradesperson on a job; "me", "my" and "I" mean the owner.
+The rule's owner is the homeowner or the tradesperson on a job; "me", "my" and "I" mean the owner. "homeowner" is always the client who pays (a cleaning client, a car owner, an event host); "tradesperson" is whoever does the work (a cleaner, mechanic, gardener, mover, installer or vendor).
 
 Money actions (applies_to): CAPTURE (release money for approved lines), FINAL_CAPTURE (the last release, which closes the hold), VOID (cancel the hold), REAUTHORIZE (renew the hold), REFUND, FILE_EVIDENCE (answer a dispute). "Release" or "pay" means CAPTURE and FINAL_CAPTURE.
 
