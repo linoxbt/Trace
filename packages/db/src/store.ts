@@ -1,7 +1,7 @@
 // Row types and the queries the engine and the web app share. Every function
 // takes a Queryable, so it runs inside a caller's transaction or on the pool.
 
-import type { Acceptance, JobStatus, LineObservation, LineStatus, IntegrityReport, Verdict } from "@trace/core";
+import type { Acceptance, JobStatus, LineObservation, LineStatus, IntegrityReport, TextScan, Verdict } from "@trace/core";
 import type { Queryable } from "./db.ts";
 
 export type Actor = "tradesperson" | "homeowner" | "system" | "paypal";
@@ -25,6 +25,8 @@ export interface JobRow {
   close_drop_line_ids: string[] | null;
   close_trades_at: Date | null;
   close_homeowner_at: Date | null;
+  /** Tripwire scope-time check: line text that read as instructions to the AI. */
+  scope_flags: { line: string; excerpt: string }[] | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -43,6 +45,9 @@ export interface LineRow {
   review_due_at: Date | null;
   flag_note: string | null;
   position: number;
+  /** Tripwire: the latest proof had text addressed to the inspector. */
+  injection_flag: boolean;
+  injection_excerpt: string | null;
 }
 
 export type AuthorizationStatus = "CREATED" | "PARTIALLY_CAPTURED" | "CAPTURED" | "VOIDED" | "DENIED" | "PENDING";
@@ -84,7 +89,7 @@ export interface PhotoRow {
   id: string;
   job_id: string;
   line_id: string | null;
-  kind: "before" | "after" | "during";
+  kind: "before" | "after" | "during" | "masked";
   storage_path: string;
   dhash: string;
   lat: number | null;
@@ -95,6 +100,10 @@ export interface PhotoRow {
   sample: boolean;
   taken_at: Date;
   integrity: IntegrityReport | null;
+  /** Tripwire: what the proof text scan found, whether it was aimed at the reviewer, and the original of a masked copy. */
+  text_scan: TextScan | null;
+  injection_flag: boolean;
+  masked_of: string | null;
 }
 
 export interface EventRow {
@@ -160,7 +169,7 @@ export async function mustGetJob(q: Queryable, id: string, opts: { lock?: boolea
 export async function updateJob(
   q: Queryable,
   id: string,
-  patch: Partial<Pick<JobRow, "status" | "disputed" | "scope_hash" | "paypal_order_id" | "anchor_lat" | "anchor_lng" | "homeowner_id" | "close_drop_line_ids" | "close_trades_at" | "close_homeowner_at">>,
+  patch: Partial<Pick<JobRow, "status" | "disputed" | "scope_hash" | "paypal_order_id" | "anchor_lat" | "anchor_lng" | "homeowner_id" | "close_drop_line_ids" | "close_trades_at" | "close_homeowner_at" | "scope_flags">>,
 ): Promise<JobRow> {
   const keys = Object.keys(patch) as (keyof typeof patch)[];
   if (keys.length === 0) return mustGetJob(q, id);
@@ -220,7 +229,7 @@ export async function getLine(q: Queryable, id: string, opts: { lock?: boolean }
 export async function updateLine(
   q: Queryable,
   id: string,
-  patch: Partial<Pick<LineRow, "status" | "capture_id" | "review_due_at" | "flag_note">>,
+  patch: Partial<Pick<LineRow, "status" | "capture_id" | "review_due_at" | "flag_note" | "injection_flag" | "injection_excerpt">>,
 ): Promise<LineRow> {
   const keys = Object.keys(patch) as (keyof typeof patch)[];
   const sets = keys.map((k, i) => `${k} = $${i + 2}`);
@@ -382,12 +391,12 @@ export async function sendingCaptures(q: Queryable, staleS: number): Promise<Cap
 
 export async function insertPhoto(
   q: Queryable,
-  p: Omit<PhotoRow, "id" | "integrity"> & { id?: string; integrity?: IntegrityReport | null },
+  p: Omit<PhotoRow, "id" | "integrity" | "text_scan" | "injection_flag" | "masked_of"> & { id?: string; integrity?: IntegrityReport | null; masked_of?: string | null },
 ): Promise<PhotoRow> {
   const { rows } = await q.query<PhotoRow>(
-    `insert into photos (id, job_id, line_id, kind, storage_path, dhash, lat, lng, gps_accuracy_m, capture_token, device_id, sample, taken_at, integrity)
-     values (coalesce($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) returning *`,
-    [p.id ?? null, p.job_id, p.line_id, p.kind, p.storage_path, p.dhash, p.lat, p.lng, p.gps_accuracy_m, p.capture_token, p.device_id, p.sample, p.taken_at, p.integrity ? JSON.stringify(p.integrity) : null],
+    `insert into photos (id, job_id, line_id, kind, storage_path, dhash, lat, lng, gps_accuracy_m, capture_token, device_id, sample, taken_at, integrity, masked_of)
+     values (coalesce($1, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) returning *`,
+    [p.id ?? null, p.job_id, p.line_id, p.kind, p.storage_path, p.dhash, p.lat, p.lng, p.gps_accuracy_m, p.capture_token, p.device_id, p.sample, p.taken_at, p.integrity ? JSON.stringify(p.integrity) : null, p.masked_of ?? null],
   );
   return rows[0]!;
 }
@@ -439,12 +448,13 @@ export async function consumeCaptureToken(q: Queryable, t: { token: string; line
 
 export async function insertVerdict(
   q: Queryable,
-  v: { lineId: string; photoId: string; observation: LineObservation; verdict: Verdict; reasons: string[]; model: string; pass: number },
-): Promise<void> {
-  await q.query(
-    `insert into verdicts (line_id, photo_id, observation, verdict, reasons, model, pass) values ($1, $2, $3, $4, $5, $6, $7)`,
-    [v.lineId, v.photoId, JSON.stringify(v.observation), v.verdict, JSON.stringify(v.reasons), v.model, v.pass],
+  v: { lineId: string; photoId: string; observation: LineObservation; verdict: Verdict; reasons: string[]; model: string; pass: number; masked?: boolean },
+): Promise<string> {
+  const { rows } = await q.query<{ id: string }>(
+    `insert into verdicts (line_id, photo_id, observation, verdict, reasons, model, pass, masked) values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+    [v.lineId, v.photoId, JSON.stringify(v.observation), v.verdict, JSON.stringify(v.reasons), v.model, v.pass, !!v.masked],
   );
+  return rows[0]!.id;
 }
 
 // ---------- disputes ----------
@@ -466,8 +476,14 @@ export async function upsertDispute(
 
 // ---------- events ----------
 
-export async function appendEvent(q: Queryable, e: { jobId: string; actor: Actor; type: string; data?: Record<string, unknown> }): Promise<void> {
-  await q.query("insert into events (job_id, actor, type, data) values ($1, $2, $3, $4)", [e.jobId, e.actor, e.type, e.data ? JSON.stringify(e.data) : null]);
+export async function appendEvent(q: Queryable, e: { jobId: string; actor: Actor; type: string; data?: Record<string, unknown> }): Promise<number> {
+  const { rows } = await q.query<{ id: number }>("insert into events (job_id, actor, type, data) values ($1, $2, $3, $4) returning id", [
+    e.jobId,
+    e.actor,
+    e.type,
+    e.data ? JSON.stringify(e.data) : null,
+  ]);
+  return rows[0]!.id;
 }
 
 export async function getEvents(q: Queryable, jobId: string): Promise<EventRow[]> {

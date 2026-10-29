@@ -5,3 +5,4 @@ export * from "./schemas.ts";
 export * from "./integrity.ts";
 export * from "./verdict.ts";
 export * from "./scope.ts";
+export * from "./guard.ts";
