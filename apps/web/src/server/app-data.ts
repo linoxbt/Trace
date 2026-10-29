@@ -169,6 +169,8 @@ export interface InboxItem {
   /** Lower comes first. */
   rank: number;
   coverUrl?: string | null;
+  /** Where the row opens, when it isn't the job page. */
+  href?: string;
 }
 
 /** Everything waiting on this person, most urgent first. */
@@ -274,7 +276,7 @@ export async function inboxOf(userId: string, email: string | null): Promise<Inb
       rank: 3,
     });
   for (const d of disputes.rows)
-    items.push({ key: `dsp-${d.id}`, kind: "dispute", jobId: d.job_id, address: d.address, title: "A dispute needs your evidence", detail: `${DISPUTE_REASON[d.reason ?? ""] ?? "Your client opened a PayPal dispute"}`, amountCents: null, at: d.created_at.toISOString(), rank: 0 });
+    items.push({ key: `dsp-${d.id}`, kind: "dispute", href: `/disputes/${d.id}`, jobId: d.job_id, address: d.address, title: "A dispute needs your evidence", detail: `${DISPUTE_REASON[d.reason ?? ""] ?? "Your client opened a PayPal dispute"}`, amountCents: null, at: d.created_at.toISOString(), rank: 0 });
   const covers = await coversFor([...new Set(items.map((i) => i.jobId))]);
   // An unopened scope isn't the person's job yet, so its photos aren't theirs to load.
   for (const i of items) i.coverUrl = i.kind === "invite" ? null : (covers.get(i.jobId) ?? null);

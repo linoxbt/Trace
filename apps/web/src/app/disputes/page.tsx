@@ -24,7 +24,7 @@ export default async function Disputes() {
             {disputes.map((d) => (
               <Row
                 key={d.id}
-                href={`/jobs/${d.jobId}`}
+                href={`/disputes/${d.id}`}
                 icon={
                   <IconCircle tone="red" size={42}>
                     <IconDispute className="h-5 w-5" />

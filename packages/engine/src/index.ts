@@ -8,6 +8,7 @@ export * from "./proof.ts";
 export * from "./money.ts";
 export * from "./payee.ts";
 export * from "./demo.ts";
+export * from "./disputes.ts";
 export * from "./guard/execute.ts";
 export { forgetDisputes } from "./guard/preflight.ts";
 export * from "./webhooks.ts";

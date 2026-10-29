@@ -22,7 +22,7 @@ export function InboxRows({ items }: { items: InboxItem[] }) {
         return (
           <Row
             key={it.key}
-            href={`/jobs/${it.jobId}`}
+            href={it.href ?? `/jobs/${it.jobId}`}
             icon={
               <IconCircle tone={l.tone} size={42}>
                 <l.icon className="h-5 w-5" />

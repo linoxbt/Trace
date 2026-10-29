@@ -32,6 +32,8 @@ export interface JobView {
     closeDropLineIds: string[];
     closeConfirmedByTrades: boolean;
     closeConfirmedByHomeowner: boolean;
+    /** PayPal disputes on this job, newest first. */
+    disputes: { id: string; paypalId: string; status: string | null; filed: boolean }[];
     /** Where this job's money goes: the tradesperson's own PayPal once it can take payments. */
     payee: { state: "none" | "pending" | "ready"; merchantId: string | null };
   };
@@ -145,6 +147,12 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       closeConfirmedByTrades: !!job.close_trades_at,
       closeConfirmedByHomeowner: !!job.close_homeowner_at,
       payee,
+      disputes: (
+        await e.db.query<{ id: string; paypal_dispute_id: string; status: string | null; filed_at: Date | null }>(
+          "select id, paypal_dispute_id, status, filed_at from disputes where job_id = $1 order by created_at desc",
+          [job.id],
+        )
+      ).rows.map((d) => ({ id: d.id, paypalId: d.paypal_dispute_id, status: d.status, filed: !!d.filed_at })),
     },
     role,
     money: {

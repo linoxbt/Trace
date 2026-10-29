@@ -192,6 +192,18 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
 
   return (
     <div>
+      {job.disputes.length > 0 && (
+        <div className="mb-5 flex flex-col gap-2">
+          {job.disputes.map((d) => (
+            <Link key={d.id} href={`/disputes/${d.id}`} className="press flex items-center justify-between gap-3 rounded-2xl bg-bad-soft px-4 py-3 text-[14px] text-bad hover:brightness-[0.98]">
+              <span>
+                <span className="font-semibold">PayPal dispute {d.paypalId}</span> · {d.filed ? "evidence filed" : (d.status ?? "open").replace(/_/g, " ").toLowerCase()}
+              </span>
+              <span className="shrink-0 font-semibold">{isTrades && !d.filed ? "Respond →" : "View →"}</span>
+            </Link>
+          ))}
+        </div>
+      )}
       {/* Header */}
       <div className="rise flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">

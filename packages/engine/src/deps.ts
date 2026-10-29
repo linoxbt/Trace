@@ -3,6 +3,7 @@ import type { PayPalApi } from "@trace/paypal";
 import type { PhotoStorage } from "./storage.ts";
 import type { TextScanner } from "./inject/text-scan.ts";
 import type { RuleCompiler } from "./rules/compile.ts";
+import type { DisputeDrafter } from "./disputes.ts";
 import type { Verifier } from "./verifier.ts";
 
 export interface Logger {
@@ -30,6 +31,8 @@ export interface Engine {
   scanner?: TextScanner;
   /** Plain-English payment rules to rule JSON, and the blind readback. */
   compiler?: RuleCompiler;
+  /** The dispute assistant (section 6.3). Without one, the response starts from a fixed template. */
+  drafter?: DisputeDrafter;
   settings: EngineSettings;
   now: () => Date;
   log: Logger;
