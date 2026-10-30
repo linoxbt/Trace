@@ -13,6 +13,7 @@
 
 /// <reference types="@netlify/functions" />
 
+import { createHmac } from "node:crypto";
 import { Db, migrate, recordHeartbeat } from "@trace/db";
 import { consoleLogger, type Engine } from "@trace/engine/worker";
 import { PayPalClient } from "@trace/paypal";
@@ -64,5 +65,23 @@ export default async () => {
   } finally {
     await db.end();
   }
+  await stepEvals(env("URL"), env("PAYPAL_CLIENT_SECRET")!);
 };
+
+/**
+ * Nudges the evals along: the site's /api/eval/step judges one case per call
+ * with the production models, and stops once each run is done. It runs in the
+ * site's function (60 s limit, with the model key and image tools), not here.
+ */
+async function stepEvals(site: string | undefined, secret: string): Promise<void> {
+  if (!site) return;
+  const key = createHmac("sha256", secret).update("trace-eval-step").digest("hex");
+  try {
+    const res = await fetch(new URL("/api/eval/step", site), { method: "POST", headers: { "x-trace-eval": key }, signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) consoleLogger.warn("eval step answered", { status: res.status });
+  } catch (err) {
+    // A slow step keeps running on the site after this gives up waiting.
+    if (!(err instanceof Error && err.name === "TimeoutError")) consoleLogger.warn("eval step failed", { err: String(err) });
+  }
+}
 

@@ -1,0 +1,18 @@
+{
+  "name": "@trace/eval",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./inject": "./inject/set.ts",
+    "./verifier": "./verifier/set.ts",
+    "./summary": "./summary.ts",
+    "./runner": "./runner.ts"
+  },
+  "dependencies": {
+    "@trace/core": "workspace:*",
+    "sharp": "0.34.5",
+    "@trace/db": "workspace:*",
+    "@trace/engine": "workspace:*"
+  }
+}

@@ -16,6 +16,7 @@
     "@trace/core": "workspace:*",
     "@trace/db": "workspace:*",
     "@trace/engine": "workspace:*",
+    "@trace/eval": "workspace:*",
     "@trace/paypal": "workspace:*",
     "lenis": "1.3.26",
     "next": "15.5.28",

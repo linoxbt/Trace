@@ -739,3 +739,60 @@ export async function systemStatus(q: Queryable): Promise<{ lastTickAt: Date | n
   );
   return { lastTickAt: rows[0]?.last_tick_at ?? null, migration: rows[0]?.migration ?? null };
 }
+
+// ---------- eval runs ----------
+
+export interface EvalRunRow {
+  id: string;
+  kind: "verifier" | "inject";
+  set_version: string;
+  model: string;
+  total: number;
+  status: "running" | "done";
+  started_at: Date;
+  finished_at: Date | null;
+  summary: Record<string, unknown> | null;
+}
+
+export interface EvalResultRow {
+  run_id: string;
+  case_id: string;
+  expected: string;
+  got: string | null;
+  correct: boolean | null;
+  detail: Record<string, unknown>;
+  error: string | null;
+  attempts: number;
+}
+
+/** The run for this set version and model, started if there isn't one. */
+export async function evalRunFor(q: Queryable, r: { kind: EvalRunRow["kind"]; setVersion: string; model: string; total: number }): Promise<EvalRunRow> {
+  await q.query("insert into eval_runs (kind, set_version, model, total) values ($1, $2, $3, $4) on conflict (kind, set_version, model) do nothing", [r.kind, r.setVersion, r.model, r.total]);
+  const { rows } = await q.query<EvalRunRow>("select * from eval_runs where kind = $1 and set_version = $2 and model = $3", [r.kind, r.setVersion, r.model]);
+  return rows[0]!;
+}
+
+export async function evalResults(q: Queryable, runId: string): Promise<EvalResultRow[]> {
+  const { rows } = await q.query<EvalResultRow>("select * from eval_results where run_id = $1 order by case_id", [runId]);
+  return rows;
+}
+
+/** Record a case's outcome; a retry after an error counts its attempts. */
+export async function saveEvalResult(q: Queryable, r: { runId: string; caseId: string; expected: string; got: string | null; correct: boolean | null; detail?: Record<string, unknown>; error?: string | null }): Promise<void> {
+  await q.query(
+    `insert into eval_results (run_id, case_id, expected, got, correct, detail, error) values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (run_id, case_id) do update set got = excluded.got, correct = excluded.correct, detail = excluded.detail,
+       error = excluded.error, attempts = eval_results.attempts + 1, created_at = now()`,
+    [r.runId, r.caseId, r.expected, r.got, r.correct, JSON.stringify(r.detail ?? {}), r.error ?? null],
+  );
+}
+
+export async function finishEvalRun(q: Queryable, runId: string, summary: Record<string, unknown>): Promise<void> {
+  await q.query("update eval_runs set status = 'done', finished_at = now(), summary = $2 where id = $1", [runId, JSON.stringify(summary)]);
+}
+
+/** The newest run of each kind, finished or not. */
+export async function latestEvalRuns(q: Queryable): Promise<EvalRunRow[]> {
+  const { rows } = await q.query<EvalRunRow>("select distinct on (kind) * from eval_runs order by kind, started_at desc");
+  return rows;
+}

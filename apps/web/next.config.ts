@@ -19,7 +19,7 @@ const csp = [
 
 const config: NextConfig = {
   // The workspace packages ship TypeScript source.
-  transpilePackages: ["@trace/core", "@trace/db", "@trace/engine", "@trace/paypal"],
+  transpilePackages: ["@trace/core", "@trace/db", "@trace/engine", "@trace/eval", "@trace/paypal"],
   serverExternalPackages: ["sharp", "pg"],
   poweredByHeader: false,
   async headers() {

@@ -13,3 +13,4 @@ scripts/evidence/*.png
 apps/web/netlify/functions/tick.mjs
 eval/inject/images/
 apps/web/netlify/migrations.gen.ts
+eval/verifier/images/

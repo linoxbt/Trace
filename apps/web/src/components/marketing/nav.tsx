@@ -14,6 +14,7 @@ export const SITE_LINKS = [
   { href: "/homeowners", label: "Homeowners" },
   { href: "/tradespeople", label: "Tradespeople" },
   { href: "/security", label: "Security" },
+  { href: "/accuracy", label: "Accuracy" },
 ];
 
 export function Nav() {

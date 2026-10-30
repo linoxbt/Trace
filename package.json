@@ -14,12 +14,14 @@
     "sandbox:e2e": "tsx scripts/sandbox-e2e.ts",
     "web": "pnpm --filter @trace/web dev",
     "build:web": "pnpm --filter @trace/web build",
-    "eval:inject": "tsx scripts/eval-inject.ts"
+    "eval:inject": "tsx scripts/eval-inject.ts",
+    "eval:verifier": "tsx scripts/eval-verifier.ts"
   },
   "devDependencies": {
     "@trace/core": "workspace:*",
     "@trace/db": "workspace:*",
     "@trace/engine": "workspace:*",
+    "@trace/eval": "workspace:*",
     "@trace/paypal": "workspace:*",
     "@types/node": "22.20.5",
     "@types/pg": "8.23.1",

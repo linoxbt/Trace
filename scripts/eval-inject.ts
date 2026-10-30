@@ -17,7 +17,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { isFlagged, type TextScan } from "@trace/core";
 import { ClaudeTextScanner, DEFAULT_SCANNER_MODEL } from "@trace/engine";
-import { ITEMS, render } from "../eval/inject/set.ts";
+import { ITEMS, render } from "@trace/eval/inject";
 
 const imagesOnly = process.argv.includes("--images-only");
 
