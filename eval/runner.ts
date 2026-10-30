@@ -8,15 +8,18 @@ import { createHash } from "node:crypto";
 import { isFlagged } from "@trace/core";
 import * as store from "@trace/db";
 import { judgePair, type Engine } from "@trace/engine";
-import { ITEMS, render } from "./inject/set.ts";
+import { ITEMS } from "./inject/set.ts";
 import { summarizeInject, summarizeVerifier } from "./summary.ts";
 import { CASES, caseImages, setVersion } from "./verifier/set.ts";
 
 const MAX_ATTEMPTS = 3;
 const INJECT_PER_STEP = 5;
 
+// v2: the images are drawn ahead of time (apps/web/public/eval/inject, by
+// `pnpm eval:inject --images-only`), because the server has no fonts and drew
+// v1's notes without their text.
 export function injectVersion(): string {
-  return `v1-${createHash("sha256").update(JSON.stringify(ITEMS)).digest("hex").slice(0, 12)}`;
+  return `v2-${createHash("sha256").update(JSON.stringify(ITEMS)).digest("hex").slice(0, 12)}`;
 }
 
 const todo = (rows: store.EvalResultRow[], ids: string[]) => {
@@ -29,7 +32,7 @@ const todo = (rows: store.EvalResultRow[], ids: string[]) => {
 
 const outcomes = (rows: store.EvalResultRow[]) => rows.map((r) => ({ caseId: r.case_id, expected: r.expected, got: r.got, error: r.error }));
 
-async function verifierStep(e: Engine, loadPhoto: (name: string) => Promise<Uint8Array>): Promise<string> {
+async function verifierStep(e: Engine, loadAsset: (path: string) => Promise<Uint8Array>): Promise<string> {
   const run = await store.evalRunFor(e.db, { kind: "verifier", setVersion: setVersion(), model: e.verifier.model, total: CASES.length });
   if (run.status === "done") return "verifier: done";
   const rows = await store.evalResults(e.db, run.id);
@@ -40,7 +43,7 @@ async function verifierStep(e: Engine, loadPhoto: (name: string) => Promise<Uint
   }
   const c = CASES.find((x) => x.id === next)!;
   try {
-    const { before, after } = await caseImages(c, loadPhoto);
+    const { before, after } = await caseImages(c, (name) => loadAsset(`photos/${name}.webp`));
     const j = await judgePair(e.verifier, { id: c.id, title: c.title, acceptance: c.acceptance, before, after }, e.settings.confidenceThreshold);
     const correct = c.expect === "release" ? j.verdict === "VERIFIED" : j.verdict !== "VERIFIED";
     await store.saveEvalResult(e.db, {
@@ -58,7 +61,7 @@ async function verifierStep(e: Engine, loadPhoto: (name: string) => Promise<Uint
   }
 }
 
-async function injectStep(e: Engine): Promise<string> {
+async function injectStep(e: Engine, loadAsset: (path: string) => Promise<Uint8Array>): Promise<string> {
   if (!e.scanner) return "inject: no scanner";
   const scanner = e.scanner;
   const run = await store.evalRunFor(e.db, { kind: "inject", setVersion: injectVersion(), model: scanner.model, total: ITEMS.length });
@@ -74,7 +77,7 @@ async function injectStep(e: Engine): Promise<string> {
       const item = ITEMS.find((i) => i.id === id)!;
       const expected = item.group === "planted" ? "flag" : "clear";
       try {
-        const scan = await scanner.scanImage(await render(item));
+        const scan = await scanner.scanImage(await loadAsset(`eval/inject/${item.id}.jpg`));
         const f = isFlagged(scan);
         const got = f.flagged ? "flagged" : "clear";
         await store.saveEvalResult(e.db, { runId: run.id, caseId: id, expected, got, correct: got === (expected === "flag" ? "flagged" : "clear"), detail: { excerpt: f.excerpt ?? null, texts: scan.texts.length } });
@@ -86,10 +89,13 @@ async function injectStep(e: Engine): Promise<string> {
   return `inject: ${next.length} scanned`;
 }
 
-/** One step of each eval. Does nothing once both runs are done, or without a model key. */
-export async function evalStep(e: Engine, loadPhoto: (name: string) => Promise<Uint8Array>): Promise<string[]> {
+/**
+ * One step of each eval. Does nothing once both runs are done, or without a
+ * model key. `loadAsset` reads a file the site serves from apps/web/public.
+ */
+export async function evalStep(e: Engine, loadAsset: (path: string) => Promise<Uint8Array>): Promise<string[]> {
   if (!e.scanner) return ["no model key: evals skipped"];
-  return Promise.all([verifierStep(e, loadPhoto), injectStep(e)]);
+  return Promise.all([verifierStep(e, loadAsset), injectStep(e, loadAsset)]);
 }
 
 export interface EvalView {

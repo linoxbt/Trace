@@ -24,9 +24,9 @@ const imagesOnly = process.argv.includes("--images-only");
 async function main() {
   const images = await Promise.all(ITEMS.map(async (item) => ({ item, jpeg: await render(item) })));
   if (imagesOnly) {
-    await mkdir("eval/inject/images", { recursive: true });
-    for (const { item, jpeg } of images) await writeFile(`eval/inject/images/${item.id}.jpg`, jpeg);
-    console.log(`Wrote ${images.length} images to eval/inject/images/.`);
+    await mkdir("apps/web/public/eval/inject", { recursive: true });
+    for (const { item, jpeg } of images) await writeFile(`apps/web/public/eval/inject/${item.id}.jpg`, jpeg);
+    console.log(`Wrote ${images.length} images to apps/web/public/eval/inject/.`);
     return;
   }
   if (!process.env.ANTHROPIC_API_KEY) {

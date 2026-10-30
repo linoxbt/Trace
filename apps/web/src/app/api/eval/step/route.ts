@@ -15,12 +15,12 @@ export async function POST(req: NextRequest) {
   if (!evalStepAllowed(env().PAYPAL_CLIENT_SECRET, req.headers.get("x-trace-eval"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
-  const loadPhoto = async (name: string) => {
-    const res = await fetch(new URL(`/photos/${encodeURIComponent(name)}.webp`, req.nextUrl.origin));
-    if (!res.ok) throw new Error(`demo photo ${name} answered ${res.status}`);
+  const loadAsset = async (path: string) => {
+    const res = await fetch(new URL(`/${path}`, req.nextUrl.origin));
+    if (!res.ok) throw new Error(`${path} answered ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
   };
-  const done = await evalStep(engine(), loadPhoto);
+  const done = await evalStep(engine(), loadAsset);
   console.log(JSON.stringify({ level: "info", msg: "eval step", done }));
   return NextResponse.json({ done });
 }
