@@ -21,8 +21,8 @@ export function AudiencePage(p: AudienceProps) {
     <>
       <PageHero clause={p.clause} title={p.title} lede={p.lede}>
         <div className="flex flex-wrap gap-3">
-          <PillLink href="/demo" tone="ink">
-            Try the demo
+          <PillLink href="/try" tone="ink">
+            Try the demo job
           </PillLink>
           <PillLink href="/sign-in" tone="light">
             Sign in
