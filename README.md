@@ -6,22 +6,22 @@ Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/). MIT
 
 ## Status
 
-This repository holds the backend, the Next.js app and Tripwire, the guard in front of every money move. The dispute evidence pack and judge mode's demo seeding come next.
+Everything below is built and covered by the test suite (229 tests). The money flows have run against a fake PayPal and recorded responses, not yet end to end against the PayPal sandbox with real logins.
 
 | Part | State |
 | --- | --- |
-| Capture math, state machines, verdict policy, integrity checks (`packages/core`) | Built, unit tested |
-| PayPal REST client: Orders v2, Payments v2, Disputes, webhook verification (`packages/paypal`) | Built, tested against recorded responses; not yet run against the sandbox |
+| Capture math, state machines, verdict policy, integrity and proof checks (`packages/core`) | Built, unit tested |
+| PayPal: orders and payments on PayPal's Server SDK, written with APIMatic's Context Plugin ([docs/apimatic.md](docs/apimatic.md)); disputes, partner onboarding and webhook checks on a hand-written client (`packages/paypal`) | Built; the two clients pass a shared contract test |
 | Postgres schema with row-level security, migrations, queries (`packages/db`) | Built, tested on Postgres 16 |
-| Capture engine: authorize, prove, review window, partial and final capture, close, void, reauthorize, webhooks (`packages/engine`) | Built, tested end to end against a fake PayPal |
-| Background worker (`apps/worker`) | Built |
-| Next.js app (`apps/web`): API routes for every flow, PayPal webhook, magic-link sign-in, job list, new job, job page with money bar, scope editor, in-app camera, PayPal v6 hold button, approve/flag/release, close | Built; builds and serves locally; not yet run against Supabase and the sandbox |
-| Sandbox end-to-end test (`scripts/sandbox-e2e.ts`) | Ready; needs sandbox keys to run |
-| Claude photo verifier (`packages/engine/src/claude-verifier.ts`) | Built; runs when `ANTHROPIC_API_KEY` is set |
+| Capture engine: authorize, prove, review window, partial and final capture, close, void, reauthorize, refunds, change orders, webhooks (`packages/engine`) | Built, tested end to end against a fake PayPal |
+| Proof types beyond photos: video, meter readings, documents, links and files, signed attestations | Built, tested with scripted models |
+| AI: photo verifier, scope drafting, dispute drafting, planted-note scanner, rule compiler | Built; run when `ANTHROPIC_API_KEY` is set |
+| Disputes: evidence PDF, AI-drafted response, filing evidence | Built |
+| Judge mode: `/try` opens a private demo job with no sign-up | Built; needs Supabase anonymous sign-ins turned on |
+| Live updates over Supabase Realtime | Built |
 | Tripwire: guard, rules, ledger, approvals, injection defence, rule compiler (see [Safety](#safety-tripwire)) | Built, tested against a fake PayPal and scripted models |
-| Evidence PDF, judge-mode seeding, Realtime | Not started |
-
-The PayPal client is written by hand. The spec plans to generate it with the APIMatic Context Plugin for the sponsor prize; that has not been done yet.
+| Evals: 24 photo cases and 30 planted-note images, run on the server, results at `/accuracy` (see [Accuracy](#accuracy)) | Built |
+| Scheduled worker: migrations, auto-release, capture retries, reauthorization, evals, heartbeat | Built |
 
 ## Brand
 
@@ -42,6 +42,12 @@ A job has a type: home repair, cleaning and turnovers, car repair and detailing,
 6. Closing needs both sides to agree which lines to drop. What is approved goes in a final capture; otherwise the remainder is voided.
 7. After the 3-day honor period, the worker reauthorizes once while lines are still open. A refusal is recorded and flagged for both sides, not retried.
 8. Webhooks are verified with PayPal against the raw body, de-duplicated on event ID, and reconcile captures, voids and disputes.
+
+## Accuracy
+
+The `/accuracy` page shows how often the photo check gets it right, with every case, its photos and the model's reason. The set (`eval/verifier/set.ts`) has 24 cases: 10 real photos of the demo bathroom (the true pairs, a wall left half-grouted, the before-photo sent again, the wrong spot) and 14 drawn scenes, one finished and one unfinished for each job type. Each case goes through the production verifier, second look and verdict rule (`judgePair`); location and capture checks are taken as passed, since they are code tested elsewhere. The planted-note set (`eval/inject/set.ts`) has 20 notes aimed at the checker and 10 ordinary labels.
+
+Both run on the deployed site with its own model key: the scheduled worker calls `/api/eval/step` once a minute (with a key derived from the PayPal secret both hold), and each step judges one photo case and scans five note images. A run belongs to a set version and model, so it happens once; a new model or a changed set starts a fresh one. `pnpm eval:verifier` and `pnpm eval:inject` run the same sets locally.
 
 ## Safety: Tripwire
 
@@ -83,13 +89,13 @@ What's left out of the add-on spec: rule B12 (a price over 3x the AI's suggestio
 
 ```
 packages/core      pure domain: money, state machines, capture planning, verdict policy, integrity, schemas
-packages/paypal    PayPal REST client, plus FakePayPal (same rules, in memory) for tests
-packages/db        migrations/001_init.sql, migration runner, typed queries
+packages/paypal    PayPal client (Server SDK for orders and payments, hand-written for the rest), plus FakePayPal for tests
+packages/db        migrations (001 to 010), migration runner, typed queries
 packages/engine    the flows: jobs, proof, money, webhooks; photo normalisation and dHash (sharp)
 apps/web           Next.js 15 app: API routes, PayPal webhook, pages and components
 apps/worker        30-second loop: auto-release, capture retries, reauthorization; /healthz
-scripts            sandbox-e2e.ts: Trace's engine against the real PayPal sandbox; eval-inject.ts: the planted-note eval
-eval/inject        the injection eval set, drawn in code
+scripts            sandbox-e2e.ts: Trace's engine against the real PayPal sandbox; eval-inject.ts, eval-verifier.ts: the evals
+eval               the eval sets (verifier, inject), their scoring, and the server runner
 ```
 
 ## Run it
@@ -163,7 +169,7 @@ The Tripwire tests cover:
 
 ## Deploy on Netlify
 
-`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `apps/web/netlify/tick.mts` (bundled into `netlify/functions/tick.mjs` at build time, schedule in `netlify.toml`), once a minute: Netlify has no always-on processes, and a minute is its finest schedule. The build runs the database migrations whenever `DATABASE_URL` is available to it.
+`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `apps/web/netlify/tick.mts` (bundled into `netlify/functions/tick.mjs` at build time, schedule in `netlify.toml`), once a minute: Netlify has no always-on processes, and a minute is its finest schedule. Netlify's build can't reach the database, so the function carries the migrations in its bundle and applies any pending ones within a minute of a deploy. Each run writes a heartbeat; `/api/health` reports its age and the newest migration, and the steady write keeps a free Supabase project from pausing.
 
 Set these in Netlify under **Site configuration > Environment variables**, then trigger a new deploy, because values are fixed at build time:
 
@@ -173,12 +179,13 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | Builds, Functions |
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `ANTHROPIC_API_KEY` | Functions (mark as secret) |
 | `APP_URL`, `PAYPAL_API_BASE`, `DEMO_MODE`, `PAYPAL_PARTNER_MERCHANT_ID`, `PAYPAL_BN_CODE` | Builds, Functions |
+| `PAYPAL_HTTP` (optional: `fetch` switches orders and payments back to the hand-written client) | Functions |
 
 `render.yaml` and `apps/worker` remain for hosting on Render instead.
 
 ## Known limits
 
 - Paying tradespeople directly needs PayPal to approve Trace as a partner before it works with live money. The sandbox needs no approval. Which multiparty calls need a `PayPal-Auth-Assertion` follows PayPal's guides (refunds and disputes do; authorize, capture, void and reauthorize on the partner's own order don't) and still needs confirming against the sandbox.
-- One authorization per job. Change orders (their own order and authorization) aren't built yet.
+- Supabase anonymous sign-ins must be on for `/try` (Authentication > Sign In / Providers > Anonymous).
 - PayPal seller protection targets goods, so a services dispute isn't guaranteed to go the tradesperson's way. The evidence pack is the best possible defence, not a guaranteed win.
 - The multipart field name for dispute evidence (`file1`) still needs confirming against the sandbox.
