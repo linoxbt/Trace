@@ -16,7 +16,7 @@
 import { createHmac } from "node:crypto";
 import { Db, migrate, recordHeartbeat } from "@trace/db";
 import { consoleLogger, type Engine } from "@trace/engine/worker";
-import { PayPalClient } from "@trace/paypal";
+import { createPayPalClient } from "@trace/paypal";
 import { tick } from "../../worker/src/tick.ts";
 import { MIGRATIONS } from "./migrations.gen.ts";
 
@@ -36,7 +36,7 @@ export default async () => {
   const noPhotos = () => Promise.reject(new Error("the scheduled worker has no photo storage"));
   const engine: Engine = {
     db,
-    paypal: new PayPalClient({ clientId: env("PAYPAL_CLIENT_ID")!, clientSecret: env("PAYPAL_CLIENT_SECRET")!, baseUrl: base, timeoutMs: 15_000, partner }),
+    paypal: createPayPalClient({ http: env("PAYPAL_HTTP"), clientId: env("PAYPAL_CLIENT_ID")!, clientSecret: env("PAYPAL_CLIENT_SECRET")!, baseUrl: base, timeoutMs: 15_000, partner }),
     storage: { put: noPhotos, get: noPhotos, signedUrl: noPhotos },
     verifier: { model: "none", inspect: () => Promise.reject(new Error("the scheduled worker has no verifier")) },
     settings: { webhookId: env("PAYPAL_WEBHOOK_ID")!, demoMode: env("DEMO_MODE") === "true", confidenceThreshold: 0.8, brandName: "Trace" },

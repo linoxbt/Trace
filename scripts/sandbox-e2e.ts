@@ -44,7 +44,7 @@ import {
 } from "@trace/engine";
 import { MemoryStorage } from "@trace/engine";
 import { ScriptedVerifier, testPhoto } from "@trace/engine/testing";
-import { PayPalClient, PayPalError } from "@trace/paypal";
+import { createPayPalClient, PayPalError } from "@trace/paypal";
 
 const need = (k: string) => {
   const v = process.env[k];
@@ -54,7 +54,8 @@ const need = (k: string) => {
   }
   return v;
 };
-const paypal = new PayPalClient({
+const paypal = createPayPalClient({
+  http: process.env.PAYPAL_HTTP,
   clientId: need("PAYPAL_CLIENT_ID"),
   clientSecret: need("PAYPAL_CLIENT_SECRET"),
   baseUrl: process.env.PAYPAL_API_BASE,

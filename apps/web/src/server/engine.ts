@@ -1,7 +1,7 @@
 import "server-only";
 import { Db } from "@trace/db";
 import { ClaudeDisputeDrafter, ClaudeScopeDrafter, ClaudeRuleCompiler, ClaudeTextScanner, ClaudeVerifier, consoleLogger, EngineError, PostgresStorage, type Engine, type Verifier } from "@trace/engine";
-import { PayPalClient, type PayPalApi } from "@trace/paypal";
+import { createPayPalClient, type PayPalApi } from "@trace/paypal";
 import { env } from "./env";
 
 /** Without an Anthropic key, proofs are refused rather than judged by anything else. */
@@ -27,7 +27,8 @@ export function engine(): Engine {
     db,
     paypal:
       e.PAYPAL_CLIENT_ID && e.PAYPAL_CLIENT_SECRET && e.PAYPAL_WEBHOOK_ID
-        ? new PayPalClient({
+        ? createPayPalClient({
+            http: e.PAYPAL_HTTP,
             clientId: e.PAYPAL_CLIENT_ID,
             clientSecret: e.PAYPAL_CLIENT_SECRET,
             baseUrl: e.PAYPAL_API_BASE,

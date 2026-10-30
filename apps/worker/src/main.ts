@@ -6,7 +6,7 @@
 import { createServer } from "node:http";
 import { Db, migrate, recordHeartbeat } from "@trace/db";
 import { consoleLogger, type Engine } from "@trace/engine";
-import { PayPalClient } from "@trace/paypal";
+import { createPayPalClient } from "@trace/paypal";
 import { loadConfig } from "./config.ts";
 import { tick, type TickReport } from "./tick.ts";
 
@@ -17,7 +17,7 @@ await migrate(db);
 
 const engine: Engine = {
   db,
-  paypal: new PayPalClient({ clientId: cfg.paypalClientId, clientSecret: cfg.paypalClientSecret, baseUrl: cfg.paypalApiBase, partner: cfg.paypalPartner }),
+  paypal: createPayPalClient({ http: process.env.PAYPAL_HTTP, clientId: cfg.paypalClientId, clientSecret: cfg.paypalClientSecret, baseUrl: cfg.paypalApiBase, partner: cfg.paypalPartner }),
   // The worker never stores or inspects photos.
   storage: {
     put: () => Promise.reject(new Error("worker has no photo storage")),

@@ -10,6 +10,8 @@ const Env = z.object({
   // PayPal steps themselves refuse until all three are set.
   PAYPAL_CLIENT_ID: z.string().min(1).optional(),
   PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
+  /** "fetch" switches orders and payments back from PayPal's Server SDK to the hand-written client. */
+  PAYPAL_HTTP: z.enum(["sdk", "fetch"]).optional(),
   PAYPAL_WEBHOOK_ID: z.string().min(1).optional(),
   PAYPAL_API_BASE: z.url().default("https://api-m.sandbox.paypal.com"),
   // Trace as a PayPal partner: tradespeople link their own accounts and are

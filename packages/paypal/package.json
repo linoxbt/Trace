@@ -3,6 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./fake": "./src/fake.ts" },
-  "dependencies": { "@trace/core": "workspace:*" }
+  "exports": {
+    ".": "./src/index.ts",
+    "./fake": "./src/fake.ts"
+  },
+  "dependencies": {
+    "@paypal/paypal-server-sdk": "2.5.0",
+    "@trace/core": "workspace:*"
+  }
 }

@@ -23,8 +23,12 @@ export class PayPalError extends Error {
   }
 
   static async from(res: Response): Promise<PayPalError> {
+    return PayPalError.fromText(res.status, res.statusText, await res.text(), res.headers.get("paypal-debug-id") ?? undefined);
+  }
+
+  /** From a status and the raw body, however the response arrived (fetch, or the SDK's ApiError). */
+  static fromText(status: number, statusText: string, text: string, debugHeader?: string): PayPalError {
     let body: unknown = undefined;
-    const text = await res.text();
     try {
       body = text ? JSON.parse(text) : undefined;
     } catch {
@@ -39,11 +43,11 @@ export class PayPalError extends Error {
       details?: { issue?: string }[];
     };
     return new PayPalError(
-      res.status,
+      status,
       b.name ?? b.error ?? "UNKNOWN_ERROR",
-      b.message ?? b.error_description ?? res.statusText,
+      b.message ?? b.error_description ?? statusText,
       (b.details ?? []).map((d) => d.issue).filter((i): i is string => !!i),
-      b.debug_id ?? res.headers.get("paypal-debug-id") ?? undefined,
+      b.debug_id ?? debugHeader,
       body,
     );
   }
