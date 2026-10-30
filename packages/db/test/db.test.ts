@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as store from "../src/index.ts";
-import { migrate, withoutSslParams, type Db } from "../src/index.ts";
+import { migrate, readMigrations, withoutSslParams, type Db } from "../src/index.ts";
 import { freshDb, makeUser, TEST_DATABASE_URL } from "../src/testing.ts";
 
 const acceptance = { criterion: "c", must_show: ["a"], must_not_show: [], framing: "f" };
@@ -22,7 +22,15 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_migrations");
-    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql"]);
+    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql"]);
+  });
+
+  it("takes migrations as data too, as the scheduled function carries them, and records the worker's heartbeat", async () => {
+    expect(await migrate(db, await readMigrations())).toEqual([]);
+    await store.recordHeartbeat(db, { released: 1 });
+    const s = await store.systemStatus(db);
+    expect(s.migration).toBe("009_heartbeat.sql");
+    expect(Date.now() - s.lastTickAt!.getTime()).toBeLessThan(60_000);
   });
 
   it("lowercases the homeowner email and enforces money checks", async () => {

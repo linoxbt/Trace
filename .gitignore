@@ -12,3 +12,4 @@ scripts/evidence/*.png
 .netlify
 apps/web/netlify/functions/tick.mjs
 eval/inject/images/
+apps/web/netlify/migrations.gen.ts

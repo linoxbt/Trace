@@ -15,8 +15,6 @@ export async function tick(e: Engine): Promise<TickReport> {
   const auto = await autoRelease(e);
   const re = await reauthorizeDue(e);
   const approvalsExpired = await expireApprovals(e);
-  // Keeps Supabase from pausing an idle project between submission and judging.
-  await e.db.query("select 1 from jobs limit 1");
   return {
     approved: auto.approved,
     released: auto.released.filter((r) => r.kind === "captured").length,

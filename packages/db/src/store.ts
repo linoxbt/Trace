@@ -720,3 +720,22 @@ export class NotFound extends Error {
     this.name = "NotFound";
   }
 }
+
+// ---------- worker heartbeat ----------
+
+export async function recordHeartbeat(q: Queryable, report: Record<string, unknown>): Promise<void> {
+  await q.query(
+    `insert into worker_heartbeat (id, last_tick_at, report) values (1, now(), $1)
+     on conflict (id) do update set last_tick_at = excluded.last_tick_at, report = excluded.report`,
+    [JSON.stringify(report)],
+  );
+}
+
+/** When the scheduled worker last ran, and the newest migration applied. Null before either exists. */
+export async function systemStatus(q: Queryable): Promise<{ lastTickAt: Date | null; migration: string | null }> {
+  const { rows } = await q.query<{ last_tick_at: Date | null; migration: string | null }>(
+    `select (select last_tick_at from worker_heartbeat where id = 1) as last_tick_at,
+            (select max(name) from trace_migrations) as migration`,
+  );
+  return { lastTickAt: rows[0]?.last_tick_at ?? null, migration: rows[0]?.migration ?? null };
+}

@@ -4,7 +4,7 @@
 // to one running copy; /healthz reports its last tick.
 
 import { createServer } from "node:http";
-import { Db, migrate } from "@trace/db";
+import { Db, migrate, recordHeartbeat } from "@trace/db";
 import { consoleLogger, type Engine } from "@trace/engine";
 import { PayPalClient } from "@trace/paypal";
 import { loadConfig } from "./config.ts";
@@ -38,7 +38,11 @@ async function loop(): Promise<void> {
   while (!stopping) {
     const started = Date.now();
     try {
-      const report = await db.withLock(727_002, () => tick(engine));
+      const report = await db.withLock(727_002, async () => {
+        const r = await tick(engine);
+        await recordHeartbeat(db, { ...r });
+        return r;
+      });
       if (report) {
         last = { ...report, at: new Date().toISOString() };
         if (report.approved || report.released || report.retried || report.reauthorized.length || report.reauthorizeFailed.length || report.approvalsExpired) {

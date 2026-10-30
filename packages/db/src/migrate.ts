@@ -7,9 +7,24 @@ import type { Db } from "./db.ts";
 export const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 const LOCK = 727_001;
 
-/** Apply every migration not yet recorded, in name order, each in its own transaction. */
-export async function migrate(db: Db, dir = MIGRATIONS_DIR): Promise<string[]> {
+export interface Migration {
+  name: string;
+  sql: string;
+}
+
+/** The migration files in a folder, in name order. */
+export async function readMigrations(dir = MIGRATIONS_DIR): Promise<Migration[]> {
   const files = (await readdir(dir)).filter((f) => /^\d+_.*\.sql$/.test(f)).sort();
+  return Promise.all(files.map(async (name) => ({ name, sql: await readFile(join(dir, name), "utf8") })));
+}
+
+/**
+ * Apply every migration not yet recorded, in name order, in one transaction.
+ * The source is a folder of .sql files, or the migrations themselves (the
+ * scheduled function carries them in its bundle, having no files to read).
+ */
+export async function migrate(db: Db, source: string | Migration[] = MIGRATIONS_DIR): Promise<string[]> {
+  const list = typeof source === "string" ? await readMigrations(source) : [...source].sort((a, b) => a.name.localeCompare(b.name));
   const applied: string[] = [];
   await db.tx(async (q) => {
     // Serialise concurrent migrators (web and worker starting together).
@@ -18,11 +33,11 @@ export async function migrate(db: Db, dir = MIGRATIONS_DIR): Promise<string[]> {
       name text primary key, applied_at timestamptz not null default now())`);
     const { rows } = await q.query<{ name: string }>("select name from trace_migrations");
     const done = new Set(rows.map((r) => r.name));
-    for (const f of files) {
-      if (done.has(f)) continue;
-      await q.query(await readFile(join(dir, f), "utf8"));
-      await q.query("insert into trace_migrations (name) values ($1)", [f]);
-      applied.push(f);
+    for (const m of list) {
+      if (done.has(m.name)) continue;
+      await q.query(m.sql);
+      await q.query("insert into trace_migrations (name) values ($1)", [m.name]);
+      applied.push(m.name);
     }
   });
   return applied;

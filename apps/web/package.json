@@ -8,7 +8,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "build:tick": "esbuild netlify/tick.mts --bundle --platform=node --target=node22 --format=esm --outfile=netlify/functions/tick.mjs --external:pg-native --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\""
+    "build:tick": "node ../../scripts/embed-migrations.mjs && esbuild netlify/tick.mts --bundle --platform=node --target=node22 --format=esm --outfile=netlify/functions/tick.mjs --external:pg-native --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\""
   },
   "dependencies": {
     "@supabase/ssr": "0.7.0",
