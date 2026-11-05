@@ -58,10 +58,12 @@ export async function cropRegion(input: Uint8Array, region: Region): Promise<Buf
   const y0 = Math.max(0, region.y - pad * region.h);
   const x1 = Math.min(1, region.x + region.w * (1 + pad));
   const y1 = Math.min(1, region.y + region.h * (1 + pad));
-  const left = Math.floor(x0 * width);
-  const top = Math.floor(y0 * height);
-  const w = Math.max(16, Math.min(width - left, Math.ceil((x1 - x0) * width)));
-  const h = Math.max(16, Math.min(height - top, Math.ceil((y1 - y0) * height)));
+  // At least 16 px, and always inside the image: a region at the very edge
+  // (x near 1) would otherwise ask for pixels past it.
+  const w = Math.min(width, Math.max(16, Math.ceil((x1 - x0) * width)));
+  const h = Math.min(height, Math.max(16, Math.ceil((y1 - y0) * height)));
+  const left = Math.min(Math.floor(x0 * width), width - w);
+  const top = Math.min(Math.floor(y0 * height), height - h);
   return sharp(input)
     .extract({ left, top, width: w, height: h })
     .resize({ width: Math.min(LONG_EDGE, w * 2), height: Math.min(LONG_EDGE, h * 2), fit: "inside" })

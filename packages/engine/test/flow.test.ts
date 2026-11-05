@@ -4,6 +4,9 @@ import { TEST_DATABASE_URL } from "@trace/db/testing";
 import {
   autoRelease,
   confirmClose,
+  cropRegion,
+  dHash,
+  normalizePhoto,
   decideLine,
   EngineError,
   reauthorizeDue,
@@ -15,6 +18,8 @@ import {
   TokenRejected,
 } from "../src/index.ts";
 import type { Capture } from "@trace/paypal";
+import sharp from "sharp";
+import { hamming, SAME_IMAGE_HAMMING } from "@trace/core";
 import { testEngine, testPhoto, type TestEngine } from "../src/testing.ts";
 import { ANCHOR, DEVICE, failing, heldJob, lineStatus, prove } from "./helpers.ts";
 
@@ -89,6 +94,46 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect(r.verdict).toBe("NEEDS_REVIEW");
     expect(r.reasons.join(" ")).toMatch(/hidden work/);
     expect((await lineStatus(e, h)).L1).toBe("NEEDS_REVIEW");
+  });
+
+  it("judges each line against the closest of the job's before-photos", async () => {
+    const h = await heldJob(e);
+    // A second area's before-photo, taken while the job was a draft.
+    const second = await normalizePhoto(await testPhoto(4242));
+    const secondHash = await dHash(second);
+    await e.storage.put(`jobs/${h.jobId}/before/second.jpg`, second, "image/jpeg");
+    await store.insertPhoto(e.db, {
+      job_id: h.jobId, line_id: null, kind: "before", storage_path: `jobs/${h.jobId}/before/second.jpg`, dhash: secondHash,
+      lat: ANCHOR.lat, lng: ANCHOR.lng, gps_accuracy_m: 5, capture_token: null, device_id: DEVICE, sample: false, taken_at: new Date(Date.now() + 1000),
+    });
+    const picked = await store.beforePhotoFor(e.db, h.lines.L2!, { dhash: secondHash });
+    expect(picked?.dhash).toBe(secondHash);
+    // Without an after-photo to compare, the first before-photo, as before.
+    expect((await store.beforePhotoFor(e.db, h.lines.L2!))?.dhash).not.toBe(secondHash);
+  });
+
+  it("lets a line be re-proved after a failed check, but not with the very same image", async () => {
+    const h = await heldJob(e);
+    e.verifier.script.set(h.lines.L1!.id, failing("water drops at the spout", "drops visible"));
+    const photo = await testPhoto(777);
+    expect((await prove(e, h, "L1", { photo })).verdict).toBe("FAILED");
+    e.verifier.script.delete(h.lines.L1!.id);
+    const same = await prove(e, h, "L1", { photo });
+    expect(same).toMatchObject({ verdict: "FAILED" });
+    expect(same.integrity.checks.find((c) => c.name === "reuse")?.result).toBe("fail");
+    // A retake from the same spot: nearly the same picture, a little darker.
+    const again = await sharp(photo).modulate({ brightness: 0.8 }).jpeg().toBuffer();
+    expect(hamming(await dHash(await normalizePhoto(photo)), await dHash(await normalizePhoto(again)))).toBeLessThanOrEqual(SAME_IMAGE_HAMMING);
+    const retake = await prove(e, h, "L1", { photo: again });
+    expect(retake.integrity.checks.find((c) => c.name === "reuse")?.result).toBe("pass");
+    expect(retake.verdict).toBe("VERIFIED");
+  });
+
+  it("crops for the second look inside the image, even for a region at the very edge", async () => {
+    const photo = await normalizePhoto(await testPhoto(31));
+    for (const region of [{ x: 1, y: 0.995, w: 0, h: 0 }, { x: 0.99, y: 0.99, w: 0.5, h: 0.5 }, { x: 0, y: 0, w: 1, h: 1 }]) {
+      await expect(cropRegion(photo, region)).resolves.toBeInstanceOf(Buffer);
+    }
   });
 
   it("puts a flagged line back to the tradesperson and needs a note", async () => {

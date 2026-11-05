@@ -580,13 +580,35 @@ export async function getPhotos(q: Queryable, jobId: string): Promise<PhotoRow[]
 }
 
 /** The before-photo a line was scoped from: its own, else the job's first. */
-export async function beforePhotoFor(q: Queryable, line: Pick<LineRow, "id" | "job_id">): Promise<PhotoRow | null> {
+/**
+ * The before-photo a line is judged against: one taken for that line if
+ * there is one; otherwise, of the job's untagged before-photos, the one
+ * closest to `dhash` (the after-photo), so each area of a multi-area job is
+ * compared with its own starting point. Without a hash, the first one.
+ */
+export async function beforePhotoFor(q: Queryable, line: Pick<LineRow, "id" | "job_id">, opts: { dhash?: string } = {}): Promise<PhotoRow | null> {
   const { rows } = await q.query<PhotoRow>(
     `select * from photos where job_id = $1 and kind = 'before' and (line_id = $2 or line_id is null)
-     order by (line_id = $2) desc nulls last, taken_at limit 1`,
-    [line.job_id, line.id],
+     order by (line_id = $2) desc nulls last,
+              case when $3::text is null then 0 else bit_count(('x' || dhash)::bit(64) # ('x' || $3)::bit(64)) end,
+              taken_at
+     limit 1`,
+    [line.job_id, line.id, opts.dhash ?? null],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * Photos a line's new proof may resemble without being "re-used": the job's
+ * before-photos (the after-photo is meant to match their framing) and the
+ * line's own earlier attempts (a retake after a failed check).
+ */
+export async function ownPhotos(q: Queryable, jobId: string, lineId: string): Promise<Pick<PhotoRow, "id" | "dhash" | "storage_path" | "line_id" | "kind">[]> {
+  const { rows } = await q.query<Pick<PhotoRow, "id" | "dhash" | "storage_path" | "line_id" | "kind">>(
+    "select id, dhash, storage_path, line_id, kind from photos where job_id = $1 and (kind = 'before' or (line_id = $2 and kind <> 'masked'))",
+    [jobId, lineId],
+  );
+  return rows;
 }
 
 /**

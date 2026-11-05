@@ -14,6 +14,7 @@ import {
   needsSecondPass,
   nextJobStatus,
   nextLineStatus,
+  SAME_IMAGE_CELL_DIFF,
   SAME_IMAGE_HAMMING,
   type IntegrityReport,
   type LineObservation,
@@ -102,10 +103,19 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   } catch {
     throw badRequest("bad_photo", "that file isn't a photo we can read");
   }
-  const before = await store.beforePhotoFor(e.db, line);
-  if (!before) throw conflict("no_before_photo", "this job has no before-photo");
   const hash = await dHash(after);
-  const nearest = await store.nearestOtherHamming(e.db, hash, [before.id], input.sample ? { jobId: job.id } : {});
+  const before = await store.beforePhotoFor(e.db, line, { dhash: hash });
+  if (!before) throw conflict("no_before_photo", "this job has no before-photo");
+  // Re-use is judged against everyone else's photos. The job's own before-photos
+  // and this line's earlier attempts are expected to look alike, so they're
+  // left out, except that sending the very same image again still counts.
+  const own = await store.ownPhotos(e.db, job.id, line.id);
+  let nearest = await store.nearestOtherHamming(e.db, hash, own.map((p) => p.id), input.sample ? { jobId: job.id } : {});
+  if (!input.sample) {
+    for (const p of own.filter((x) => x.line_id === line.id && x.kind !== "before" && hamming(hash, x.dhash) <= SAME_IMAGE_HAMMING)) {
+      if ((await maxCellDiff(await e.storage.get(p.storage_path), after)) <= SAME_IMAGE_CELL_DIFF) nearest = 0;
+    }
+  }
   // A close hash alone can't tell a small fix from a re-used photo; the pixels can.
   const beforeCellDiff = hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? await maxCellDiff(await e.storage.get(before.storage_path), after) : null;
   const integrity = evaluateIntegrity({
@@ -159,10 +169,18 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
     observation = first;
     decision = decideVerdict(line.acceptance, first, integrity, e.settings.confidenceThreshold);
     if (needsSecondPass(first, e.settings.confidenceThreshold) && first.region) {
-      const second = await inspect(e, { ...base, crop: await cropRegion(after, first.region) });
-      passes.push({ obs: second, pass: 2 });
-      observation = second;
-      decision = combinePasses(line.acceptance, first, second, integrity, e.settings.confidenceThreshold);
+      // A second look that can't run keeps the first look's verdict (borderline, so not Verified).
+      const second = await cropRegion(after, first.region)
+        .then((crop) => inspect(e, { ...base, crop }))
+        .catch((err) => {
+          e.log.warn("second look skipped", { line: line.id, err: String(err) });
+          return null;
+        });
+      if (second) {
+        passes.push({ obs: second, pass: 2 });
+        observation = second;
+        decision = combinePasses(line.acceptance, first, second, integrity, e.settings.confidenceThreshold);
+      }
     }
     injection = await rejudgeWithoutText(e, { base, before, after, scan, decision, integrity });
     decision = injection.decision;
