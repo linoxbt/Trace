@@ -89,6 +89,12 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: judge mode demo job", () => {
     await expect(spendBudget(e, fresh, "proof")).resolves.toBeUndefined();
   });
 
+  it("works for a guest session, whose email Supabase leaves empty", async () => {
+    const me = await makeUser(e.db, "guest");
+    const job = await createDemoJob(e, { id: me, email: "" }, assets);
+    expect(job.homeowner_email).toMatch(/@demo\.trace\.invalid$/);
+  });
+
   it("opening the demo again returns the visitor's open demo job instead of making another", async () => {
     const me = await makeUser(e.db, "judge2");
     let loads = 0;

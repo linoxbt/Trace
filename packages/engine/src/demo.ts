@@ -48,7 +48,8 @@ export interface DemoAssets {
  * as the homeowner, then prove the lines as the tradesperson.
  */
 export async function createDemoJob(e: Engine, user: { id: string; email: string | null }, assets: DemoAssets): Promise<store.JobRow> {
-  const email = user.email ?? `demo-${user.id.slice(0, 8)}@demo.trace.invalid`;
+  // A guest session has no email (Supabase gives an empty one): the demo client gets a placeholder.
+  const email = user.email?.trim() || `demo-${user.id.slice(0, 8)}@demo.trace.invalid`;
   const job = await createJob(e, { tradesId: user.id, homeownerId: user.id, homeownerEmail: email, address: DEMO_ADDRESS, demo: true, category: "home_repair" });
   const lines = await saveScope(e, job.id, user.id, DEMO_LINES.map((l) => ({ ...l, acceptance: { ...l.acceptance } })));
   for (const l of lines) {

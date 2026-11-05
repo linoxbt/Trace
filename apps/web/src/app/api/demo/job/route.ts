@@ -21,6 +21,6 @@ export const POST = route(async (req, { user }) => {
     }
     return { before };
   };
-  const job = await demoJobFor(engine(), { id: user.id, email: user.email }, assets);
+  const job = await demoJobFor(engine(), { id: user.id, email: user.anonymous ? null : user.email }, assets);
   return { id: job.id };
 });
