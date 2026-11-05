@@ -5,11 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { Logo } from "@/components/logo";
 import { ArrowDisc, Eyebrow, FloatDots } from "@/components/marketing/blocks";
 import { ParticleHero } from "@/components/marketing/particle-hero";
+import { safeNext } from "@/lib/safe-next";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 
 function SignInForm() {
   const params = useSearchParams();
-  const next = params.get("next") ?? "/dashboard";
+  const rawNext = params.get("next");
   const expired = !!params.get("error");
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">(expired ? "error" : "idle");
@@ -21,7 +22,7 @@ function SignInForm() {
     try {
       const { error } = await supabaseBrowser().auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
+        options: { emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(safeNext(rawNext, location.origin))}` },
       });
       if (error) throw error;
       setState("sent");
