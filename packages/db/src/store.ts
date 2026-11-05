@@ -90,9 +90,16 @@ export interface CaptureRow {
   status: CaptureStatus;
   attempts: number;
   last_error: string | null;
+  /** How much of this capture has been refunded, and by which PayPal refunds. */
+  refunded_cents: number;
+  refund_ids: string[];
   created_at: Date;
   updated_at: Date;
 }
+
+/** Money still kept from a capture after any refunds; nothing for one PayPal didn't take. */
+export const keptCents = (c: Pick<CaptureRow, "status" | "amount_cents" | "refunded_cents">): number =>
+  ["COMPLETED", "PENDING", "PARTIALLY_REFUNDED"].includes(c.status) ? c.amount_cents - c.refunded_cents : 0;
 
 export interface PhotoRow {
   id: string;
@@ -488,6 +495,25 @@ export async function getCaptureByPayPalId(q: Queryable, paypalCaptureId: string
 
 export async function getCaptureByInvoiceId(q: Queryable, invoiceId: string): Promise<CaptureRow | null> {
   const { rows } = await q.query<CaptureRow>("select * from captures where invoice_id = $1", [invoiceId]);
+  return rows[0] ?? null;
+}
+
+/**
+ * Count one PayPal refund against a capture, once: Trace records the refunds
+ * it makes, and PayPal's webhook reports them again. Returns the updated row,
+ * or null if this refund was already counted.
+ */
+export async function recordRefund(q: Queryable, captureId: string, refundId: string, cents: number): Promise<CaptureRow | null> {
+  const { rows } = await q.query<CaptureRow>(
+    `update captures set
+       refunded_cents = least(amount_cents, refunded_cents + $3),
+       refund_ids = array_append(refund_ids, $2),
+       status = case when least(amount_cents, refunded_cents + $3) >= amount_cents then 'REFUNDED' else 'PARTIALLY_REFUNDED' end,
+       updated_at = now()
+     where id = $1 and not ($2 = any(refund_ids))
+     returning *`,
+    [captureId, refundId, cents],
+  );
   return rows[0] ?? null;
 }
 

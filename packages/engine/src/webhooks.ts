@@ -2,6 +2,7 @@
 // (spec section 10). API responses stay the source of truth; webhooks
 // reconcile them.
 
+import { fromPayPalValue } from "@trace/core";
 import * as store from "@trace/db";
 import { webhookHeaders, type Capture, type WebhookEvent } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
@@ -94,10 +95,14 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
       const captureId = up.split("/").pop() ?? "";
       const cap = captureId ? await store.getCaptureByPayPalId(e.db, captureId) : null;
       if (!cap) return { result: "ignored", type };
+      // PayPal sends this event for partial refunds too: count the amount, once per refund.
+      const amount = r.amount as { value?: string } | undefined;
+      const cents = amount?.value ? fromPayPalValue(amount.value) : null;
       const jobId = await e.db.tx(async (q) => {
         const auth = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1", [cap.authorization_id])).rows[0]!;
-        await store.updateCapture(q, cap.id, { status: "REFUNDED" });
-        await store.appendEvent(q, { jobId: auth.job_id, actor: "paypal", type: "REFUNDED", data: { capture: cap.id, paypal_capture_id: captureId, amount: r.amount ?? null } });
+        await store.mustGetJob(q, auth.job_id, { lock: true });
+        const counted = await store.recordRefund(q, cap.id, String(r.id ?? ""), cents ?? cap.amount_cents - cap.refunded_cents);
+        if (counted) await store.appendEvent(q, { jobId: auth.job_id, actor: "paypal", type: "REFUNDED", data: { capture: cap.id, paypal_capture_id: captureId, refund: r.id ?? null, amount_cents: cents } });
         return auth.job_id;
       });
       return { result: "processed", type, jobId };

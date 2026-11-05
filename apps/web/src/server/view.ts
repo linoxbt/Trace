@@ -42,7 +42,7 @@ export interface JobView {
   role: Role;
   money: MoneyView;
   /** Payments PayPal took on this job, oldest first. */
-  captures: { id: string; amountCents: number; status: string; lines: string[]; paypalId: string | null; at: string; final: boolean }[];
+  captures: { id: string; amountCents: number; refundedCents: number; status: string; lines: string[]; paypalId: string | null; at: string; final: boolean }[];
   lines: {
     id: string;
     code: string;
@@ -163,21 +163,21 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
   const sign = async (p: store.PhotoRow | undefined) => (p?.storage_path ? e.storage.signedUrl(p.storage_path, 600).catch(() => null) : null);
   const firstBefore = photos.find((p) => p.kind === "before");
 
-  // Released = captures PayPal accepted. One still in flight is neither released nor shown as free.
+  // Released = captures PayPal accepted, less anything refunded. One still in flight is neither released nor shown as free.
   // Every hold on the job: the original scope's, and each change order's.
   const holds = await store.authorizationsForJob(e.db, jobId);
   const { rows: relRows } = await e.db.query<{ n: number }>(
-    "select coalesce(sum(c.amount_cents),0)::int8 as n from captures c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status in ('COMPLETED','PENDING')",
+    "select coalesce(sum(c.amount_cents - c.refunded_cents),0)::int8 as n from captures c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')",
     [jobId],
   );
   const released = relRows[0]!.n;
   const held = holds.reduce((n, h) => n + h.amount_cents, 0);
-  // Money still held: what each open hold hasn't captured.
+  // Money still held: what each open hold hasn't captured. A refunded capture still came out of the hold.
   const open = holds.filter((h) => h.status === "CREATED" || h.status === "PARTIALLY_CAPTURED");
   const capByHold = new Map(
     (
       await e.db.query<{ authorization_id: string; n: number }>(
-        "select authorization_id, coalesce(sum(amount_cents),0)::int8 as n from captures where authorization_id = any($1::uuid[]) and status in ('COMPLETED','PENDING') group by 1",
+        "select authorization_id, coalesce(sum(amount_cents),0)::int8 as n from captures where authorization_id = any($1::uuid[]) and status in ('COMPLETED','PENDING','REFUNDED','PARTIALLY_REFUNDED') group by 1",
         [holds.map((h) => h.id)],
       )
     ).rows.map((r) => [r.authorization_id, r.n]),
@@ -233,6 +233,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
         ).rows.map((c) => ({
           id: c.id,
           amountCents: c.amount_cents,
+          refundedCents: c.refunded_cents,
           status: c.status,
           lines: lines.filter((l) => c.line_ids.includes(l.id)).map((l) => l.code),
           paypalId: c.paypal_capture_id,
@@ -326,7 +327,7 @@ export async function myJobs(userId: string) {
        (select count(*)::int8 from lines where job_id = j.id) as lines,
        (select count(*)::int8 from lines where job_id = j.id and status = 'CAPTURED') as paid,
        (select sum(a.amount_cents)::int8 from authorizations a where a.job_id = j.id) as held,
-       coalesce((select sum(c.amount_cents) from captures c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING')),0)::int8 as released
+       coalesce((select sum(c.amount_cents - c.refunded_cents) from captures c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')),0)::int8 as released
      from jobs j
      where $1 in (j.trades_id, j.homeowner_id)
      order by j.created_at desc limit 50`,

@@ -955,40 +955,47 @@ function PaymentsCard({
                 <div className="num text-[15px] font-semibold">{money(c.amountCents, currency)}</div>
                 <div className="truncate text-[12.5px] text-muted">
                   {c.lines.join(", ")} · {LABEL[c.status] ?? c.status}
+                  {c.refundedCents > 0 && c.status === "PARTIALLY_REFUNDED" ? ` (${money(c.refundedCents, currency)} back)` : ""}
                   {c.paypalId ? ` · ${c.paypalId}` : ""}
                 </div>
               </div>
-              {canRefund && c.status === "COMPLETED" && open !== c.id && (
-                <button disabled={busy} onClick={() => { setOpen(c.id); setAmount((c.amountCents / 100).toFixed(2)); }} className="press h-8 shrink-0 rounded-full px-3 text-[13px] font-medium text-muted hover:bg-bad-soft hover:text-bad disabled:opacity-50">
+              {canRefund && (c.status === "COMPLETED" || c.status === "PARTIALLY_REFUNDED") && open !== c.id && (
+                <button disabled={busy} onClick={() => { setOpen(c.id); setAmount(((c.amountCents - c.refundedCents) / 100).toFixed(2)); }} className="press h-8 shrink-0 rounded-full px-3 text-[13px] font-medium text-muted hover:bg-bad-soft hover:text-bad disabled:opacity-50">
                   Refund
                 </button>
               )}
             </div>
-            {open === c.id && (
+            {open === c.id && (() => {
+              // Up to what's left of this payment. A bad amount is shown, never quietly turned into a full refund.
+              const left = c.amountCents - c.refundedCents;
+              const cents = /^\s*\d+(\.\d{1,2})?\s*$/.test(amount) ? Math.round(Number(amount) * 100) : NaN;
+              const valid = Number.isSafeInteger(cents) && cents > 0 && cents <= left;
+              return (
               <div className="mt-3 rounded-2xl bg-paper p-3">
                 <label className="grid gap-1.5 text-[12.5px] font-medium text-muted">
-                  Amount to refund
-                  <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} className="field num text-[15px]" />
+                  Amount to refund (up to {money(left, currency)})
+                  <input inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} aria-invalid={!valid} className="field num text-[15px]" />
                 </label>
+                {!valid && amount.trim() !== "" && <p className="mt-1.5 text-[12px] text-bad">Enter an amount from 0.01 to {(left / 100).toFixed(2)}.</p>}
                 <p className="mt-2 text-[12px] leading-snug text-muted">A refund always needs both of you to approve it. Nothing moves until you both have.</p>
                 <div className="mt-3 flex gap-2">
                   <button onClick={() => setOpen(null)} className="press h-9 rounded-full bg-card px-4 text-[13px] font-medium shadow-[0_0_0_1px_var(--color-line)]">
                     Cancel
                   </button>
                   <button
-                    disabled={busy}
+                    disabled={busy || !valid}
                     onClick={() => {
-                      const cents = Math.round(Number(amount.replace(/[^0-9.]/g, "")) * 100);
                       setOpen(null);
-                      onRefund(c.id, cents > 0 && cents < c.amountCents ? cents : undefined);
+                      onRefund(c.id, cents);
                     }}
                     className="press h-9 rounded-full bg-bad px-4 text-[13px] font-semibold text-white disabled:opacity-50"
                   >
-                    Ask to refund
+                    Ask to refund {valid ? money(cents, currency) : ""}
                   </button>
                 </div>
               </div>
-            )}
+              );
+            })()}
           </li>
         ))}
       </ul>

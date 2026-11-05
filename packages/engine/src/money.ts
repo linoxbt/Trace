@@ -147,6 +147,8 @@ export async function settleCapture(e: Engine, captureRowId: string, pp: Capture
   const settled = await e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId, { lock: true });
     const cap = (await store.getCapture(q, captureRowId, { lock: true }))!;
+    // A refunded capture was completed; a late or repeated capture event can't move it back.
+    if (cap.status === "REFUNDED" || cap.status === "PARTIALLY_REFUNDED") return cap;
     const auth = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 for update", [cap.authorization_id])).rows[0]!;
     const lines = await store.getLines(q, auth.job_id, { lock: true });
     const mine = lines.filter((l) => cap.line_ids.includes(l.id));

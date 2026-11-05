@@ -333,12 +333,15 @@ export async function guardedRefund(
   const job = await store.mustGetJob(e.db, jobId);
   const cap = await store.getCapture(e.db, captureRowId);
   if (!cap || (await store.jobIdOfCapture(e.db, cap.id)) !== jobId) throw new EngineError("not_found", "capture not found", 404);
-  if (!cap.paypal_capture_id || cap.status !== "COMPLETED") throw conflict("not_refundable", "only a completed capture can be refunded");
-  const amount = opts.amountCents ?? cap.amount_cents;
-  if (amount <= 0 || amount > cap.amount_cents) throw new EngineError("bad_amount", "refund must be between $0.01 and the captured amount", 400);
+  if (!cap.paypal_capture_id || (cap.status !== "COMPLETED" && cap.status !== "PARTIALLY_REFUNDED")) throw conflict("not_refundable", "only a completed capture can be refunded");
+  // A capture can be refunded in parts, up to what's left of it.
+  const left = cap.amount_cents - cap.refunded_cents;
+  const amount = opts.amountCents ?? left;
+  if (!Number.isSafeInteger(amount) || amount <= 0 || amount > left) throw new EngineError("bad_amount", `refund must be between $0.01 and the $${(left / 100).toFixed(2)} not yet refunded`, 400);
   const { provenance } = await buildProvenance(e, jobId, cap.line_ids, opts.approvalEventIds ?? []);
   const a = action("REFUND", job, init, provenance, {
-    request_id: opts.requestId ?? `refund-${cap.id}-${amount}`,
+    // Unique per refund of this capture: two equal partial refunds are two refunds.
+    request_id: opts.requestId ?? `refund-${cap.id}-${cap.refunded_cents}-${amount}`,
     authorization_id: cap.authorization_id,
     capture_id: cap.id,
     line_ids: cap.line_ids,
@@ -351,8 +354,10 @@ export async function guardedRefund(
   await store.markDecisionExecuted(e.db, verdict.decisionId, { refund: refund.id, status: refund.status });
   await e.db.tx(async (q) => {
     await store.mustGetJob(q, jobId, { lock: true });
-    await store.updateCapture(q, cap.id, { status: amount === cap.amount_cents ? "REFUNDED" : "PARTIALLY_REFUNDED" });
-    await store.appendEvent(q, { jobId, actor: "system", type: "REFUNDED", data: { capture: cap.id, amount_cents: amount, refund: refund.id } });
+    // PayPal's webhook may have counted this refund already.
+    if (await store.recordRefund(q, cap.id, refund.id, amount)) {
+      await store.appendEvent(q, { jobId, actor: "system", type: "REFUNDED", data: { capture: cap.id, amount_cents: amount, refund: refund.id } });
+    }
   });
   return { ...verdict, refunded: true };
 }
