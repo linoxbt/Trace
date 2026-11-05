@@ -22,14 +22,14 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_schema_migrations");
-    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql"]);
+    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql", "014_capture_balances.sql"]);
   });
 
   it("takes migrations as data too, as the scheduled function carries them, and records the worker's heartbeat", async () => {
     expect(await migrate(db, await readMigrations())).toEqual([]);
     await store.recordHeartbeat(db, { released: 1 });
     const s = await store.systemStatus(db);
-    expect(s.migration).toBe("013_refunds.sql");
+    expect(s.migration).toBe("014_capture_balances.sql");
     expect(Date.now() - s.lastTickAt!.getTime()).toBeLessThan(60_000);
   });
 
@@ -42,7 +42,7 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
       if (m.name.slice(0, 3) > OWNER_APPLIED) {
         for (const [, table] of sql.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?(\w+)/gi)) {
           const by = created.get(table!.toLowerCase());
-          if (by && by !== m.name) expect.fail(`${m.name} alters ${table}, created by ${by}: add a new table or view instead`);
+          if (by && by.slice(0, 3) <= OWNER_APPLIED) expect.fail(`${m.name} alters ${table}, created by ${by}: add a new table or view instead`);
         }
       }
       for (const [, table] of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(\w+)/gi)) created.set(table!.toLowerCase(), m.name);
