@@ -16,7 +16,7 @@ const CHECKS = [
 ];
 
 const GUARD = [
-  { title: "One door for money", body: "Every capture, void, renewal, refund and dispute filing goes through one guard. Only it can reach PayPal's money calls, and a test fails the build if anything else tries." },
+  { title: "One door for money", body: "Every capture, void, renewal, refund and dispute filing goes through one guard. Only it can reach PayPal's money calls, and a test fails if anything else tries." },
   { title: "Checked against live PayPal", body: "Before each move the guard reads the hold and any disputes straight from PayPal. If PayPal can't be read, nothing moves: the guard never guesses." },
   { title: "Decided by code, written first", body: "Eleven built-in rules can't be switched off: never past the hold, only approved lines, nothing during a dispute, agents never move money. The decision is written to an append-only ledger before PayPal is asked." },
   { title: "Your rules, in your words", body: "Write “anything over $150 needs my OK”. A model turns it into a rule, a second model reads it back without seeing your words, and it's tested against your past decisions before you save it. Rules can only add checks." },
@@ -30,7 +30,7 @@ const MONEY = [
   { title: "Idempotent by design", body: "Every capture, void and reauthorization sends a stored PayPal-Request-Id. Webhooks are de-duplicated on PayPal's event ID." },
   { title: "Verified webhooks", body: "Each webhook is checked with PayPal against its original body before anything is processed. Unverified ones are rejected." },
   { title: "Parties only", body: "Postgres row-level security lets each job's two parties read it; only the server can write. Photos sit in a private table only the server can read, and are shown to the job's two parties only." },
-  { title: "Kept only as long as needed", body: "Photos and integrity reports are kept for 180 days after a job closes, the window in which disputes can arise. Locations in evidence are rounded to about 11 m." },
+  { title: "Kept only as long as needed", body: "Photos and integrity reports are meant to be kept for 180 days after a job closes, the window in which disputes can arise; this sandbox build doesn't delete them automatically yet. Locations in evidence are rounded to about 11 m." },
 ];
 
 export default function Security() {

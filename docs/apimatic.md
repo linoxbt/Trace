@@ -56,7 +56,7 @@ merchant-integrations) and webhook signature checks.
   `unstable_httpClientOptions`. `packages/paypal/test/sdk-contract.test.ts`
   sends the SDK client and the hand-written client through the same stub
   PayPal and requires the same method, path, body, idempotency and
-  auth-assertion headers, results and errors for every call above (15 tests).
+  auth-assertion headers, results and errors for every call above (16 tests).
 
 One decision is Trace's own: a 2xx answer that the SDK's response schema
 rejects (say, a status value newer than the SDK) throws

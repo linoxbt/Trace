@@ -4,9 +4,15 @@
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/). MIT licensed.
 
+## For judges
+
+Open https://trace-proof.netlify.app/try. It starts a guest session (no sign-up) and opens your own copy of a $420 bathroom job, where you play both sides: approve the hold as the client, prove each line with the sample photos as the tradesperson, then release the money. Everything runs on the PayPal sandbox; no real money moves.
+
+PayPal's window asks for a sandbox buyer login. The demo job shows one beside the button when the server has it configured; otherwise create a free sandbox personal account under Testing tools, Sandbox accounts at developer.paypal.com. `/accuracy` shows how often the photo check is right, with every case.
+
 ## Status
 
-Everything below is built and covered by the test suite (229 tests). The money flows have run against a fake PayPal and recorded responses, not yet end to end against the PayPal sandbox with real logins.
+Everything below is built and covered by the test suite (248 tests). The money flows have run against a fake PayPal and recorded responses, not yet end to end against the PayPal sandbox with real logins. The AI has run for real only in the server's evals (`/accuracy`); the tests use scripted models.
 
 | Part | State |
 | --- | --- |
@@ -45,9 +51,9 @@ A job has a type: home repair, cleaning and turnovers, car repair and detailing,
 
 ## Accuracy
 
-The `/accuracy` page shows how often the photo check gets it right, with every case, its photos and the model's reason. The set (`eval/verifier/set.ts`) has 24 cases: 10 real photos of the demo bathroom (the true pairs, a wall left half-grouted, the before-photo sent again, the wrong spot) and 14 drawn scenes, one finished and one unfinished for each job type. Each case goes through the production verifier, second look and verdict rule (`judgePair`); location and capture checks are taken as passed, since they are code tested elsewhere. The planted-note set (`eval/inject/set.ts`) has 20 notes aimed at the checker and 10 ordinary labels.
+The `/accuracy` page shows how often the photo check gets it right, with every case, its photos and the model's reason. The set (`eval/verifier/set.ts`) has 24 cases: 10 use the demo bathroom's photos, which are AI-generated stand-ins rather than photos of real work (the true pairs, the before-photo reframed or retaken with nothing fixed, the wrong spot), and 14 are drawn scenes, one finished and one unfinished for each job type. No case sends the same image twice: the app stops that in code before the model is asked, so it would only flatter the score, and a test checks every pair gets past that check. Each case goes through the production verifier, second look and verdict rule (`judgePair`); location and capture checks are taken as passed, since they are code tested elsewhere. The planted-note set (`eval/inject/set.ts`) has 20 notes aimed at the checker and 10 ordinary labels.
 
-Both run on the deployed site with its own model key: the scheduled worker calls `/api/eval/step` once a minute (with a key derived from the PayPal secret both hold), and each step judges one photo case and scans five note images. A run belongs to a set version and model, so it happens once; a new model or a changed set starts a fresh one. `pnpm eval:verifier` and `pnpm eval:inject` run the same sets locally.
+Both run on the deployed site with its own model key: the scheduled worker calls `/api/eval/step` once a minute (with a key derived from the PayPal secret both hold), and each step judges one photo case and scans five note images. A run belongs to the set's version, the model and a fingerprint of its prompts and of the verdict rule, so it happens once; a change to any starts a fresh one. `pnpm eval:verifier` and `pnpm eval:inject` run the same sets locally.
 
 ## Safety: Tripwire
 
@@ -81,9 +87,9 @@ Only `execute.ts` can import the money client (`guard/paypal-money.ts`), and a t
   A scan that fails is never read as "no text". When a scope is sent, its lines are checked the same way for instructions aimed at the AI.
 - **Agents.** AI agents can draft (rule B6), but they never trigger a money move.
 
-`pnpm eval:inject` measures the planted-note check. It draws 20 planted notes (including Yoruba, Pidgin and Spanish ones, faint text and notes cut off at the frame) and 10 ordinary labels. It then runs the real scanner and prints the confusion matrix. The targets are at least 95% caught, at most 10% false flags, and no planted note with no text found. The set is synthetic, and the eval needs `ANTHROPIC_API_KEY`. **It has not been run yet**, so there is no catch rate to report.
+`pnpm eval:inject` measures the planted-note check. It draws 20 planted notes (including Yoruba, Pidgin and Spanish ones, faint text and notes cut off at the frame) and 10 ordinary labels. It then runs the real scanner and prints the confusion matrix. The targets are at least 95% caught, at most 10% false flags, and no planted note with no text found. The set is synthetic, and the eval needs `ANTHROPIC_API_KEY`. The deployed site runs it on its own; its first full run caught 20 of 20 planted notes and flagged 1 of 10 ordinary labels ("Handle with care - this side up"). Current results are at `/accuracy`.
 
-What's left out of the add-on spec: rule B12 (a price over 3x the AI's suggestion), because Trace doesn't suggest prices. Refunds and dispute evidence go through the guard but have no buttons in the app yet.
+What's left out of the add-on spec: rule B12 (a price over 3x the AI's suggestion), because Trace doesn't suggest prices. Refunds (the payments card on a job) and dispute evidence (the dispute screen) go through the guard like every other money move.
 
 ## Layout
 
@@ -105,6 +111,7 @@ Needs Node 22, pnpm 10 and Postgres 15+ (Supabase in production).
 ```sh
 pnpm install
 cp .env.example .env                 # fill in DATABASE_URL and the PayPal sandbox keys
+psql "$DATABASE_URL" -f packages/db/test/supabase-shim.sql   # plain Postgres only: the auth schema and roles Supabase provides
 pnpm db:migrate                      # create the tables
 pnpm sandbox:e2e                     # Trace against the PayPal sandbox (needs TEST_DATABASE_URL too)
 pnpm web                             # the app at http://localhost:3000
@@ -180,6 +187,8 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 | `PAYPAL_CLIENT_ID`, `PAYPAL_CLIENT_SECRET`, `PAYPAL_WEBHOOK_ID`, `ANTHROPIC_API_KEY` | Functions (mark as secret) |
 | `APP_URL`, `PAYPAL_API_BASE`, `DEMO_MODE`, `PAYPAL_PARTNER_MERCHANT_ID`, `PAYPAL_BN_CODE` | Builds, Functions |
 | `PAYPAL_HTTP` (optional: `fetch` switches orders and payments back to the hand-written client) | Functions |
+| `DEMO_BUYER_EMAIL`, `DEMO_BUYER_PASSWORD` (optional: a throwaway PayPal sandbox personal account shown to judges on demo jobs; sandbox only) | Functions |
+| `DATABASE_CA_CERT`, `VERIFIER_MODEL` (optional) | Functions |
 
 `render.yaml` and `apps/worker` remain for hosting on Render instead.
 
@@ -187,5 +196,8 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 
 - Paying tradespeople directly needs PayPal to approve Trace as a partner before it works with live money. The sandbox needs no approval. Which multiparty calls need a `PayPal-Auth-Assertion` follows PayPal's guides (refunds and disputes do; authorize, capture, void and reauthorize on the partner's own order don't) and still needs confirming against the sandbox.
 - Supabase anonymous sign-ins must be on for `/try` (Authentication > Sign In / Providers > Anonymous).
+- Trace sends no email of its own. The tradesperson sends the client the job's link (the job page has a copy button), and sends an attester their sign-off link; the attester confirms their email through Supabase's sign-in link before signing, and the client then approves the line.
+- Photos and check results are meant to be kept for 180 days after a job closes; nothing deletes them automatically yet.
+- AI use is capped per person per hour, and guests and demo jobs share one hourly allowance (`packages/engine/src/budget.ts`). Anonymous sign-up itself has no CAPTCHA; turn on Supabase's CAPTCHA protection before opening this to real traffic.
 - PayPal seller protection targets goods, so a services dispute isn't guaranteed to go the tradesperson's way. The evidence pack is the best possible defence, not a guaranteed win.
 - The multipart field name for dispute evidence (`file1`) still needs confirming against the sandbox.

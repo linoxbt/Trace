@@ -70,7 +70,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </Card>
       <Card className="mt-5 p-5 text-[13.5px] leading-relaxed text-muted sm:p-6">
         <div className="mb-2 text-[15px] font-semibold text-ink">Your data</div>
-        Photos and check results are kept for 180 days after a job closes, the window in which disputes can arise. Locations are only recorded with photos, never tracked. Payments for your jobs settle in your own PayPal account, never in Trace's. This is a PayPal sandbox build: no real money moves.
+        Photos and check results are meant to be kept for 180 days after a job closes, the window in which disputes can arise (this sandbox build doesn't delete them automatically yet). Locations are only recorded with photos, never tracked. Payments for your jobs settle in your own PayPal account, never in Trace's. This is a PayPal sandbox build: no real money moves.
       </Card>
     </AppShell>
   );

@@ -167,6 +167,12 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
     injection = await rejudgeWithoutText(e, { base, before, after, scan, decision, integrity });
     decision = injection.decision;
   }
+  // Hidden work (inside a wall, under a floor) is shown by a "during" photo
+  // that can't prove the finished result, so it never releases on silence:
+  // the client approves it themselves.
+  if (!line.verifiable_by_photo && decision.verdict === "VERIFIED") {
+    decision = { verdict: "NEEDS_REVIEW", reasons: [...decision.reasons, "hidden work: a during-photo can't show the finished result, so the client approves it"] };
+  }
 
   // The masked copy is stored beside the original, which is never changed.
   let maskedPhoto: store.PhotoRow | null = null;

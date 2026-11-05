@@ -225,7 +225,7 @@ export function JobScreen({
         <Waiting title={`Waiting for the ${w.proPos} PayPal`} body={`Payments go straight into the ${w.proPos} own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is.`} />
       )}
       {job.status === "AWAITING_APPROVAL" && !isHome && (
-        <Waiting title={`Waiting for the ${w.client}`} body={`We've asked ${job.homeownerEmail} to review the scope and approve the hold with PayPal.`} />
+        <SendToClient jobId={job.id} email={job.homeownerEmail} client={w.client} />
       )}
       {isHome && held && approvedCents > 0 && pending.length === 0 && (
         <ActionCard
@@ -864,6 +864,38 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
           {l.status === "PROVING" ? "Send a new sign-off link" : "Send for sign-off"}
         </button>
       )}
+    </div>
+  );
+}
+
+/**
+ * Trace doesn't email the client: the tradesperson sends the job's link. The
+ * client opens it signed in with the email the job was sent to.
+ */
+function SendToClient({ jobId, email, client }: { jobId: string; email: string; client: string }) {
+  const [copied, setCopied] = useState(false);
+  // The origin is read after mount, so the server and browser render the same first.
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const link = `${origin}/jobs/${jobId}`;
+  return (
+    <div className="rounded-2xl bg-paper p-4 text-[13.5px] leading-relaxed">
+      <div className="font-medium">Waiting for the {client}</div>
+      <p className="mt-1 text-muted">
+        Send {email} this link. They sign in with that email to review the scope and approve the hold with PayPal; this page updates when they do.
+      </p>
+      <div className="mt-2 flex gap-2">
+        <input readOnly value={link} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />
+        <button
+          onClick={() => navigator.clipboard?.writeText(link).then(() => setCopied(true))}
+          className="press h-11 shrink-0 rounded-full bg-card px-4 text-[13px] font-semibold shadow-[0_0_0_1px_var(--color-line)]"
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+      <a href={`mailto:${email}?subject=${encodeURIComponent("Your job on Trace")}&body=${encodeURIComponent(`Review the scope and approve the hold here: ${link}`)}`} className="mt-2 inline-block text-[13px] font-medium text-violet">
+        Open in email
+      </a>
     </div>
   );
 }

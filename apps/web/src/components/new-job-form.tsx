@@ -44,7 +44,7 @@ export function NewJobForm({ initialCategory = "home_repair" }: { initialCategor
       </ol>
       <h1 className="mt-6 text-[28px] font-semibold tracking-[-0.025em] sm:text-[32px]">Start a job</h1>
       <p className="mt-2 max-w-lg text-muted">
-        Next you&apos;ll photograph the starting point and write the lines a camera can check. The {w.client} gets a link to approve.
+        Next you&apos;ll photograph the starting point and write the lines a camera can check. Then you send the {w.client} the job&apos;s link to approve.
       </p>
       <form onSubmit={create} className="surface mt-6 rounded-[22px] p-5 sm:p-7">
         <fieldset>

@@ -82,6 +82,15 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED", L2: "NEEDS_REVIEW" });
   });
 
+  it("never releases hidden work on silence: a during-photo goes to the client", async () => {
+    const h = await heldJob(e);
+    await e.db.query("update lines set verifiable_by_photo = false where id = $1", [h.lines.L1!.id]);
+    const r = await prove(e, h, "L1");
+    expect(r.verdict).toBe("NEEDS_REVIEW");
+    expect(r.reasons.join(" ")).toMatch(/hidden work/);
+    expect((await lineStatus(e, h)).L1).toBe("NEEDS_REVIEW");
+  });
+
   it("puts a flagged line back to the tradesperson and needs a note", async () => {
     const h = await heldJob(e);
     await prove(e, h, "L1");
