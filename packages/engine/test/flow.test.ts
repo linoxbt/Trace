@@ -116,7 +116,7 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect(r.kind).toBe("sending");
     // The line is reserved, so a second release can't take it again.
     expect(await release(e, h.jobId)).toEqual({ kind: "nothing" });
-    // Too fresh for the worker's 30 s window; a 0 s window picks it up.
+    // Too fresh for the worker's window; a 0 s window picks it up.
     expect(await retrySendingCaptures(e)).toEqual([]);
     const retried = await retrySendingCaptures(e, 0);
     expect(retried[0]).toMatchObject({ kind: "captured", amountCents: 12000 });
@@ -124,6 +124,40 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     const ids = e.paypal.calls.filter((c) => c.op === "captureAuthorization").map((c) => c.args[2]);
     expect(new Set(ids).size).toBe(1);
     expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
+  });
+
+  it("two workers retrying at once send a lost capture only once", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.loseNextResponse("captureAuthorization");
+    await release(e, h.jobId);
+    await e.db.query("update captures set updated_at = now() - interval '5 minutes' where status = 'SENDING'");
+    // PayPal answers slowly, so the two workers overlap while the first resend is in flight.
+    const capture = e.paypal.captureAuthorization.bind(e.paypal);
+    e.paypal.captureAuthorization = async (...args) => {
+      await new Promise((r) => setTimeout(r, 200));
+      return capture(...args);
+    };
+    const [a, b] = await Promise.all([retrySendingCaptures(e), retrySendingCaptures(e)]);
+    expect([...a, ...b]).toHaveLength(1);
+    // The lost first send, and exactly one resend.
+    expect(e.paypal.calls.filter((c) => c.op === "captureAuthorization")).toHaveLength(2);
+    expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
+  });
+
+  it("claims a stale capture for a resend atomically: one claimant wins, a fresh one isn't taken", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.loseNextResponse("captureAuthorization");
+    const r = await release(e, h.jobId);
+    if (r.kind !== "sending") throw new Error(r.kind);
+    // Just sent: still inside the window where the original request may be waiting on PayPal.
+    expect(await store.claimStaleCapture(e.db, r.captureId, 90)).toBeNull();
+    await e.db.query("update captures set updated_at = now() - interval '5 minutes' where id = $1", [r.captureId]);
+    const claims = await Promise.all(Array.from({ length: 5 }, () => store.claimStaleCapture(e.db, r.captureId, 90)));
+    expect(claims.filter(Boolean)).toHaveLength(1);
   });
 
   it("refuses two releases at once from taking the same lines", async () => {

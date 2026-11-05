@@ -538,6 +538,20 @@ export async function updateCapture(
  * Captures whose PayPal answer is still unknown, untouched for at least
  * `staleS` seconds. Measured on the database clock, which wrote updated_at.
  */
+/**
+ * Claim a capture for a resend: one atomic update, only if it is still
+ * SENDING and nothing has touched it for `staleS` seconds. It stamps
+ * updated_at, so a second worker, or the original request still waiting on
+ * PayPal, can't send it at the same time. Null if someone else has it.
+ */
+export async function claimStaleCapture(q: Queryable, captureId: string, staleS: number): Promise<CaptureRow | null> {
+  const { rows } = await q.query<CaptureRow>(
+    `update captures set updated_at = now() where id = $1 and status = 'SENDING' and updated_at <= now() - make_interval(secs => $2) returning *`,
+    [captureId, staleS],
+  );
+  return rows[0] ?? null;
+}
+
 export async function sendingCaptures(q: Queryable, staleS: number): Promise<CaptureRow[]> {
   const { rows } = await q.query<CaptureRow>(
     `select * from captures where status = 'SENDING' and updated_at <= now() - make_interval(secs => $1) order by created_at`,

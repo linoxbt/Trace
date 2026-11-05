@@ -352,10 +352,19 @@ export async function autoRelease(e: Engine): Promise<{ approved: number; releas
 }
 
 /** Worker: resend captures whose outcome is still unknown, with their original request IDs. */
-export async function retrySendingCaptures(e: Engine, staleS = 30): Promise<ReleaseResult[]> {
+/**
+ * Worker: resend captures whose outcome is unknown. A capture counts as stale
+ * only well after a send could still be waiting on PayPal (the client gives
+ * up after 30 s), and each is claimed atomically before it is resent, so the
+ * original request and a resend never race.
+ */
+export const CAPTURE_STALE_S = 90;
+
+export async function retrySendingCaptures(e: Engine, staleS = CAPTURE_STALE_S): Promise<ReleaseResult[]> {
   const out: ReleaseResult[] = [];
   for (const cap of await store.sendingCaptures(e.db, staleS)) {
     try {
+      if (!(await store.claimStaleCapture(e.db, cap.id, staleS))) continue;
       out.push(await sendCapture(e, cap.id));
     } catch (err) {
       e.log.error("capture retry failed", { capture: cap.id, err: String(err) });
