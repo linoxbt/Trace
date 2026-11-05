@@ -7,6 +7,8 @@ import { ArrowDisc, Eyebrow, FloatDots } from "@/components/marketing/blocks";
 import { ParticleHero } from "@/components/marketing/particle-hero";
 import { safeNext } from "@/lib/safe-next";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { useTurnstile } from "@/components/turnstile";
+import Link from "next/link";
 
 function SignInForm() {
   const params = useSearchParams();
@@ -14,16 +16,26 @@ function SignInForm() {
   const expired = !!params.get("error");
   const [email, setEmail] = useState("");
   const [state, setState] = useState<"idle" | "sending" | "sent" | "error">(expired ? "error" : "idle");
+  const bot = useTurnstile();
   const [message, setMessage] = useState(expired ? "That sign-in link has expired. Send a new one." : "");
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
+    if (bot.token === null) {
+      setState("error");
+      setMessage(bot.error ?? "One moment: the bot check is still running.");
+      return;
+    }
     setState("sending");
     try {
       const { error } = await supabaseBrowser().auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(safeNext(rawNext, location.origin))}` },
+        options: {
+          emailRedirectTo: `${location.origin}/auth/callback?next=${encodeURIComponent(safeNext(rawNext, location.origin))}`,
+          ...(bot.token ? { captchaToken: bot.token } : {}),
+        },
       });
+      bot.reset();
       if (error) throw error;
       setState("sent");
     } catch (err) {
@@ -112,6 +124,10 @@ function SignInForm() {
                     {state === "sending" ? "Sending…" : "Email me a link"}
                     {state === "sending" ? <Spinner /> : <ArrowDisc size={36} />}
                   </button>
+                  {bot.widget}
+                  <p className="mt-4 text-center text-[12px] text-faint">
+                    By signing in you agree to the <Link href="/terms" className="underline">terms</Link> and <Link href="/privacy" className="underline">privacy</Link> notes.
+                  </p>
                 </form>
                 <p className="mt-6 rounded-2xl bg-paper px-4 py-3 text-[13px] leading-relaxed text-muted">
                   Homeowners: sign in with the email the job was sent to and it will be waiting for you.

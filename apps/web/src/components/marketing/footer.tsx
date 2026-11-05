@@ -6,7 +6,7 @@ const COLS = [
   { title: "Pages", links: [["Home", "/"], ["How it works", "/how-it-works"], ["Homeowners", "/homeowners"], ["Tradespeople", "/tradespeople"], ["Security", "/security"], ["Accuracy", "/accuracy"]] },
   { title: "Product", links: [["Try the demo job", "/try"], ["Watch the walkthrough", "/demo"], ["Start a job", "/jobs/new"], ["Your jobs", "/jobs"], ["Sign in", "/sign-in"]] },
   { title: "Money rules", links: [["Held by PayPal", "/how-it-works#rules"], ["Proof checks", "/security#checks"], ["Disputes", "/tradespeople#questions"]] },
-  { title: "Source", links: [["GitHub", "https://github.com/linoxbt/Trace"], ["MIT licence", "https://github.com/linoxbt/Trace"]] },
+  { title: "Source", links: [["GitHub", "https://github.com/linoxbt/Trace"], ["MIT licence", "https://github.com/linoxbt/Trace"], ["Terms", "/terms"], ["Privacy", "/privacy"]] },
 ];
 
 export function Footer() {

@@ -189,6 +189,7 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 | `PAYPAL_HTTP` (optional: `fetch` switches orders and payments back to the hand-written client) | Functions |
 | `DEMO_BUYER_EMAIL`, `DEMO_BUYER_PASSWORD` (optional: a throwaway PayPal sandbox personal account shown to judges on demo jobs; sandbox only) | Functions |
 | `DATABASE_CA_CERT`, `VERIFIER_MODEL` (optional) | Functions |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (optional: Cloudflare Turnstile on sign-ins; set its secret in Supabase, Authentication, Attack Protection) | Builds |
 | `RESEND_API_KEY`, `MAIL_FROM` (optional: emails the client their job link and the named person their sign-off link, from a domain verified with Resend; without them the tradesperson shares the links) | Functions (key as secret) |
 | `EVAL_STEP_SECRET` (optional: signs the worker's calls to the eval step; falls back to the PayPal secret) | Functions (mark as secret) |
 

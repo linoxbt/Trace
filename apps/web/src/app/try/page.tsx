@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 import { Logo } from "@/components/logo";
 import { api } from "@/lib/api";
 import { supabaseBrowser } from "@/lib/supabase-browser";
+import { useTurnstile } from "@/components/turnstile";
 
 const STEPS = ["Starting a guest session", "Copying the demo job", "Opening it"];
 
@@ -17,16 +18,20 @@ export default function TryDemo() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const started = useRef(false);
+  // A guest session is a sign-in too: with the bot check on, it waits for its token.
+  const bot = useTurnstile();
 
   useEffect(() => {
-    if (started.current) return;
+    if (bot.error) setError(bot.error);
+    if (started.current || bot.token === null) return;
     started.current = true;
+    const captchaToken = bot.token;
     (async () => {
       try {
         const sb = supabaseBrowser();
         const { data } = await sb.auth.getSession();
         if (!data.session) {
-          const { error: e } = await sb.auth.signInAnonymously();
+          const { error: e } = await sb.auth.signInAnonymously(captchaToken ? { options: { captchaToken } } : undefined);
           if (e) throw new Error(/disabled/i.test(e.message) ? "Guest sessions are switched off on this server, so the demo needs an email sign-in for now." : e.message);
         }
         setStep(1);
@@ -37,7 +42,7 @@ export default function TryDemo() {
         setError(e instanceof Error ? e.message : String(e));
       }
     })();
-  }, [router]);
+  }, [router, bot.token, bot.error]);
 
   return (
     <main className="grid min-h-dvh place-items-center bg-[#f6f6f9] px-4">
@@ -67,6 +72,7 @@ export default function TryDemo() {
             ))}
           </ol>
         )}
+        {bot.widget}
       </div>
     </main>
   );
