@@ -25,7 +25,7 @@ import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { cropRegion, dHash, maxCellDiff, normalizePhoto } from "./image.ts";
 import { maskText } from "./inject/mask.ts";
-import { assertDemoBudget } from "./demo-budget.ts";
+import { spendBudget } from "./budget.ts";
 import { photoPath } from "./storage.ts";
 
 const PROVABLE_JOB = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
@@ -82,7 +82,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   if (job.trades_id !== input.tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
   if (line.proof_type !== "photo") throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not a photo`);
-  if (job.demo) await assertDemoBudget(e, input.tradesId);
+  await spendBudget(e, input.tradesId, job.demo ? "demo_proof" : "proof", { guest: job.demo });
   const now = e.now();
 
   if (input.sample) {

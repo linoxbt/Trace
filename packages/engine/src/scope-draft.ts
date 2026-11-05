@@ -9,6 +9,7 @@ import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
 import { Acceptance, categoryOf, parseProofSpec, PROOF_TYPES, type ProofSpec, type ProofType } from "@trace/core";
 import * as store from "@trace/db";
+import { spendBudget } from "./budget.ts";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { MAX_LINES } from "./jobs.ts";
@@ -163,6 +164,7 @@ export async function draftScope(e: Engine, jobId: string, tradesId: string, des
   const photos = await e.db.query<store.PhotoRow>("select * from photos where job_id = $1 and kind = 'before' order by taken_at limit 6", [jobId]);
   const text = description.trim();
   if (!photos.rows.length && text.length < 10) throw badRequest("nothing_to_draft", "take a before-photo or describe the job first");
+  await spendBudget(e, tradesId, "scope_draft");
   const bytes = await Promise.all(photos.rows.map((p) => e.storage.get(p.storage_path)));
   const out = await e.scopeDrafter.draft({ trade: categoryOf(job.category).label, currency: job.currency, description: text, photos: bytes });
   if (!out.lines.length) throw new EngineError("empty_draft", "the draft had no usable lines; add more detail and try again", 422);

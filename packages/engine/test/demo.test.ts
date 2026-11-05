@@ -2,12 +2,14 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as store from "@trace/db";
 import { TEST_DATABASE_URL } from "@trace/db/testing";
 import {
-  assertDemoBudget,
   authorizeJob,
   createDemoJob,
   createOrder,
-  DEMO_MODEL_CALLS_PER_HOUR,
+  demoJobFor,
+  GUEST_HOURLY_LIMIT,
   HISTORY_ADDRESS,
+  HOURLY_LIMITS,
+  spendBudget,
   submitProof,
   type DemoAssets,
 } from "../src/index.ts";
@@ -64,15 +66,41 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: judge mode demo job", () => {
     }
   });
 
-  it(`caps a visitor at ${DEMO_MODEL_CALLS_PER_HOUR} AI checks an hour`, async () => {
+  it(`caps a visitor at ${HOURLY_LIMITS.demo_proof} demo AI checks an hour, reserved before the call`, async () => {
     const me = await makeUser(e.db, "judge");
     const job = await createDemoJob(e, { id: me, email: null }, assets);
-    const line = (await store.getLines(e.db, job.id))[0]!;
-    const photo = (await store.beforePhotoFor(e.db, line))!;
-    await assertDemoBudget(e, me);
-    for (let i = 0; i < DEMO_MODEL_CALLS_PER_HOUR; i++) {
-      await e.db.query("insert into verdicts (line_id, photo_id, observation, verdict, model) values ($1, $2, '{}', 'VERIFIED', 'scripted')", [line.id, photo.id]);
-    }
-    await expect(assertDemoBudget(e, me)).rejects.toMatchObject({ code: "demo_limit", status: 429 });
+    const { orderId } = await createOrder(e, job.id, me);
+    e.paypal.approve(orderId);
+    await authorizeJob(e, job.id, orderId, me);
+    const l1 = (await store.getLines(e.db, job.id))[0]!;
+    // Requests sent together can't all slip under the limit: each reserves first.
+    const tries = await Promise.allSettled(Array.from({ length: HOURLY_LIMITS.demo_proof + 5 }, () => spendBudget(e, me, "demo_proof", { guest: true })));
+    expect(tries.filter((t) => t.status === "fulfilled")).toHaveLength(HOURLY_LIMITS.demo_proof);
+    const calls = e.verifier.calls.length;
+    await expect(submitProof(e, { lineId: l1.id, tradesId: me, photo: await testPhoto(), deviceId: null, gps: null, sample: true })).rejects.toMatchObject({ code: "rate_limited", status: 429 });
+    expect(e.verifier.calls.length).toBe(calls);
+  });
+
+  it("all guests together share one hourly allowance", async () => {
+    await e.db.query("insert into model_usage (user_id, kind, guest) select gen_random_uuid(), 'demo_proof', true from generate_series(1, $1)", [GUEST_HOURLY_LIMIT]);
+    const fresh = await makeUser(e.db, "new-guest");
+    await expect(spendBudget(e, fresh, "demo_proof", { guest: true })).rejects.toMatchObject({ code: "rate_limited" });
+    // A signed-in user's own work isn't held back by the demo's traffic.
+    await expect(spendBudget(e, fresh, "proof")).resolves.toBeUndefined();
+  });
+
+  it("opening the demo again returns the visitor's open demo job instead of making another", async () => {
+    const me = await makeUser(e.db, "judge2");
+    let loads = 0;
+    const load = async () => {
+      loads += 1;
+      return assets;
+    };
+    const first = await demoJobFor(e, { id: me, email: null }, load);
+    const again = await demoJobFor(e, { id: me, email: null }, load);
+    expect(again.id).toBe(first.id);
+    expect(loads).toBe(1);
+    const open = await e.db.query<{ n: number }>("select count(*)::int as n from jobs where demo and trades_id = $1 and address <> $2", [me, HISTORY_ADDRESS]);
+    expect(open.rows[0]!.n).toBe(1);
   });
 });

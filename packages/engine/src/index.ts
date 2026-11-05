@@ -9,6 +9,7 @@ export * from "./proof-types.ts";
 export * from "./money.ts";
 export * from "./payee.ts";
 export * from "./demo.ts";
+export * from "./budget.ts";
 export * from "./disputes.ts";
 export * from "./scope-draft.ts";
 export * from "./change-orders.ts";

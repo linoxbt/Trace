@@ -16,10 +16,10 @@ import {
   type MoneyActionType,
 } from "@trace/core";
 import * as store from "@trace/db";
+import { spendBudget } from "./budget.ts";
 import type { Engine } from "./deps.ts";
 import { addBeforePhoto } from "./proof.ts";
 import { createJob, saveScope, sendScope } from "./jobs.ts";
-export { assertDemoBudget, DEMO_MODEL_CALLS_PER_HOUR } from "./demo-budget.ts";
 
 export const DEMO_ADDRESS = "12 Admiralty Way, Lekki · demo";
 export const DEMO_ANCHOR = { lat: 6.4474, lng: 3.4723, accuracyM: 8 };
@@ -57,6 +57,21 @@ export async function createDemoJob(e: Engine, user: { id: string; email: string
   await sendScope(e, job.id, user.id);
   await seedHistory(e, user.id, email);
   return store.mustGetJob(e.db, job.id);
+}
+
+/**
+ * The visitor's demo job: the one they already have open, or a new one.
+ * Opening /try again doesn't pile up jobs (each costs model calls and
+ * stored photos), and new ones are capped per visitor and across guests.
+ */
+export async function demoJobFor(e: Engine, user: { id: string; email: string | null }, assets: () => Promise<DemoAssets>): Promise<store.JobRow> {
+  const { rows } = await e.db.query<store.JobRow>(
+    "select * from jobs where demo and trades_id = $1 and address <> $2 and status not in ('COMPLETED', 'CLOSED_VOIDED') order by created_at desc limit 1",
+    [user.id, HISTORY_ADDRESS],
+  );
+  if (rows[0]) return rows[0];
+  await spendBudget(e, user.id, "demo_job", { guest: true });
+  return createDemoJob(e, user, await assets());
 }
 
 // ---------- the sample history ----------

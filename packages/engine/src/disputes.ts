@@ -13,6 +13,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFP
 import { z } from "zod";
 import { formatMoney, type IntegrityReport } from "@trace/core";
 import * as store from "@trace/db";
+import { spendBudget } from "./budget.ts";
 import type { Engine } from "./deps.ts";
 import { EngineError, forbidden } from "./errors.ts";
 import { guardedFileEvidence, type GuardVerdict } from "./guard/execute.ts";
@@ -437,6 +438,7 @@ export async function draftDispute(e: Engine, disputeId: string, tradesId: strin
   const ev = await loadEvidence(e, disputeId);
   let notes: string;
   let by = "template";
+  if (drafter) await spendBudget(e, tradesId, "dispute_draft", { guest: job.demo });
   if (drafter) {
     try {
       notes = await drafter.draft(ev);

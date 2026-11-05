@@ -36,7 +36,7 @@ import {
   type Verdict,
 } from "@trace/core";
 import * as store from "@trace/db";
-import { assertDemoBudget } from "./demo-budget.ts";
+import { spendBudget } from "./budget.ts";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { dHash, maxCellDiff, normalizePhoto } from "./image.ts";
@@ -63,7 +63,8 @@ async function begin(e: Engine, lineId: string, tradesId: string, type: store.Li
   if (job.trades_id !== tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
   if (line.proof_type !== type) throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not ${type}`);
-  if (job.demo) await assertDemoBudget(e, tradesId);
+  // A sign-off request makes no model call; every other proof type does.
+  if (type !== "attestation") await spendBudget(e, tradesId, job.demo ? "demo_proof" : "proof", { guest: job.demo });
   const camera = type === "video" || type === "reading";
   if (camera && !opts.sample) {
     if (line.status !== "PROVING") throw conflict("not_proving", "open the camera on this line first");

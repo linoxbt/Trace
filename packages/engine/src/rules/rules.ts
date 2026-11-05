@@ -4,6 +4,7 @@
 
 import { backtest, PRESET_RULES, Rule, ruleProblems, type BacktestChange } from "@trace/core";
 import * as store from "@trace/db";
+import { spendBudget } from "../budget.ts";
 import type { Engine } from "../deps.ts";
 import { badRequest, EngineError, forbidden } from "../errors.ts";
 import type { CompiledRule } from "./compile.ts";
@@ -67,6 +68,7 @@ export async function compileRule(e: Engine, userId: string, input: RuleTarget &
   if (!e.compiler) throw new EngineError("compiler_unavailable", "the rule writer isn't set up yet", 503);
   const english = cleanEnglish(input.english);
   await checkTarget(e, userId, input);
+  await spendBudget(e, userId, "rule_compile");
   let compiled;
   try {
     compiled = await e.compiler.compile(english, input.side);
