@@ -57,6 +57,9 @@ interface Ctx {
 }
 
 /** Load a line to prove with `type`, check who and when, and move it to PROVING. */
+/** Checks a document or link proof gets per line. */
+export const MAX_FILE_PROOF_TRIES = 5;
+
 async function begin(e: Engine, lineId: string, tradesId: string, type: store.LineRow["proof_type"], opts: { token?: string; sample?: boolean } = {}): Promise<Ctx> {
   const line = await store.getLine(e.db, lineId);
   if (!line) throw new EngineError("not_found", "line not found", 404);
@@ -64,6 +67,12 @@ async function begin(e: Engine, lineId: string, tradesId: string, type: store.Li
   if (job.trades_id !== tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
   if (line.proof_type !== type) throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not ${type}`);
+  // A document or link can be sent again without going back to the site: cap the tries, so a line
+  // can't be fished until the checker gives in. After that the client looks at it.
+  if ((type === "document" || type === "deliverable") && !opts.sample) {
+    const tries = (await e.db.query<{ n: number }>("select count(*)::int as n from verdicts where line_id = $1", [line.id])).rows[0]!.n;
+    if (tries >= MAX_FILE_PROOF_TRIES) throw conflict("too_many_tries", `${line.code} has been checked ${tries} times; the client reviews it from here`);
+  }
   // A sign-off request makes no model call; every other proof type does.
   if (type !== "attestation") await spendBudget(e, tradesId, job.demo ? "demo_proof" : "proof", { guest: job.demo });
   const camera = type === "video" || type === "reading";
@@ -228,9 +237,23 @@ export async function submitVideoProof(
   const sample = !!input.sample;
   const first = await cameraPhoto(e, c, input.frames[0]!.bytes, { gps: input.gps, deviceId: input.deviceId, token: input.token, sample });
   const frames = [{ atS: input.frames[0]!.atS, jpeg: first.jpeg as Uint8Array }];
+  const firstHash = await dHash(first.jpeg);
+  const before = first.before;
+  const frameChecks: ProofCheck[] = [];
+  let still = true;
   for (const f of input.frames.slice(1, VIDEO_FRAMES)) {
     const jpeg = await normalizePhoto(f.bytes).catch(() => null);
     if (!jpeg) throw badRequest("bad_frame", "a frame of the clip couldn't be read");
+    // Every frame, not just the first: none may be another proof's image, and the clip has to move.
+    const hash = await dHash(jpeg);
+    if (hamming(hash, firstHash) > SAME_IMAGE_HAMMING) still = false;
+    const reused = await store.nearestOtherHamming(e.db, hash, [first.photo.id, ...(before ? [before.id] : [])], sample ? { jobId: c.job.id } : {});
+    if (reused !== null && reused <= SAME_IMAGE_HAMMING && !frameChecks.some((x) => x.name === "frame_reused")) {
+      frameChecks.push({ name: "frame_reused", result: "fail", detail: `the frame at ${f.atS.toFixed(1)} s is an image already used as proof` });
+    }
+    if (before && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING && !frameChecks.some((x) => x.name === "frame_is_before")) {
+      frameChecks.push({ name: "frame_is_before", result: "review", detail: `the frame at ${f.atS.toFixed(1)} s matches the before-photo` });
+    }
     const id = randomUUID();
     await e.storage.put(proofPath(c.job.id, id, "jpg"), jpeg, "image/jpeg");
     await store.insertProofItem(e.db, { jobId: c.job.id, lineId: c.line.id, kind: "video_frame", storagePath: proofPath(c.job.id, id, "jpg"), sha256: sha256(jpeg), meta: { at_s: f.atS }, sample });
@@ -241,15 +264,16 @@ export async function submitVideoProof(
       ? { name: "clip_length", result: "pass", detail: `${input.durationS.toFixed(1)} s clip` }
       : { name: "clip_length", result: "fail", detail: `clips run ${CLIP_MIN_S} to ${CLIP_MAX_S} seconds; this one is ${input.durationS.toFixed(1)} s` };
   const enough: ProofCheck[] = frames.length >= 4 ? [] : [{ name: "clip_length", result: "fail", detail: "too few frames from the clip" }];
-  let integrity = proofIntegrity([...first.checks, length, ...enough], { sample });
+  if (frames.length > 1 && still) frameChecks.push({ name: "clip_moves", result: "review", detail: "every frame is the same image: this may be a still photo, not a clip" });
+  let integrity = proofIntegrity([...first.checks, length, ...enough, ...frameChecks], { sample });
   let obs: ProofObservation | null = null;
   let excerpt: string | null = null;
   let decision: { verdict: Verdict; reasons: string[] };
   if (integrity.status === "fail") decision = { verdict: "FAILED", reasons: integrity.checks.filter((x) => x.result === "fail").map((x) => x.detail) };
   else {
-    const before = first.before ? await e.storage.get(first.before.storage_path) : null;
+    const beforeBytes = before ? await e.storage.get(before.storage_path) : null;
     const [o, scanned] = await Promise.all([
-      inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "video", spec: c.line.proof_spec, before, frames }),
+      inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "video", spec: c.line.proof_spec, before: beforeBytes, frames }),
       scanProof(e, { images: frames.map((f) => f.jpeg) }),
     ]);
     obs = o;

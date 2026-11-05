@@ -190,17 +190,36 @@ export function evidenceBrief(ev: Evidence): string {
   ].join("\n");
 }
 
+/** How a line was proved, in the words its proof type calls for. */
+function provedBy(l: LineEvidence): string {
+  const where = l.proof?.integrity?.distanceM != null ? `, ${l.proof.integrity.distanceM} m from the job` : "";
+  const note = l.proofNote ? ` (${l.proofNote})` : "";
+  switch (l.proofType) {
+    case "photo":
+      return l.proof ? `Proved by a photo taken ${when(l.proof.takenAt)}${where}` : `Proved by a photo${note}`;
+    case "video":
+      return l.proof ? `Proved by a video recorded ${when(l.proof.takenAt)}${where}` : `Proved by a video${note}`;
+    case "reading":
+      return l.proof ? `Proved by a photo of the reading taken ${when(l.proof.takenAt)}${where}` : `Proved by a meter reading${note}`;
+    case "document":
+      return `Proved by a document${note}`;
+    case "deliverable":
+      return `Proved by the delivered work${note}`;
+    case "attestation":
+      return `Confirmed by a named sign-off${note}`;
+    default:
+      return `Proved${note}`;
+  }
+}
+
 /** When no model is configured: the same facts, in a fixed order. */
 export function templateNotes(ev: Evidence): string {
   const paid = ev.lines.filter((l) => l.approvedAt);
   const parts = [
     `The client says ${REASON_WORDS[ev.dispute.reason ?? ""] ?? "there is a problem with the work"}. The record shows otherwise.`,
     `The scope was agreed line by line before any money moved, and the client authorized ${formatMoney(ev.heldCents)} on ${when(ev.authorizedAt)}.`,
-    ...paid.map(
-      (l) =>
-        `${l.code} ${l.title}: agreed "${l.criterion}". Proved by a photo taken ${when(l.proof?.takenAt ?? null)}${l.proof?.integrity?.distanceM != null ? `, ${l.proof.integrity.distanceM} m from the job` : ""}; verdict ${l.verdict?.verdict ?? "none"}; approved ${when(l.approvedAt)} by the ${l.approvedBy}.`,
-    ),
-    "Each payment covered only lines that were proved and approved. Photos, integrity checks and timestamps are in the attached evidence pack.",
+    ...paid.map((l) => `${l.code} ${l.title}: agreed "${l.criterion}". ${provedBy(l)}; verdict ${l.verdict?.verdict ?? "none"}; approved ${when(l.approvedAt)} by the ${l.approvedBy}.`),
+    "Each payment covered only lines that were proved and approved. The proof, its integrity checks and timestamps are in the attached evidence pack.",
   ];
   return parts.join("\n").slice(0, 2000);
 }

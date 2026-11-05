@@ -16,7 +16,6 @@ import type {
 } from "./types.ts";
 
 export const SANDBOX_BASE = "https://api-m.sandbox.paypal.com";
-export const LIVE_BASE = "https://api-m.paypal.com";
 
 /**
  * What a tradesperson lets Trace do on their PayPal account. These must match

@@ -6,8 +6,9 @@
 
 [build]
   base = "apps/web"
-  # Migrations run when the build can reach the database.
-  command = "if [ -n \"$DATABASE_URL\" ]; then pnpm --workspace-root db:migrate || echo 'WARNING: migrations not applied (database unreachable from the build)'; fi && pnpm build:tick && pnpm build"
+  # Migrations aren't run here: the build can't reach the database. The
+  # scheduled function applies them on its first run after each deploy.
+  command = "pnpm build:tick && pnpm build"
   publish = ".next"
 
 [build.environment]
@@ -24,6 +25,7 @@
   schedule = "* * * * *" # every minute, UTC
 
 # Sites created through the API don't get the Next.js runtime added
-# automatically, so it is named here. Netlify installs its current version.
+# automatically, so it is named here. Its version is pinned in apps/web's
+# devDependencies, so a new release can't change a build unannounced.
 [[plugins]]
   package = "@netlify/plugin-nextjs"

@@ -1,6 +1,5 @@
 // Flows A and B: create the job, freeze the scope, and authorize the hold.
 
-import { randomUUID } from "node:crypto";
 import {
   Acceptance,
   isJobCategory,
@@ -265,10 +264,6 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
     });
     return row;
   });
-}
-
-export function newRequestId(prefix: string): string {
-  return `${prefix}-${randomUUID()}`;
 }
 
 /**

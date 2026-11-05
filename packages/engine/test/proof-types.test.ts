@@ -15,6 +15,7 @@ import {
   submitDocumentProof,
   submitReadingProof,
   submitVideoProof,
+  MAX_FILE_PROOF_TRIES,
   type Fetched,
 } from "../src/index.ts";
 import { makeUser, testEngine, testPhoto, type TestEngine } from "../src/testing.ts";
@@ -100,6 +101,20 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof types", () => {
     expect(short).toMatchObject({ verdict: "FAILED", reasons: expect.arrayContaining([expect.stringContaining("clips run 5 to 20 seconds")]) });
   });
 
+  it("video: checks every frame, not just the first", async () => {
+    // A still photo sent eight times isn't a clip.
+    const one = await testPhoto(760);
+    const still = await submitVideoProof(e, { lineId: h.lines.L1!.id, tradesId: h.trades, frames: [0, 1, 2, 3, 4, 5, 6, 7].map((i) => ({ atS: i, bytes: one })), durationS: 8, deviceId: DEVICE, gps: ANCHOR, token: await token("L1") });
+    expect(still.verdict).toBe("NEEDS_REVIEW");
+    expect(still.integrity.checks.find((c) => c.name === "clip_moves")?.result).toBe("review");
+
+    // A later frame that is an image already used as proof fails the clip.
+    const h2 = await heldJob(e, { lines: LINES as never });
+    const frames = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(async (i) => ({ atS: i, bytes: i === 3 ? one : await testPhoto(770 + i) })));
+    const reused = await submitVideoProof(e, { lineId: h2.lines.L1!.id, tradesId: h2.trades, frames, durationS: 8, deviceId: DEVICE, gps: ANCHOR, token: (await issueCaptureToken(e, h2.lines.L1!.id, h2.trades, DEVICE)).token });
+    expect(reused).toMatchObject({ verdict: "FAILED", reasons: expect.arrayContaining([expect.stringContaining("frame at 3.0 s is an image already used")]) });
+  });
+
   it("reading: code compares the value read off the gauge with the target", async () => {
     e.verifier.proofScript.set("L2", { extracted: { value: 1.2, unit: "bar", vendor: null, date: null, total_cents: null, items: [] } });
     expect((await submitReadingProof(e, { lineId: h.lines.L2!.id, tradesId: h.trades, photo: await testPhoto(), enteredValue: 1.2, deviceId: DEVICE, gps: ANCHOR, token: await token("L2") })).verdict).toBe("VERIFIED");
@@ -134,6 +149,14 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof types", () => {
     const again = await submitDocumentProof(e, { lineId: h2.lines.L3!.id, tradesId: h2.trades, bytes: pdf("same"), mime: "application/pdf", name: "a.pdf" });
     expect(again).toMatchObject({ verdict: "FAILED", reasons: ["this document was already used as proof"] });
     expect(e.verifier.proofCalls.length).toBe(calls);
+  });
+
+  it("document: a line takes a few tries, not endless ones", async () => {
+    e.verifier.proofScript.set("L3", { extracted: { value: null, unit: null, vendor: "X", date: today(), total_cents: 999_999, items: [] } });
+    for (let i = 0; i < MAX_FILE_PROOF_TRIES; i++) {
+      expect((await submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf(`try ${i}`), mime: "application/pdf", name: "r.pdf" })).verdict).toBe("FAILED");
+    }
+    await expect(submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf("one more"), mime: "application/pdf", name: "r.pdf" })).rejects.toMatchObject({ code: "too_many_tries" });
   });
 
   it("document: text addressed to the reviewer sends the line to the client", async () => {

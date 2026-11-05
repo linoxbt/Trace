@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import type { LedgerEntry } from "@/server/app-data";
-import { money } from "@/lib/format";
-import { dayOf } from "./activity";
+import { dayOf, money } from "@/lib/format";
+import { useZone } from "@/lib/use-zone";
 import { IconIn, IconLock, IconOut, IconUndo, IconX } from "./icons";
 import { Segmented } from "./segmented";
 import { DayLabel, IconCircle, Row, type Tone } from "./ui";
@@ -39,10 +39,11 @@ function describe(l: LedgerEntry): { title: string; tone: Tone; icon: React.Reac
 
 export function PaymentsList({ ledger }: { ledger: LedgerEntry[] }) {
   const [f, setF] = useState<"all" | "release" | "hold">("all");
+  const zone = useZone();
   const shown = f === "all" ? ledger : ledger.filter((l) => l.kind === f);
   const groups: { day: string; items: LedgerEntry[] }[] = [];
   for (const l of shown) {
-    const d = dayOf(l.at);
+    const d = dayOf(l.at, zone);
     const last = groups.at(-1);
     if (last && last.day === d) last.items.push(l);
     else groups.push({ day: d, items: [l] });

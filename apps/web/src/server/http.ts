@@ -65,10 +65,42 @@ export async function body<T extends z.ZodType>(req: NextRequest, schema: T): Pr
 }
 
 export const MAX_PHOTO_BYTES = 12 * 1024 * 1024;
+/** The largest upload body read at all: eight video frames, or one file, with room for the form. */
+export const MAX_FORM_BYTES = 24 * 1024 * 1024;
+
+/**
+ * A multipart body, read only up to `max` bytes: a body declared or found to be
+ * bigger is refused before it is held in memory. Null when it isn't a form.
+ */
+export async function readForm(req: NextRequest, max = MAX_FORM_BYTES): Promise<FormData | null> {
+  const declared = Number(req.headers.get("content-length") ?? NaN);
+  if (Number.isFinite(declared) && declared > max) throw new HttpError(413, "too_big", "that upload is too large");
+  if (!req.body) return null;
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new HttpError(413, "too_big", "that upload is too large");
+    }
+    chunks.push(value);
+  }
+  const body = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) {
+    body.set(c, at);
+    at += c.byteLength;
+  }
+  return new Response(body, { headers: { "content-type": req.headers.get("content-type") ?? "" } }).formData().catch(() => null);
+}
 
 /** A photo upload: multipart with a `photo` file plus optional GPS and device fields. */
 export async function photoForm(req: NextRequest) {
-  const form = await req.formData().catch(() => null);
+  const form = await readForm(req, MAX_PHOTO_BYTES + 64 * 1024);
   if (!form) throw new HttpError(400, "bad_form", "send the photo as multipart form data");
   return photoFromForm(form);
 }

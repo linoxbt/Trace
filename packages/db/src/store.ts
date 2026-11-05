@@ -695,14 +695,6 @@ export async function sha256UsedElsewhere(q: Queryable, sha256: string, lineId: 
   return (rowCount ?? 0) > 0;
 }
 
-export async function latestProofItems(q: Queryable, lineId: string): Promise<ProofItemRow[]> {
-  const { rows } = await q.query<ProofItemRow>(
-    `select * from proof_items where line_id = $1 and created_at >= coalesce((select max(created_at) from proof_items where line_id = $1 and kind <> 'video_frame'), '-infinity'::timestamptz) - interval '1 minute' order by created_at, id`,
-    [lineId],
-  );
-  return rows;
-}
-
 export interface AttestationRow {
   id: string;
   line_id: string;

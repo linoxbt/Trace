@@ -7,7 +7,8 @@
 
 import { useEffect, useState } from "react";
 import type { JobView } from "@/server/view";
-import { money, when } from "@/lib/format";
+import { money } from "@/lib/format";
+import { When } from "./when";
 import { wordsFor, type Words } from "@/lib/words";
 
 type Guard = JobView["guard"];
@@ -55,7 +56,7 @@ export function GuardBadge({ guard, demo }: { guard: Guard; demo: boolean }) {
           </p>
           {last && (
             <div className="mt-4 rounded-2xl bg-paper p-3.5">
-              <div className="text-[12px] font-medium uppercase tracking-[0.1em] text-faint">Last decision · {when(last.at)}</div>
+              <div className="text-[12px] font-medium uppercase tracking-[0.1em] text-faint">Last decision · <When iso={last.at} /></div>
               <DecisionLine d={last} />
             </div>
           )}

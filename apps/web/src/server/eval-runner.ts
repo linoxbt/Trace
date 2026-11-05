@@ -4,7 +4,8 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 export { evalStep, evalViews, type EvalView } from "@trace/eval/runner";
 
 // The step endpoint's key, derived from a secret the scheduled worker and the
-// site already share, so nobody else can spend model calls on the evals.
+// site share (EVAL_STEP_SECRET, its own; PayPal's client secret on sites set up
+// before it existed), so nobody else can spend model calls on the evals.
 
 export function evalStepKey(secret: string): string {
   return createHmac("sha256", secret).update("trace-eval-step").digest("hex");

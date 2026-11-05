@@ -12,7 +12,7 @@ export const maxDuration = 60;
  * the PayPal secret both already hold; nobody else can spend model calls here.
  */
 export async function POST(req: NextRequest) {
-  if (!evalStepAllowed(env().PAYPAL_CLIENT_SECRET, req.headers.get("x-trace-eval"))) {
+  if (!evalStepAllowed(env().EVAL_STEP_SECRET ?? env().PAYPAL_CLIENT_SECRET, req.headers.get("x-trace-eval"))) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const loadAsset = async (path: string) => {

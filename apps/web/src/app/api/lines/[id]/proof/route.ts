@@ -1,7 +1,7 @@
 import { getLine } from "@trace/db";
 import { submitDeliverableProof, submitDocumentProof, submitProof, submitReadingProof, submitVideoProof } from "@trace/engine";
 import { engine } from "@/server/engine";
-import { formFields, HttpError, photoFromForm, route } from "@/server/http";
+import { formFields, HttpError, MAX_PHOTO_BYTES, photoFromForm, readForm, route } from "@/server/http";
 
 export const maxDuration = 60;
 
@@ -20,7 +20,7 @@ export const POST = route<{ id: string }>(async (req, { params, user }) => {
   const e = engine();
   const line = await getLine(e.db, params.id);
   if (!line) throw new HttpError(404, "not_found", "line not found");
-  const form = await req.formData().catch(() => null);
+  const form = await readForm(req);
   if (!form) throw new HttpError(400, "bad_form", "send the proof as multipart form data");
   const f = formFields(form);
   const sample = form.get("sample") === "true";
@@ -41,6 +41,7 @@ export const POST = route<{ id: string }>(async (req, { params, user }) => {
     }
     case "video": {
       const frames = form.getAll("frame").filter((x): x is File => x instanceof File).slice(0, 8);
+      if (frames.some((fr) => fr.size > MAX_PHOTO_BYTES)) throw new HttpError(413, "photo_too_big", "each video frame is limited to 12 MB");
       const times = JSON.parse(String(form.get("times") ?? "[]")) as unknown;
       const at = Array.isArray(times) ? times.map(Number) : [];
       r = await submitVideoProof(e, {

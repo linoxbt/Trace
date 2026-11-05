@@ -10,7 +10,7 @@ export type CheckResult = "pass" | "review" | "fail" | "skipped";
 
 export interface IntegrityCheck {
   /** Photo checks; other proof types add their own (file type, clip length, URL status, ...). */
-  name: "capture_token" | "geofence" | "no_change" | "reuse" | "device" | "file_type" | "duplicate_file" | "clip_length" | "url_status" | "document_date" | "document_total" | "reading" | "instructions" | "signature";
+  name: "capture_token" | "geofence" | "no_change" | "reuse" | "device" | "file_type" | "duplicate_file" | "clip_length" | "url_status" | "document_date" | "document_total" | "reading" | "instructions" | "signature" | "frame_reused" | "frame_is_before" | "clip_moves";
   result: CheckResult;
   detail: string;
 }

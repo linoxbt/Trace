@@ -10,6 +10,8 @@ const Env = z.object({
   // PayPal steps themselves refuse until all three are set.
   PAYPAL_CLIENT_ID: z.string().min(1).optional(),
   PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
+  /** Signs the scheduled worker's calls to /api/eval/step. */
+  EVAL_STEP_SECRET: z.string().min(32).optional(),
   /**
    * A PayPal sandbox personal (buyer) account for judges, shown on demo jobs
    * next to the hold button. Sandbox only: never shown against live PayPal.

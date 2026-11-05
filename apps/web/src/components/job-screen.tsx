@@ -13,7 +13,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { JobView } from "@/server/view";
 import { api, deviceId } from "@/lib/api";
 import { useLiveEvents } from "@/lib/live";
-import { money, when } from "@/lib/format";
+import { money } from "@/lib/format";
+import { When } from "./when";
 import { MoneyCard } from "./money-bar";
 import { LINE_RAIL, StatusChip } from "./status";
 import { HoldButton } from "./hold-button";
@@ -592,7 +593,7 @@ function LineCard(props: {
 
         {l.reviewDueAt && (l.status === "VERIFIED" || l.status === "NEEDS_REVIEW") && (
           <p className="mt-3 text-[12.5px] text-muted">
-            {l.status === "VERIFIED" ? "Releases on its own" : `Waits for the ${props.client}`} · review until <span className="num">{when(l.reviewDueAt)}</span>
+            {l.status === "VERIFIED" ? "Releases on its own" : `Waits for the ${props.client}`} · review until <span className="num"><When iso={l.reviewDueAt} /></span>
           </p>
         )}
 
@@ -788,7 +789,7 @@ function ProofDetails({ line: l }: { line: Line }) {
         <div className="rounded-2xl bg-paper px-3.5 py-2.5 text-[13.5px]">
           <div className="text-ink-2">&ldquo;{(p.spec as { statement: string }).statement}&rdquo;</div>
           <div className="mt-1 text-[12.5px] text-muted">
-            {p.attestation?.signedName ? `Signed by ${p.attestation.signedName} on ${when(p.attestation.signedAt!)}` : `To be signed by ${(p.spec as { email: string }).email}`}
+            {p.attestation?.signedName ? <>Signed by {p.attestation.signedName} on <When iso={p.attestation.signedAt!} /></> : `To be signed by ${(p.spec as { email: string }).email}`}
           </div>
         </div>
       )}
@@ -1032,7 +1033,7 @@ function Timeline({ events }: { events: JobView["events"] }) {
                 <div className="mt-0.5 text-[12.5px] leading-snug text-muted">{(e.data!.reasons as string[]).slice(1).join(" ")}</div>
               )}
               <div className="num mt-0.5 text-[11.5px] text-faint">
-                {when(e.at)} · {e.actor}
+                <When iso={e.at} /> · {e.actor}
               </div>
             </div>
           </li>

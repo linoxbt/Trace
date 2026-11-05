@@ -65,7 +65,7 @@ export default async () => {
   } finally {
     await db.end();
   }
-  await stepEvals(env("URL"), env("PAYPAL_CLIENT_SECRET")!);
+  await stepEvals(env("URL"), env("EVAL_STEP_SECRET") ?? env("PAYPAL_CLIENT_SECRET")!);
 };
 
 /**

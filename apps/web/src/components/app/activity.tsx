@@ -3,7 +3,9 @@
 import { useState } from "react";
 import type { ActivityItem } from "@/server/app-data";
 import { eventGroup, eventLabel } from "@/lib/events";
-import { money } from "@/lib/format";
+import { dayOf, money } from "@/lib/format";
+import { useZone } from "@/lib/use-zone";
+import { When } from "../when";
 import { IconCamera, IconDoc, IconShield, IconWallet } from "./icons";
 import { DayLabel, IconCircle, Row, type Tone } from "./ui";
 import { Segmented } from "./segmented";
@@ -36,21 +38,12 @@ function Icon({ e }: { e: ActivityItem }) {
   );
 }
 
-export function dayOf(iso: string): string {
-  const d = new Date(iso);
-  const same = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-  if (same(d, new Date())) return "Today";
-  if (same(d, new Date(Date.now() - 86400000))) return "Yesterday";
-  return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-}
-
-const time = (iso: string) => new Date(iso).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-
 /** Activity as a bank's transaction list: grouped by day, one row per event. */
 export function ActivityRows({ items }: { items: ActivityItem[] }) {
+  const zone = useZone();
   const groups: { day: string; items: ActivityItem[] }[] = [];
   for (const e of items) {
-    const d = dayOf(e.at);
+    const d = dayOf(e.at, zone);
     const last = groups.at(-1);
     if (last && last.day === d) last.items.push(e);
     else groups.push({ day: d, items: [e] });
@@ -72,7 +65,7 @@ export function ActivityRows({ items }: { items: ActivityItem[] }) {
                 sub={`${e.address} · ${e.actor}`}
                 value={showAmount ? money(cents!) : undefined}
                 valueTone={e.type === "CAPTURED" ? "green" : "ink"}
-                meta={time(e.at)}
+                meta={<When iso={e.at} only="time" />}
               />
             );
           })}

@@ -219,24 +219,6 @@ export function BigMarquee({ items, className = "" }: { items: string[]; classNa
   );
 }
 
-/** Small marquee of facts, kept for pages that want a quieter band. */
-export function Marquee({ items }: { items: string[] }) {
-  const row = [...items, ...items];
-  return (
-    <div className="marquee relative overflow-hidden py-5" aria-label={items.join(". ")}>
-      <div className="marquee-track flex w-max animate-marquee gap-4 whitespace-nowrap" aria-hidden>
-        {row.map((t, i) => (
-          <Chip key={i} dot={i % 3 === 1 ? "brass" : "violet"}>
-            {t}
-          </Chip>
-        ))}
-      </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-paper to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-24 bg-gradient-to-l from-paper to-transparent" />
-    </div>
-  );
-}
-
 /** Scattered dots that drift with the pointer: the hero's particles, at rest. */
 export function FloatDots({ count = 22, dark = false }: { count?: number; dark?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -335,19 +317,6 @@ export function Rings({ className = "absolute -right-40 -top-40 h-[560px] w-[560
         <circle cx="280" cy="80" r="16" fill="var(--color-brass)" />
       </g>
     </svg>
-  );
-}
-
-/** The logo's viewfinder corners, framing a stage. */
-export function Corners({ inset = 22, color = "rgba(255,255,255,0.45)" }: { inset?: number; color?: string }) {
-  const s = { position: "absolute" as const, width: 26, height: 26, borderColor: color };
-  return (
-    <div aria-hidden className="pointer-events-none absolute inset-0">
-      <span style={{ ...s, top: inset, left: inset, borderTop: "1.5px solid", borderLeft: "1.5px solid" }} />
-      <span style={{ ...s, top: inset, right: inset, borderTop: "1.5px solid", borderRight: "1.5px solid" }} />
-      <span style={{ ...s, bottom: inset, left: inset, borderBottom: "1.5px solid", borderLeft: "1.5px solid" }} />
-      <span style={{ ...s, bottom: inset, right: inset, borderBottom: "1.5px solid", borderRight: "1.5px solid" }} />
-    </div>
   );
 }
 

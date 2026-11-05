@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import { money } from "@/lib/format";
 import type { JobView } from "@/server/view";
 import { wordsFor } from "@/lib/words";
+import { releaseMessage } from "./guard";
 
 /** Both sides confirm the same lines to drop; then Trace makes the final capture or voids the rest. */
 export function CloseJob({ view, onDone }: { view: JobView; onDone: () => void }) {
@@ -21,8 +22,15 @@ export function CloseJob({ view, onDone }: { view: JobView; onDone: () => void }
     setBusy(true);
     setMessage("");
     try {
-      const r = await api<{ kind: string; for?: string }>(`/api/jobs/${view.job.id}/close`, { json: { dropLineIds: [...drop] } });
-      setMessage(r.kind === "waiting" ? `Confirmed. Waiting for the ${r.for} to confirm the same lines.` : "Closed.");
+      const r = await api<{ kind: string; for?: string; release?: unknown; voided?: boolean; reasons?: string[] }>(`/api/jobs/${view.job.id}/close`, { json: { dropLineIds: [...drop] } });
+      if (r.kind === "waiting") setMessage(`Confirmed. Waiting for the ${r.for} to confirm the same lines.`);
+      else {
+        // Say what the close actually did: a final payment that needs approval, or was refused, isn't "closed".
+        const rel = r.release as { kind?: string } | undefined;
+        const paid = rel && rel.kind !== "nothing" ? releaseMessage(rel, view.job.currency).text : null;
+        const parts = [paid, r.voided ? "The rest of the hold was released back to the client." : null, ...(r.reasons ?? [])].filter(Boolean);
+        setMessage(parts.length ? parts.join(" ") : "Closed.");
+      }
       onDone();
     } catch (e) {
       setMessage(e instanceof Error ? e.message : String(e));

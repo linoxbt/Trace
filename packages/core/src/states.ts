@@ -101,10 +101,6 @@ export function canLine(from: LineStatus, on: LineEvent): boolean {
   return LINE_MOVES.some((m) => m.on === on && m.from.includes(from));
 }
 
-export function isOpenJob(status: JobStatus): boolean {
-  return OPEN_JOB.includes(status);
-}
-
 /** A line is resolved once nothing more can happen to its money. */
 export function isResolvedLine(status: LineStatus): boolean {
   return status === "CAPTURED" || status === "DROPPED";

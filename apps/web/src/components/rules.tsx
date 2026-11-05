@@ -6,7 +6,8 @@
 
 import { useState } from "react";
 import { api } from "@/lib/api";
-import { money, when } from "@/lib/format";
+import { money } from "@/lib/format";
+import { When } from "./when";
 import { ShieldIcon } from "./guard";
 
 type Side = "homeowner" | "tradesperson";
@@ -159,7 +160,7 @@ export function RuleComposer(props: { side?: Side; scope: "job" | "account"; job
                 {out.backtest.changed.slice(0, 6).map((c) => (
                   <li key={c.id} className="flex justify-between gap-3 py-1.5">
                     <span className="text-muted">
-                      {c.type === "FINAL_CAPTURE" ? "Final release" : c.type === "CAPTURE" ? "Release" : c.type} {money(c.amount_cents)} · {when(c.decided_at)}
+                      {c.type === "FINAL_CAPTURE" ? "Final release" : c.type === "CAPTURE" ? "Release" : c.type} {money(c.amount_cents)} · <When iso={c.decided_at} />
                     </span>
                     <span>
                       {OUTCOME[c.from]} → <span className="font-medium text-violet">{OUTCOME[c.to]}</span>

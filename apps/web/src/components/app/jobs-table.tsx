@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Invite, JobRowView } from "@/server/app-data";
-import { money, when } from "@/lib/format";
+import { money } from "@/lib/format";
+import { When } from "../when";
 import { IconChevron, IconMail } from "./icons";
 import { Segmented } from "./segmented";
 import { IconCircle, Pill, Progress, type Tone } from "./ui";
@@ -50,7 +51,7 @@ export function JobsTable({ jobs, invites }: { jobs: JobRowView[]; invites: Invi
               <div className="min-w-0 flex-1">
                 <div className="truncate text-[15px] font-medium">{i.address}</div>
                 <div className="truncate text-[13px] text-muted">
-                  {i.from} · {i.lines} line{i.lines === 1 ? "" : "s"} · {when(i.sentAt)}
+                  {i.from} · {i.lines} line{i.lines === 1 ? "" : "s"} · <When iso={i.sentAt} />
                 </div>
               </div>
               <div className="text-right">
