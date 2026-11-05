@@ -33,6 +33,8 @@ export interface JobView {
     closeConfirmedByTrades: boolean;
     closeConfirmedByHomeowner: boolean;
     /** Work added after the money was held, each with its own hold. */
+    /** Whether Trace emailed the client the job's link. */
+    inviteEmailed: boolean;
     /** When the job's photos and proof files were deleted under the retention policy, if they were. */
     proofDeletedAt: string | null;
     /** PayPal accepted the payment but is still reviewing it: nothing is held or payable yet. */
@@ -206,6 +208,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       closeConfirmedByHomeowner: !!job.close_homeowner_at,
       payee,
       proofDeletedAt: (await proofDeletedAt(e, jobId))?.toISOString() ?? null,
+      inviteEmailed: (await e.db.query("select 1 from events where job_id = $1 and type = 'EMAIL_SENT' and data->>'kind' = 'job_invite' limit 1", [jobId])).rowCount === 1,
       holdPending: holds.some((h) => h.kind === "base" && h.status === "PENDING"),
       changeOrders: changeOrders.map((c) => ({
         id: c.id,

@@ -6,6 +6,7 @@ import type { RuleCompiler } from "./rules/compile.ts";
 import type { DisputeDrafter } from "./disputes.ts";
 import type { ScopeDrafter } from "./scope-draft.ts";
 import type { Verifier } from "./verifier.ts";
+import type { Mailer } from "./mail.ts";
 
 export interface Logger {
   info(msg: string, data?: Record<string, unknown>): void;
@@ -42,6 +43,8 @@ export interface Engine {
   drafter?: DisputeDrafter;
   /** Scope generation from before-photos and a description (section 6.1). */
   scopeDrafter?: ScopeDrafter;
+  /** Sends the client's job link and sign-off links. Without one, the tradesperson shares them. */
+  mailer?: Mailer;
   settings: EngineSettings;
   now: () => Date;
   log: Logger;

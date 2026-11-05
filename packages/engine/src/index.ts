@@ -24,3 +24,4 @@ export { maskText } from "./inject/mask.ts";
 export * from "./rules/compile.ts";
 export * from "./rules/rules.ts";
 export * from "./eval.ts";
+export * from "./mail.ts";

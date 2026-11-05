@@ -231,7 +231,7 @@ export function JobScreen({
         <Waiting title={`Waiting for the ${w.proPos} PayPal`} body={`Payments go straight into the ${w.proPos} own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is.`} />
       )}
       {job.status === "AWAITING_APPROVAL" && !job.holdPending && !isHome && (
-        <SendToClient jobId={job.id} email={job.homeownerEmail} client={w.client} />
+        <SendToClient jobId={job.id} email={job.homeownerEmail} client={w.client} emailed={job.inviteEmailed} />
       )}
       {isHome && held && approvedCents > 0 && pending.length === 0 && (
         <ActionCard
@@ -401,7 +401,7 @@ export function JobScreen({
                       }}
                       onSignOff={async () => {
                         try {
-                          const r = await api<{ link: string; email: string }>(`/api/lines/${l.id}/attest-request`, { json: {} });
+                          const r = await api<{ link: string | null; email: string }>(`/api/lines/${l.id}/attest-request`, { json: {} });
                           refresh();
                           return r;
                         } catch (e) {
@@ -555,7 +555,7 @@ function LineCard(props: {
   /** Document and deliverable proofs: send the form to the proof route. */
   onSubmitProof: (form: FormData) => Promise<void>;
   /** Attestation: create a sign-off link. */
-  onSignOff: () => Promise<{ link: string; email: string } | null>;
+  onSignOff: () => Promise<{ link: string | null; email: string } | null>;
   /** Judge mode: sample photos that can stand in for the camera. */
   samples?: Sample[];
   onSample?: (src: string) => void;
@@ -803,9 +803,9 @@ function ProofDetails({ line: l }: { line: Line }) {
 }
 
 /** Proving a line without the camera: upload a document or file, send a link, or ask for a sign-off. */
-function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: boolean; onSubmit: (form: FormData) => Promise<void>; onSignOff: () => Promise<{ link: string; email: string } | null> }) {
+function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: boolean; onSubmit: (form: FormData) => Promise<void>; onSignOff: () => Promise<{ link: string | null; email: string } | null> }) {
   const [url, setUrl] = useState("");
-  const [link, setLink] = useState<{ link: string; email: string } | null>(null);
+  const [link, setLink] = useState<{ link: string | null; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const spec = l.proof.spec as { kind?: string; mime?: string; email?: string; statement?: string } | null;
   const upload = (accept: string, label: string) => (
@@ -853,14 +853,22 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
   // Attestation
   return (
     <div className="mt-4">
-      {link ? (
+      {link && !link.link ? (
+        <div className="rounded-2xl bg-paper p-3.5 text-[13.5px]">
+          <div className="font-medium">Emailed to {link.email}</div>
+          <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. The link works once, for 14 days, and replaces any earlier one. The client then approves the line.</p>
+          <button disabled={busy} onClick={async () => setLink(await onSignOff())} className="press mt-2 text-[13px] font-medium text-violet">
+            Send it again
+          </button>
+        </div>
+      ) : link?.link ? (
         <div className="rounded-2xl bg-paper p-3.5 text-[13.5px]">
           <div className="font-medium">Send this link to {link.email}</div>
           <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. It works once, for 14 days, and replaces any earlier link. The client then approves the line.</p>
           <div className="mt-2 flex gap-2">
-            <input readOnly value={link.link} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />
+            <input readOnly value={link.link!} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />
             <button
-              onClick={() => navigator.clipboard?.writeText(link.link).then(() => setCopied(true))}
+              onClick={() => navigator.clipboard?.writeText(link.link!).then(() => setCopied(true))}
               className="press h-11 shrink-0 rounded-full bg-card px-4 text-[13px] font-semibold shadow-[0_0_0_1px_var(--color-line)]"
             >
               {copied ? "Copied" : "Copy"}
@@ -880,10 +888,10 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
 }
 
 /**
- * Trace doesn't email the client: the tradesperson sends the job's link. The
- * client opens it signed in with the email the job was sent to.
+ * The job's link for the client: emailed by Trace when email is set up, and
+ * always here to share. The client opens it signed in with the job's email.
  */
-function SendToClient({ jobId, email, client }: { jobId: string; email: string; client: string }) {
+function SendToClient({ jobId, email, client, emailed }: { jobId: string; email: string; client: string; emailed: boolean }) {
   const [copied, setCopied] = useState(false);
   // The origin is read after mount, so the server and browser render the same first.
   const [origin, setOrigin] = useState("");
@@ -893,7 +901,7 @@ function SendToClient({ jobId, email, client }: { jobId: string; email: string; 
     <div className="rounded-2xl bg-paper p-4 text-[13.5px] leading-relaxed">
       <div className="font-medium">Waiting for the {client}</div>
       <p className="mt-1 text-muted">
-        Send {email} this link. They sign in with that email to review the scope and approve the hold with PayPal; this page updates when they do.
+        {emailed ? `Trace emailed ${email} this link.` : `Send ${email} this link.`} They sign in with that email to review the scope and approve the hold with PayPal; this page updates when they do.
       </p>
       <div className="mt-2 flex gap-2">
         <input readOnly value={link} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />

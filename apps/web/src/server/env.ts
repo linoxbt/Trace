@@ -10,6 +10,10 @@ const Env = z.object({
   // PayPal steps themselves refuse until all three are set.
   PAYPAL_CLIENT_ID: z.string().min(1).optional(),
   PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
+  /** Email through Resend (resend.com): the client's job link and sign-off links. Both or neither. */
+  RESEND_API_KEY: z.string().min(10).optional(),
+  /** The sender, on a domain verified with Resend: "Trace <jobs@example.com>". */
+  MAIL_FROM: z.string().min(3).optional(),
   /** Signs the scheduled worker's calls to /api/eval/step. */
   EVAL_STEP_SECRET: z.string().min(32).optional(),
   /**
