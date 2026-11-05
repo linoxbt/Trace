@@ -33,7 +33,9 @@ export interface JobView {
     closeConfirmedByTrades: boolean;
     closeConfirmedByHomeowner: boolean;
     /** Work added after the money was held, each with its own hold. */
-    changeOrders: { id: string; code: string; status: string; totalCents: number; lines: { code: string; title: string; priceCents: number; criterion: string }[] }[];
+    /** PayPal accepted the payment but is still reviewing it: nothing is held or payable yet. */
+    holdPending: boolean;
+    changeOrders: { id: string; code: string; status: string; holdPending: boolean; totalCents: number; lines: { code: string; title: string; priceCents: number; criterion: string }[] }[];
     /** PayPal disputes on this job, newest first. */
     disputes: { id: string; paypalId: string; status: string | null; filed: boolean }[];
     /** Where this job's money goes: the tradesperson's own PayPal once it can take payments. */
@@ -201,10 +203,12 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       closeConfirmedByTrades: !!job.close_trades_at,
       closeConfirmedByHomeowner: !!job.close_homeowner_at,
       payee,
+      holdPending: holds.some((h) => h.kind === "base" && h.status === "PENDING"),
       changeOrders: changeOrders.map((c) => ({
         id: c.id,
         code: c.code,
         status: c.status,
+        holdPending: c.status === "AWAITING_APPROVAL" && holds.some((h) => h.id === c.authorization_id && h.status === "PENDING"),
         totalCents: c.total_cents,
         lines: c.lines.map((l) => ({ code: l.code, title: l.title, priceCents: l.priceCents, criterion: (l.acceptance as { criterion: string }).criterion })),
       })),

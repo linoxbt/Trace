@@ -18,6 +18,12 @@ export interface EngineSettings {
   webhookId: string;
   /** Demo mode (section 12): 60 s review windows and the sandbox require-evidence route. */
   demoMode: boolean;
+  /**
+   * Whether PayPal is the sandbox. Demo jobs (one person on both sides, paid to
+   * the platform's own account) exist only there: with real money they would
+   * let anyone pay the platform for work no tradesperson does.
+   */
+  sandbox: boolean;
   /** Verified needs at least this confidence (0.80, or 0.85 as the section 16 fallback). */
   confidenceThreshold: number;
   brandName: string;

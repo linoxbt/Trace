@@ -12,7 +12,7 @@ import { HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { guardedVoid } from "./guard/execute.ts";
 import { cleanLines, MAX_JOB_CENTS, MAX_LINES, type ScopeLineInput } from "./jobs.ts";
-import { payeeForJob } from "./payee.ts";
+import { payeeForJob, payeeOfOrder } from "./payee.ts";
 
 const HELD = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
 
@@ -103,26 +103,30 @@ export async function authorizeChangeOrder(e: Engine, changeOrderId: string, ord
   const { co, job } = await mustChangeOrder(e, changeOrderId);
   if (job.homeowner_id !== homeownerId) throw forbidden();
   if (co.paypal_order_id !== orderId) throw badRequest("wrong_order", "that order doesn't belong to this change order");
-  if (co.status === "AUTHORIZED") return co;
+  if (co.status === "AUTHORIZED" || co.authorization_id) return co;
   if (co.status !== "AWAITING_APPROVAL") throw conflict("not_awaiting_approval", "this change order isn't waiting for approval");
   assertOpenForChanges(job);
 
   const order = await e.paypal.authorizeOrder(orderId, `authorize-${orderId}`);
   const auth = authorizationOf(order);
   const got = auth.amount ? fromPayPalValue(auth.amount.value) : -1;
-  const payee = order.purchase_units?.[0]?.payee?.merchant_id ?? null;
-  const wrongPayee = !!job.payee_merchant_id && payee !== null && payee !== job.payee_merchant_id;
+  // A job paid to a tradesperson must come back paying exactly them; no payee at all is a mismatch too.
+  const payee = job.payee_merchant_id ? await payeeOfOrder(e, order) : null;
+  const wrongPayee = !!job.payee_merchant_id && payee !== job.payee_merchant_id;
   if (wrongPayee || got !== co.total_cents || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== co.scope_hash)) {
     await guardedVoid(e, job.id, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
       e.log.error("void after change-order mismatch failed", { err: String(err) }),
     );
     throw new EngineError(wrongPayee ? "payee_mismatch" : "amount_mismatch", wrongPayee ? "PayPal's order pays a different account" : `PayPal authorized ${got}, expected ${co.total_cents}`, 502);
   }
+  // PayPal may hold the payment for review first: record it as pending, and the worker or webhook finishes it.
+  const pending = auth.status === "PENDING";
+  if (auth.status !== "CREATED" && !pending) throw new EngineError("authorization_not_created", `PayPal returned an authorization in status ${auth.status}`, 502);
   const created = auth.create_time ? new Date(auth.create_time) : e.now();
   const outcome = await e.db.tx(async (q) => {
     const current = await store.mustGetJob(q, job.id, { lock: true });
     const locked = (await store.getChangeOrder(q, co.id, { lock: true }))!;
-    if (locked.status === "AUTHORIZED") return { row: locked };
+    if (locked.status === "AUTHORIZED" || locked.authorization_id) return { row: locked };
     // The job closed, or a dispute opened, while PayPal was authorizing: the new hold has nothing to pay for.
     if (locked.status !== "AWAITING_APPROVAL" || !HELD.includes(current.status) || current.disputed) return { stale: locked.status !== "AWAITING_APPROVAL" ? "this change order was withdrawn" : current.disputed ? "a dispute opened" : "the job closed" };
     const row = await store.insertAuthorization(q, {
@@ -131,11 +135,16 @@ export async function authorizeChangeOrder(e: Engine, changeOrderId: string, ord
       authId: auth.id,
       amountCents: got,
       currency: job.currency,
-      status: "CREATED",
-      honorUntil: new Date(created.getTime() + HONOR_PERIOD_DAYS * 86_400_000),
+      status: pending ? "PENDING" : "CREATED",
+      honorUntil: pending ? null : new Date(created.getTime() + HONOR_PERIOD_DAYS * 86_400_000),
       expiresAt: auth.expiration_time ? new Date(auth.expiration_time) : null,
       kind: "change_order",
     });
+    if (pending) {
+      const { rows } = await q.query<store.ChangeOrderRow>("update change_orders set authorization_id = $2, updated_at = now() where id = $1 returning *", [co.id, row.id]);
+      await store.appendEvent(q, { jobId: job.id, actor: "paypal", type: "HOLD_PENDING", data: { authorization_id: auth.id, amount_cents: got, change_order: co.code } });
+      return { row: rows[0]! };
+    }
     const { rows } = await q.query<store.ChangeOrderRow>("update change_orders set status = 'AUTHORIZED', authorization_id = $2, updated_at = now() where id = $1 returning *", [co.id, row.id]);
     await store.appendLines(q, job.id, co.lines, co.id);
     await store.appendEvent(q, {
@@ -159,6 +168,7 @@ export async function closeChangeOrder(e: Engine, changeOrderId: string, userId:
   const side = userId === job.homeowner_id ? "homeowner" : userId === job.trades_id ? "tradesperson" : null;
   if (!side) throw forbidden();
   if (co.status !== "AWAITING_APPROVAL") throw conflict("not_awaiting_approval", "only a change order waiting for approval can be declined or withdrawn");
+  if (co.authorization_id) throw conflict("hold_pending", "PayPal is still reviewing this change order's payment; it can be withdrawn once PayPal answers");
   const status = side === "homeowner" ? "DECLINED" : "CANCELLED";
   const { rows } = await e.db.query<store.ChangeOrderRow>("update change_orders set status = $2, updated_at = now() where id = $1 returning *", [co.id, status]);
   await store.appendEvent(e.db, { jobId: job.id, actor: side, type: side === "homeowner" ? "CHANGE_ORDER_DECLINED" : "CHANGE_ORDER_WITHDRAWN", data: { change_order: co.code } });

@@ -49,7 +49,7 @@ export function engine(): Engine {
           scopeDrafter: new ClaudeScopeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
         }
       : {}),
-    settings: { webhookId: e.PAYPAL_WEBHOOK_ID ?? "", demoMode: e.DEMO_MODE === "true", confidenceThreshold: 0.8, brandName: "Trace" },
+    settings: { webhookId: e.PAYPAL_WEBHOOK_ID ?? "", demoMode: e.DEMO_MODE === "true", sandbox: e.PAYPAL_API_BASE.includes("sandbox"), confidenceThreshold: 0.8, brandName: "Trace" },
     now: () => new Date(),
     log: consoleLogger,
   };

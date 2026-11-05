@@ -122,7 +122,7 @@ export async function testEngine(): Promise<TestEngine> {
     verifier: new ScriptedVerifier(),
     scanner: new ScriptedScanner(),
     compiler: new ScriptedCompiler(),
-    settings: { webhookId: "WH-TEST", demoMode: false, confidenceThreshold: 0.8, brandName: "Trace" },
+    settings: { webhookId: "WH-TEST", demoMode: false, sandbox: true, confidenceThreshold: 0.8, brandName: "Trace" },
     now: () => clock.t,
     log: quietLog,
     clock,

@@ -43,7 +43,7 @@ describe.skipIf(!TEST_DATABASE_URL)("rules people write", () => {
   async function saveOver150(userId: string) {
     const c = await compileRule(e, userId, { english: OVER_150, side: "homeowner", scope: "account" });
     if (c.kind !== "rule") throw new Error(c.reason);
-    return saveRule(e, userId, { english: OVER_150, side: "homeowner", scope: "account", rule: c.rule, readback: c.readback });
+    return saveRule(e, userId, { draftId: c.draftId });
   }
 
   it("compiles, reads back from the JSON alone, and then holds a release the homeowner started", async () => {
@@ -82,7 +82,20 @@ describe.skipIf(!TEST_DATABASE_URL)("rules people write", () => {
   it("can only tighten: a rule that allows is refused", async () => {
     const h = await heldJob(e);
     const loosen = { ...over150, effect: "allow" } as unknown as CompiledRule;
-    await expect(saveRule(e, h.home, { english: "let everything through", side: "homeowner", scope: "account", rule: loosen, readback: "x" })).rejects.toThrow();
+    e.compiler.answers.set("let everything through", { kind: "rule", rule: loosen });
+    await expect(compileRule(e, h.home, { english: "let everything through", side: "homeowner", scope: "account" })).rejects.toThrow();
+  });
+
+  it("saves only the draft Trace compiled for that person, once", async () => {
+    const h = await heldJob(e);
+    const c = await compileRule(e, h.home, { english: OVER_150, side: "homeowner", scope: "account" });
+    if (c.kind !== "rule") throw new Error(c.reason);
+    // Someone else can't save it, and nobody can save a rule that wasn't compiled.
+    await expect(saveRule(e, h.trades, { draftId: c.draftId })).rejects.toMatchObject({ code: "not_found" });
+    await expect(saveRule(e, h.home, { draftId: "00000000-0000-4000-8000-000000000000" })).rejects.toMatchObject({ code: "not_found" });
+    const row = await saveRule(e, h.home, { draftId: c.draftId });
+    expect(row.rule).toMatchObject({ ...over150, readback: c.readback, english: OVER_150 });
+    await expect(saveRule(e, h.home, { draftId: c.draftId })).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("tests a new rule against the user's past decisions", async () => {
@@ -128,7 +141,7 @@ describe.skipIf(!TEST_DATABASE_URL)("rules people write", () => {
     await expect(compileRule(e, h.trades, { english: OVER_150, side: "homeowner", scope: "job", jobId: h.jobId })).rejects.toMatchObject({ code: "forbidden" });
     const c = await compileRule(e, h.home, { english: OVER_150, side: "homeowner", scope: "job", jobId: h.jobId });
     if (c.kind !== "rule") throw new Error(c.reason);
-    await saveRule(e, h.home, { english: OVER_150, side: "homeowner", scope: "job", jobId: h.jobId, rule: c.rule, readback: c.readback });
+    await saveRule(e, h.home, { draftId: c.draftId });
     expect((await store.getEvents(e.db, h.jobId)).some((x) => x.type === "RULE_ADDED")).toBe(true);
   });
 

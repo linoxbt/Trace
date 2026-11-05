@@ -54,6 +54,21 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: change orders", () => {
     expect(l5).toMatchObject({ change_order_id: co.id, status: "PENDING" });
   });
 
+  it("a hold that can't be released doesn't stop the others", async () => {
+    await heldChangeOrder();
+    const l5 = (await store.getLines(e.db, h.jobId)).find((l) => l.code === "L5")!;
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    await prove(e, { ...h, lines: { ...h.lines, L5: l5 } }, "L5");
+    await decideLine(e, l5.id, h.home, { approve: true });
+    // The base hold's check can't reach PayPal; the change order's hold still pays.
+    e.paypal.failNext("getAuthorization");
+    const r = await release(e, h.jobId);
+    expect(r).toMatchObject({ kind: "blocked" });
+    expect(await lineStatus(e, h)).toMatchObject({ L1: "APPROVED", L5: "CAPTURED" });
+    expect(await release(e, h.jobId)).toMatchObject({ kind: "captured", amountCents: 12000 });
+  });
+
   it("captures each hold on its own: base lines from the base hold, added lines from theirs", async () => {
     await heldChangeOrder();
     const l5 = (await store.getLines(e.db, h.jobId)).find((l) => l.code === "L5")!;

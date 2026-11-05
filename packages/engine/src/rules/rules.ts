@@ -24,7 +24,7 @@ export interface BacktestResult {
 }
 
 export type CompileOutcome =
-  | { kind: "rule"; rule: CompiledRule; readback: string; backtest: BacktestResult }
+  | { kind: "rule"; rule: CompiledRule; readback: string; backtest: BacktestResult; draftId: string }
   | { kind: "unsupported"; reason: string };
 
 const MAX_ENGLISH = 300;
@@ -91,7 +91,15 @@ export async function compileRule(e: Engine, userId: string, input: RuleTarget &
     e.log.error("rule readback failed", { err: String(err) });
     throw new EngineError("compiler_unavailable", "the rule writer didn't answer; try again", 503);
   }
-  return { kind: "rule", rule: compiled.rule, readback, backtest: await backtestRule(e, userId, input, rule) };
+  const backtest = await backtestRule(e, userId, input, rule);
+  // Kept so the rule saved is this one, with this readback; drafts older than a day are cleared as new ones come in.
+  const target: RuleTarget = { side: input.side, scope: input.scope, jobId: input.scope === "job" ? input.jobId ?? null : null };
+  await e.db.query("delete from rule_drafts where owner_id = $1 and created_at < now() - interval '1 day'", [userId]);
+  const { rows } = await e.db.query<{ id: string }>(
+    "insert into rule_drafts (owner_id, target, english, readback, rule) values ($1, $2, $3, $4, $5) returning id",
+    [userId, JSON.stringify(target), english, readback.slice(0, 400), JSON.stringify(compiled.rule)],
+  );
+  return { kind: "rule", rule: compiled.rule, readback, backtest, draftId: rows[0]!.id };
 }
 
 /** Replay the user's past decisions with one more rule, from the stored facts. */
@@ -109,20 +117,21 @@ export async function backtestRule(e: Engine, userId: string, t: RuleTarget, rul
   return { ...out, summary };
 }
 
-/** Save a rule the person has read back and accepted. */
-export async function saveRule(
-  e: Engine,
-  userId: string,
-  input: RuleTarget & { english: string; readback: string; rule: CompiledRule },
-): Promise<store.RuleRow> {
-  const english = cleanEnglish(input.english);
-  const readback = input.readback.trim();
-  if (!readback) throw badRequest("bad_rule", "a rule is saved with its readback");
-  const jobId = await checkTarget(e, userId, input);
-  const rule = fullRule("new", english, readback.slice(0, 400), input, input.rule);
+/** Save a rule the person has read back and accepted: the draft Trace compiled for them, as it was. */
+export async function saveRule(e: Engine, userId: string, input: { draftId: string }): Promise<store.RuleRow> {
+  const { rows } = await e.db.query<{ target: RuleTarget; english: string; readback: string; rule: CompiledRule }>(
+    "delete from rule_drafts where id = $1 and owner_id = $2 and created_at > now() - interval '1 day' returning target, english, readback, rule",
+    [input.draftId, userId],
+  );
+  const draft = rows[0];
+  if (!draft) throw new EngineError("not_found", "that rule draft has expired; write the rule again", 404);
+  const { target: t, english, readback } = draft;
+  // Checked again: the person may have left the job since compiling.
+  const jobId = await checkTarget(e, userId, t);
+  const rule = fullRule("new", english, readback, t, draft.rule);
   return e.db.tx(async (q) => {
-    const row = await store.insertRule(q, { ownerId: userId, ownerKind: input.side, scope: input.scope, jobId, rule });
-    if (jobId) await store.appendEvent(q, { jobId, actor: input.side, type: "RULE_ADDED", data: { rule: row.id, english, readback } });
+    const row = await store.insertRule(q, { ownerId: userId, ownerKind: t.side, scope: t.scope, jobId, rule });
+    if (jobId) await store.appendEvent(q, { jobId, actor: t.side, type: "RULE_ADDED", data: { rule: row.id, english, readback } });
     return row;
   });
 }

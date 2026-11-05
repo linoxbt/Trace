@@ -33,6 +33,12 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: judge mode demo job", () => {
     for (const l of lines) expect((await store.beforePhotoFor(e.db, l))?.line_id).toBe(l.id);
   });
 
+  it("refuses a demo job when PayPal is live: it would pay the platform for work nobody does", async () => {
+    const me = await makeUser(e.db, "judge");
+    e.settings.sandbox = false;
+    await expect(createDemoJob(e, { id: me, email: null }, assets)).rejects.toMatchObject({ code: "not_demo" });
+  });
+
   it("seeds one sample history of 30 decisions the real evaluator made", async () => {
     const me = await makeUser(e.db, "judge");
     await createDemoJob(e, { id: me, email: null }, assets);

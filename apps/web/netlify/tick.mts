@@ -39,7 +39,7 @@ export default async () => {
     paypal: createPayPalClient({ http: env("PAYPAL_HTTP"), clientId: env("PAYPAL_CLIENT_ID")!, clientSecret: env("PAYPAL_CLIENT_SECRET")!, baseUrl: base, timeoutMs: 15_000, partner }),
     storage: { put: noPhotos, get: noPhotos, signedUrl: noPhotos },
     verifier: { model: "none", inspect: () => Promise.reject(new Error("the scheduled worker has no verifier")) },
-    settings: { webhookId: env("PAYPAL_WEBHOOK_ID")!, demoMode: env("DEMO_MODE") === "true", confidenceThreshold: 0.8, brandName: "Trace" },
+    settings: { webhookId: env("PAYPAL_WEBHOOK_ID")!, demoMode: env("DEMO_MODE") === "true", sandbox: base.includes("sandbox"), confidenceThreshold: 0.8, brandName: "Trace" },
     now: () => new Date(),
     log: consoleLogger,
   };

@@ -752,8 +752,11 @@ export async function getEvents(q: Queryable, jobId: string): Promise<EventRow[]
 
 // ---------- webhook events ----------
 
-/** Record a webhook; false when this event ID was already processed. */
-export async function claimWebhookEvent(q: Queryable, e: { id: string; type: string; payload: unknown }): Promise<boolean> {
+/**
+ * Record a webhook and claim it for this delivery; false when this event ID was
+ * already processed, or another delivery of it is running right now.
+ */
+export async function claimWebhookEvent(q: Queryable, e: { id: string; type: string; payload: unknown }, leaseS = 120): Promise<boolean> {
   await q.query(
     `insert into webhook_events (paypal_event_id, type, payload) values ($1, $2, $3) on conflict (paypal_event_id) do nothing`,
     [e.id, e.type, JSON.stringify(e.payload)],
@@ -762,7 +765,14 @@ export async function claimWebhookEvent(q: Queryable, e: { id: string; type: str
     "select processed_at from webhook_events where paypal_event_id = $1 for update",
     [e.id],
   );
-  return rows[0]?.processed_at == null;
+  if (rows[0]?.processed_at != null) return false;
+  const claim = await q.query(
+    `insert into webhook_claims (paypal_event_id, claimed_until) values ($1, now() + make_interval(secs => $2))
+     on conflict (paypal_event_id) do update set claimed_until = excluded.claimed_until where webhook_claims.claimed_until < now()
+     returning 1`,
+    [e.id, leaseS],
+  );
+  return claim.rowCount === 1;
 }
 
 export async function finishWebhookEvent(q: Queryable, id: string, error: string | null): Promise<void> {
@@ -770,6 +780,8 @@ export async function finishWebhookEvent(q: Queryable, id: string, error: string
     `update webhook_events set processed_at = case when $2::text is null then now() else null end, error = $2 where paypal_event_id = $1`,
     [id, error],
   );
+  // A failed run gives up its claim, so PayPal's retry can run it again.
+  if (error !== null) await q.query("delete from webhook_claims where paypal_event_id = $1", [id]);
 }
 
 export class NotFound extends Error {

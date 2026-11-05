@@ -75,7 +75,7 @@ const e: Engine = {
   paypal,
   storage: new MemoryStorage(),
   verifier,
-  settings: { webhookId: "unused", demoMode: false, confidenceThreshold: 0.8, brandName: "Trace sandbox test" },
+  settings: { webhookId: "unused", demoMode: false, sandbox: true, confidenceThreshold: 0.8, brandName: "Trace sandbox test" },
   now: () => new Date(),
   log: { info() {}, warn: (m, d) => console.warn("  warn", m, d ?? ""), error: (m, d) => console.error("  error", m, d ?? "") },
 };

@@ -19,7 +19,7 @@ import type { ScopeFlag } from "./inject/text-scan.ts";
 import { guardedVoid } from "./guard/execute.ts";
 import { DEMO_REVIEW_WINDOW_S, HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
-import { payeeForJob } from "./payee.ts";
+import { payeeForJob, payeeOfOrder } from "./payee.ts";
 
 export const MAX_LINES = 8;
 export const MAX_JOB_CENTS = 10_000_00;
@@ -39,6 +39,7 @@ export async function createJob(
 ): Promise<store.JobRow> {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.homeownerEmail)) throw badRequest("bad_email", "the client's email is not valid");
   if (!input.address.trim()) throw badRequest("bad_address", "address is required");
+  if (input.demo && !e.settings.sandbox) throw new EngineError("not_demo", "the demo job runs on the PayPal sandbox only", 404);
   if (input.category !== undefined && !isJobCategory(input.category)) throw badRequest("bad_category", "that job type isn't one Trace takes");
   return e.db.tx(async (q) => {
     const job = await store.insertJob(q, {
@@ -220,8 +221,9 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
   const lines = await store.getLines(e.db, jobId);
   const expected = sum(lines.map((l) => l.price_cents));
   const got = auth.amount ? fromPayPalValue(auth.amount.value) : -1;
-  const payee = order.purchase_units?.[0]?.payee?.merchant_id ?? null;
-  const wrongPayee = !!job.payee_merchant_id && payee !== null && payee !== job.payee_merchant_id;
+  // A job paid to a tradesperson must come back paying exactly them; no payee at all is a mismatch too.
+  const payee = job.payee_merchant_id ? await payeeOfOrder(e, order) : null;
+  const wrongPayee = !!job.payee_merchant_id && payee !== job.payee_merchant_id;
   if (wrongPayee || got !== expected || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== job.scope_hash)) {
     // The hold doesn't match the frozen scope. Release it rather than keep a wrong one.
     await guardedVoid(e, jobId, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
@@ -230,13 +232,20 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
     if (wrongPayee) throw new EngineError("payee_mismatch", "PayPal's order pays a different account than this job's tradesperson", 502);
     throw new EngineError("amount_mismatch", `PayPal authorized ${got} ${auth.amount?.currency_code}, expected ${expected} ${job.currency}`, 502);
   }
-  if (auth.status !== "CREATED") throw new EngineError("authorization_not_created", `PayPal returned an authorization in status ${auth.status}`, 502);
+  // PayPal may hold the payment for review first: record it as pending, and the worker or webhook finishes it.
+  const pending = auth.status === "PENDING";
+  if (auth.status !== "CREATED" && !pending) throw new EngineError("authorization_not_created", `PayPal returned an authorization in status ${auth.status}`, 502);
 
   const created = auth.create_time ? new Date(auth.create_time) : e.now();
   return e.db.tx(async (q) => {
     const locked = await store.mustGetJob(q, jobId, { lock: true });
     const again = await store.getBaseAuthorization(q, jobId);
     if (again) return again;
+    if (pending) {
+      const row = await store.insertAuthorization(q, { jobId, orderId, authId: auth.id, amountCents: got, currency: job.currency, status: "PENDING", honorUntil: null, expiresAt: auth.expiration_time ? new Date(auth.expiration_time) : null });
+      await store.appendEvent(q, { jobId, actor: "paypal", type: "HOLD_PENDING", data: { authorization_id: auth.id, amount_cents: got } });
+      return row;
+    }
     const row = await store.insertAuthorization(q, {
       jobId,
       orderId,

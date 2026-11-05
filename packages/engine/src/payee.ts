@@ -4,6 +4,7 @@
 // Trace's. PayPal is asked for the account's state; the return URL's query
 // string is never trusted.
 
+import type { Order } from "@trace/paypal";
 import * as store from "@trace/db";
 import { PayPalNotPartner } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
@@ -102,4 +103,16 @@ export async function payeeWebhook(e: Engine, type: string, resource: Record<str
   }
   await refreshPayee(e, userId);
   return true;
+}
+
+/**
+ * Whose account an authorized order pays. When the authorize response leaves
+ * the payee out, PayPal's own copy of the order is asked: a missing payee is
+ * never taken to mean the right one.
+ */
+export async function payeeOfOrder(e: Engine, order: Order): Promise<string | null> {
+  const direct = order.purchase_units?.[0]?.payee?.merchant_id;
+  if (direct) return direct;
+  const again = await e.paypal.getOrder(order.id).catch(() => null);
+  return again?.purchase_units?.[0]?.payee?.merchant_id ?? null;
 }

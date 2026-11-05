@@ -23,6 +23,7 @@ type CompileOut =
       kind: "rule";
       rule: Compiled;
       readback: string;
+      draftId: string;
       backtest: { total: number; summary: string; changed: { id: number; decided_at: string; type: string; amount_cents: number; from: string; to: string }[] };
     }
   | { kind: "unsupported"; reason: string };
@@ -63,7 +64,7 @@ export function RuleComposer(props: { side?: Side; scope: "job" | "account"; job
     setBusy("save");
     setError(null);
     try {
-      await api("/api/rules", { json: { ...target, english: text, readback: out.readback, rule: out.rule } });
+      await api("/api/rules", { json: { draftId: out.draftId } });
       setText("");
       setOut(null);
       props.onSaved();

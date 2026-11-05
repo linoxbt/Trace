@@ -83,6 +83,9 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: webhooks", () => {
     expect(rows[0]).toEqual({ status: "WAITING_FOR_SELLER_RESPONSE", reason: "MERCHANDISE_OR_SERVICE_NOT_AS_DESCRIBED" });
     const types = (await store.getEvents(e.db, h.jobId)).map((x) => x.type);
     expect(types).toEqual(expect.arrayContaining(["DISPUTE_OPENED", "DISPUTE_UPDATED"]));
+    // Resolved: the job is no longer under dispute, so its money can move again.
+    await handleWebhook(e, event("CUSTOMER.DISPUTE.RESOLVED", { dispute_id: d.dispute_id, status: "RESOLVED", disputed_transactions: d.disputed_transactions }), header);
+    expect((await store.mustGetJob(e.db, h.jobId)).disputed).toBe(false);
   });
 
   it("closes an open job when PayPal voids its hold", async () => {

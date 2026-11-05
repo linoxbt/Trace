@@ -3,5 +3,6 @@
 export * from "./deps.ts";
 export * from "./errors.ts";
 export * from "./money.ts";
+export * from "./holds.ts";
 export * from "./guard/execute.ts";
 export { forgetDisputes } from "./guard/preflight.ts";

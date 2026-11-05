@@ -53,7 +53,7 @@ function loadSdk(sandbox: boolean): Promise<void> {
   return loading;
 }
 
-type State = "loading" | "ready" | "ineligible" | "working" | "held" | "error";
+type State = "loading" | "ready" | "ineligible" | "working" | "held" | "reviewing" | "error";
 
 export function HoldButton(props: {
   jobId: string;
@@ -96,8 +96,8 @@ export function HoldButton(props: {
           async onApprove({ orderId }) {
             setState("working");
             try {
-              await api(authorizePath, { json: { orderId } });
-              setState("held");
+              const r = await api<{ pending?: boolean }>(authorizePath, { json: { orderId } });
+              setState(r?.pending ? "reviewing" : "held");
               props.onHeld();
             } catch (e) {
               setState("error");
@@ -162,6 +162,7 @@ export function HoldButton(props: {
               <span className="h-4 w-4 animate-spin rounded-full border-2 border-line-2 border-t-violet" /> Placing the hold with PayPal…
             </p>
           )}
+          {state === "reviewing" && <p className="flex h-[45px] items-center justify-center text-[14px] font-medium text-muted">PayPal is reviewing the payment. Nothing charged.</p>}
           {state === "held" && <p className="flex h-[45px] items-center justify-center text-[14px] font-medium text-ok">✓ Held. Nothing charged yet.</p>}
           {state === "ineligible" && <p className="text-[14px] text-bad">PayPal isn&apos;t available for this payment.</p>}
         </div>

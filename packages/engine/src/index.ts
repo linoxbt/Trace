@@ -7,6 +7,7 @@ export * from "./jobs.ts";
 export * from "./proof.ts";
 export * from "./proof-types.ts";
 export * from "./money.ts";
+export * from "./holds.ts";
 export * from "./payee.ts";
 export * from "./demo.ts";
 export * from "./budget.ts";

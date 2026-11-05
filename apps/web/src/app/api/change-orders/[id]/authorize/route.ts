@@ -7,5 +7,5 @@ import { body, route } from "@/server/http";
 export const POST = route<{ id: string }>(async (req, { params, user }) => {
   const { orderId } = await body(req, z.object({ orderId: z.string().min(1).max(64) }));
   const co = await authorizeChangeOrder(engine(), params.id, orderId, user.id);
-  return { status: co.status };
+  return { status: co.status, pending: co.status === "AWAITING_APPROVAL" && !!co.authorization_id };
 });

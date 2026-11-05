@@ -165,7 +165,9 @@ export function JobScreen({
       {job.changeOrders
         .filter((c) => c.status === "AWAITING_APPROVAL")
         .map((c) =>
-          isHome ? (
+          c.holdPending ? (
+            <Waiting key={c.id} title={`PayPal is reviewing ${c.code}`} body={`PayPal accepted the ${money(c.totalCents, job.currency)} hold and is checking it, which can take a little while. Its lines are added here as soon as PayPal confirms. Nothing has been charged.`} />
+          ) : isHome ? (
             <div key={c.id} className="flex flex-col gap-2">
               <div className="surface rounded-[24px] p-5">
                 <div className="text-[13px] font-medium text-violet">Added work · {c.code}</div>
@@ -207,7 +209,10 @@ export function JobScreen({
           ),
         )}
       {job.status === "DRAFT" && !isTrades && <Waiting title="The scope is being written" body="You'll be able to review every line and its price here." />}
-      {job.status === "AWAITING_APPROVAL" && isHome && (job.demo || job.payee.state === "ready") && (
+      {job.status === "AWAITING_APPROVAL" && job.holdPending && (
+        <Waiting title="PayPal is reviewing the payment" body={`PayPal accepted the ${money(job.totalCents, job.currency)} hold and is checking it, which can take a little while. The job starts here as soon as PayPal confirms. Nothing has been charged.`} />
+      )}
+      {job.status === "AWAITING_APPROVAL" && !job.holdPending && isHome && (job.demo || job.payee.state === "ready") && (
         <HoldButton
           jobId={job.id}
           totalCents={job.totalCents}
@@ -220,11 +225,11 @@ export function JobScreen({
           onHeld={() => { toast("ok", "Held by PayPal. Nothing has been charged."); refresh(); }}
         />
       )}
-      {job.status === "AWAITING_APPROVAL" && isHome && job.demo && sandbox && <SandboxBuyer buyer={sandboxBuyer} />}
+      {job.status === "AWAITING_APPROVAL" && !job.holdPending && isHome && job.demo && sandbox && <SandboxBuyer buyer={sandboxBuyer} />}
       {job.status === "AWAITING_APPROVAL" && isHome && !job.demo && job.payee.state !== "ready" && (
         <Waiting title={`Waiting for the ${w.proPos} PayPal`} body={`Payments go straight into the ${w.proPos} own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is.`} />
       )}
-      {job.status === "AWAITING_APPROVAL" && !isHome && (
+      {job.status === "AWAITING_APPROVAL" && !job.holdPending && !isHome && (
         <SendToClient jobId={job.id} email={job.homeownerEmail} client={w.client} />
       )}
       {isHome && held && approvedCents > 0 && pending.length === 0 && (

@@ -92,14 +92,18 @@ export async function release(e: Engine, jobId: string, actor: store.Actor = "ho
   const holds = (await store.authorizationsForJob(e.db, jobId)).filter((a) => CAPTURABLE_AUTH.includes(a.status));
   if (holds.length <= 1) return guardedCapture(e, jobId, init, holds[0] ? { authorizationId: holds[0].id } : {});
   let out: ReleaseResult = { kind: "nothing" };
+  let problem: ReleaseResult | null = null;
   for (const auth of holds) {
     const r = await guardedCapture(e, jobId, init, { authorizationId: auth.id });
     if (r.kind === "nothing") continue;
-    // A hold that needs approval, was blocked or failed is reported as is; the others still went.
-    if (r.kind !== "captured") return r;
+    // A hold that needs approval, was blocked or failed doesn't stop the others: they still go, and it is reported.
+    if (r.kind !== "captured") {
+      problem ??= r;
+      continue;
+    }
     out = out.kind === "captured" ? { ...r, amountCents: out.amountCents + r.amountCents } : r;
   }
-  return out;
+  return problem ?? out;
 }
 
 export async function findCaptureOnOrder(e: Engine, orderId: string, invoiceId: string): Promise<Capture | null> {

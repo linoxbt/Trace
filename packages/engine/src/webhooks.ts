@@ -8,6 +8,7 @@ import { webhookHeaders, type Capture, type WebhookEvent } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
 import { EngineError } from "./errors.ts";
 import { forgetDisputes } from "./guard/preflight.ts";
+import { settlePendingHold } from "./holds.ts";
 import { closeJobIfSettled, settleCapture } from "./money.ts";
 import { payeeWebhook } from "./payee.ts";
 
@@ -55,6 +56,11 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
     case "PAYMENT.AUTHORIZATION.VOIDED": {
       const auth = await store.getAuthorizationByPayPalId(e.db, String(r.id));
       if (!auth) return { result: "ignored", type };
+      if (auth.status === "PENDING") {
+        // A hold PayPal was reviewing: ask PayPal where it stands rather than trust the event's order.
+        await settlePendingHold(e, auth.id, await e.paypal.getAuthorization(auth.paypal_auth_id));
+        return { result: "processed", type, jobId: auth.job_id };
+      }
       await e.db.tx(async (q) => {
         await store.appendEvent(q, { jobId: auth.job_id, actor: "paypal", type: type === "PAYMENT.AUTHORIZATION.VOIDED" ? "WEBHOOK_AUTHORIZATION_VOIDED" : "WEBHOOK_AUTHORIZATION_CREATED", data: { authorization_id: auth.paypal_auth_id } });
         if (type !== "PAYMENT.AUTHORIZATION.VOIDED") return;
@@ -128,6 +134,12 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
           status: (r.status as string | undefined) ?? null,
         });
         if (created) await store.updateJob(q, auth.job_id, { disputed: true });
+        // The job is under dispute only while one of its disputes is still open.
+        if (type === "CUSTOMER.DISPUTE.RESOLVED" || row.status === "RESOLVED") {
+          const open = await q.query("select 1 from disputes where job_id = $1 and coalesce(status, '') <> 'RESOLVED' and id <> $2 limit 1", [auth.job_id, row.id]);
+          if (row.status !== "RESOLVED") await q.query("update disputes set status = 'RESOLVED', updated_at = now() where id = $1", [row.id]);
+          if (open.rowCount === 0) await store.updateJob(q, auth.job_id, { disputed: false });
+        }
         await store.appendEvent(q, {
           jobId: auth.job_id,
           actor: "paypal",

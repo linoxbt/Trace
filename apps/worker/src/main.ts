@@ -25,7 +25,7 @@ const engine: Engine = {
     signedUrl: () => Promise.reject(new Error("worker has no photo storage")),
   },
   verifier: { model: "none", inspect: () => Promise.reject(new Error("worker has no verifier")) },
-  settings: { webhookId: cfg.paypalWebhookId, demoMode: cfg.demoMode, confidenceThreshold: 0.8, brandName: "Trace" },
+  settings: { webhookId: cfg.paypalWebhookId, demoMode: cfg.demoMode, sandbox: cfg.paypalApiBase.includes("sandbox"), confidenceThreshold: 0.8, brandName: "Trace" },
   now: () => new Date(),
   log,
 };

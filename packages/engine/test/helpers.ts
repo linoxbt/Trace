@@ -40,7 +40,7 @@ export interface Held {
   authId: string;
 }
 
-export async function heldJob(e: TestEngine, opts: { lines?: typeof BATHROOM; demo?: boolean } = {}): Promise<Held> {
+export async function heldJob(e: TestEngine, opts: { lines?: typeof BATHROOM; demo?: boolean; beforeAuthorize?: (orderId: string) => void } = {}): Promise<Held> {
   const trades = await makeUser(e.db, "trades");
   if (!opts.demo) await connectPayee(e, trades);
   const home = opts.demo ? trades : await makeUser(e.db, "home");
@@ -52,6 +52,7 @@ export async function heldJob(e: TestEngine, opts: { lines?: typeof BATHROOM; de
   await claimJob(e, job.id, { id: home, email });
   const { orderId } = await createOrder(e, job.id, home);
   e.paypal.approve(orderId);
+  opts.beforeAuthorize?.(orderId);
   const auth = await authorizeJob(e, job.id, orderId, home);
   const rows = await store.getLines(e.db, job.id);
   return { jobId: job.id, trades, home, lines: Object.fromEntries(rows.map((l) => [l.code, l])), authId: auth.paypal_auth_id };

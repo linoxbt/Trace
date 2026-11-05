@@ -1,4 +1,4 @@
-import { autoRelease, expireApprovals, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
+import { autoRelease, checkPendingHolds, expireApprovals, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
 
 export interface TickReport {
   approved: number;
@@ -7,6 +7,7 @@ export interface TickReport {
   reauthorized: string[];
   reauthorizeFailed: string[];
   approvalsExpired: number;
+  pendingHoldsSettled: number;
 }
 
 /** One pass of the worker's periodic jobs. Each step is idempotent. */
@@ -15,6 +16,7 @@ export async function tick(e: Engine): Promise<TickReport> {
   const auto = await autoRelease(e);
   const re = await reauthorizeDue(e);
   const approvalsExpired = await expireApprovals(e);
+  const pendingHoldsSettled = await checkPendingHolds(e);
   return {
     approved: auto.approved,
     released: auto.released.filter((r) => r.kind === "captured").length,
@@ -22,5 +24,6 @@ export async function tick(e: Engine): Promise<TickReport> {
     reauthorized: re.reauthorized,
     reauthorizeFailed: re.failed,
     approvalsExpired,
+    pendingHoldsSettled,
   };
 }

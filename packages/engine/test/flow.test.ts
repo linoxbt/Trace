@@ -70,6 +70,17 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect(types).not.toContain("VOIDED");
   });
 
+  it("releases a hold whose order comes back naming no payee: it might not pay the tradesperson", async () => {
+    await expect(
+      heldJob(e, {
+        beforeAuthorize: (orderId) => {
+          e.paypal.orders.get(orderId)!.input.payeeMerchantId = undefined;
+        },
+      }),
+    ).rejects.toMatchObject({ code: "payee_mismatch" });
+    expect([...e.paypal.auths.values()].map((a) => a.status)).toEqual(["VOIDED"]);
+  });
+
   it("lets silence approve only Verified lines once the review window lapses", async () => {
     const h = await heldJob(e);
     e.verifier.script.set(h.lines.L2!.id, [{ confidence: 0.55 }]);

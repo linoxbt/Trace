@@ -67,6 +67,8 @@ export class FakePayPal implements PayPalApi {
   /** Whether a partially captured authorization may be reauthorized (spec section 17: unconfirmed). */
   allowReauthorizeAfterPartialCapture = true;
   webhookVerdict = true;
+  /** Status the next authorizations come back with (PENDING: PayPal reviewing the payment). */
+  nextAuthStatus: "CREATED" | "PENDING" = "CREATED";
   /** Status the next captures come back with. */
   nextCaptureStatus: CaptureStatus = "COMPLETED";
   private readonly idempotent = new Map<string, unknown>();
@@ -222,7 +224,7 @@ export class FakePayPal implements PayPalApi {
         currency: o.input.currency,
         amountCents: sum(o.input.items.map((i) => i.priceCents)),
         capturedCents: 0,
-        status: "CREATED",
+        status: this.nextAuthStatus,
         invoiceId: o.input.invoiceId,
         customId: o.input.customId,
         reauthorized: false,
