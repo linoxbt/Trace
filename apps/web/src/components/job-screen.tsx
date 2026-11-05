@@ -261,6 +261,11 @@ export function JobScreen({
 
   return (
     <div>
+      {job.proofDeletedAt && (
+        <p className="mb-5 rounded-2xl bg-paper-2 px-4 py-3 text-[13.5px] text-muted">
+          This job&apos;s photos and proof files were deleted on <When iso={job.proofDeletedAt} />, as Trace does once a closed job is past its dispute window. What was checked, decided and paid is still here.
+        </p>
+      )}
       {job.disputes.length > 0 && (
         <div className="mb-5 flex flex-col gap-2">
           {job.disputes.map((d) => (

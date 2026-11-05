@@ -19,6 +19,17 @@ describe.skipIf(!TEST_DATABASE_URL)("PostgresStorage", () => {
     await expect(s.get("job/j1/after/missing.jpg")).rejects.toThrow(/404/);
   });
 
+  it("deletes one job's folder and nothing else", async () => {
+    const s = new PostgresStorage(db);
+    const a = "11111111-1111-4111-8111-111111111111";
+    const b = "11111111-1111-4111-8111-11111111111b";
+    for (const p of [`job/${a}/after/1.jpg`, `job/${a}/proof/2.pdf`, `job/${b}/after/3.jpg`]) await s.put(p, new Uint8Array([1]), "image/jpeg");
+    expect(await s.removeUnder(`job/${a}/`)).toBe(2);
+    await expect(s.get(`job/${a}/after/1.jpg`)).rejects.toThrow(/404/);
+    expect(await s.get(`job/${b}/after/3.jpg`)).toBeTruthy();
+    await expect(s.removeUnder("job/")).rejects.toThrow(/refusing/);
+  });
+
   it("links photos to the app's party-checked route", async () => {
     expect(await new PostgresStorage(db).signedUrl("job/j 1/after/p1.jpg")).toBe("/api/photos/job/j%201/after/p1.jpg");
   });

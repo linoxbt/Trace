@@ -7,6 +7,8 @@ export interface PhotoStorage {
   put(path: string, bytes: Uint8Array, contentType: string): Promise<void>;
   get(path: string): Promise<Uint8Array>;
   signedUrl(path: string, expiresInS?: number): Promise<string>;
+  /** Delete every file under a folder ("job/<id>/"); returns how many went. */
+  removeUnder(prefix: string): Promise<number>;
 }
 
 export function photoPath(jobId: string, kind: "before" | "after" | "during" | "masked", photoId: string): string {
@@ -35,6 +37,12 @@ export class PostgresStorage implements PhotoStorage {
   async signedUrl(path: string): Promise<string> {
     return `${this.urlBase}/${path.split("/").map(encodeURIComponent).join("/")}`;
   }
+
+  async removeUnder(prefix: string): Promise<number> {
+    if (!/^job\/[0-9a-f-]{36}\/$/.test(prefix)) throw new Error(`storage remove: refusing ${prefix}`);
+    const res = await this.db.query("delete from photo_blobs where starts_with(path, $1)", [prefix]);
+    return res.rowCount ?? 0;
+  }
 }
 
 export class MemoryStorage implements PhotoStorage {
@@ -53,5 +61,11 @@ export class MemoryStorage implements PhotoStorage {
 
   async signedUrl(path: string): Promise<string> {
     return `memory://${path}`;
+  }
+
+  async removeUnder(prefix: string): Promise<number> {
+    let n = 0;
+    for (const k of [...this.files.keys()]) if (k.startsWith(prefix)) n += this.files.delete(k) ? 1 : 0;
+    return n;
   }
 }

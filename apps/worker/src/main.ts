@@ -5,7 +5,7 @@
 
 import { createServer } from "node:http";
 import { Db, migrate, recordHeartbeat } from "@trace/db";
-import { consoleLogger, type Engine } from "@trace/engine";
+import { consoleLogger, PostgresStorage, type Engine } from "@trace/engine";
 import { createPayPalClient } from "@trace/paypal";
 import { loadConfig } from "./config.ts";
 import { tick, type TickReport } from "./tick.ts";
@@ -18,11 +18,12 @@ await migrate(db);
 const engine: Engine = {
   db,
   paypal: createPayPalClient({ http: process.env.PAYPAL_HTTP, clientId: cfg.paypalClientId, clientSecret: cfg.paypalClientSecret, baseUrl: cfg.paypalApiBase, partner: cfg.paypalPartner }),
-  // The worker never stores or inspects photos.
+  // The worker never stores or inspects photos; it only deletes them once they're past their keep-until date.
   storage: {
     put: () => Promise.reject(new Error("worker has no photo storage")),
     get: () => Promise.reject(new Error("worker has no photo storage")),
     signedUrl: () => Promise.reject(new Error("worker has no photo storage")),
+    removeUnder: (prefix) => new PostgresStorage(db).removeUnder(prefix),
   },
   verifier: { model: "none", inspect: () => Promise.reject(new Error("worker has no verifier")) },
   settings: { webhookId: cfg.paypalWebhookId, demoMode: cfg.demoMode, sandbox: cfg.paypalApiBase.includes("sandbox"), confidenceThreshold: 0.8, brandName: "Trace" },

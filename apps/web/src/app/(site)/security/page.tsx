@@ -30,7 +30,7 @@ const MONEY = [
   { title: "Idempotent by design", body: "Every capture, void and reauthorization sends a stored PayPal-Request-Id. Webhooks are de-duplicated on PayPal's event ID." },
   { title: "Verified webhooks", body: "Each webhook is checked with PayPal against its original body before anything is processed. Unverified ones are rejected." },
   { title: "Parties only", body: "Postgres row-level security lets each job's two parties read it; only the server can write. Photos sit in a private table only the server can read, and are shown to the job's two parties only." },
-  { title: "Kept only as long as needed", body: "Photos and integrity reports are meant to be kept for 180 days after a job closes, the window in which disputes can arise; this sandbox build doesn't delete them automatically yet. Locations in evidence are rounded to about 11 m." },
+  { title: "Kept only as long as needed", body: "Photos and proof files are kept for 180 days after a job closes, the window in which a payment can be disputed, then deleted automatically, along with the photos' locations (a demo job's go after 30 days). The record of what was checked and paid stays. Locations in evidence are rounded to about 11 m." },
 ];
 
 export default function Security() {

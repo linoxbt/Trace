@@ -197,7 +197,7 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 - Paying tradespeople directly needs PayPal to approve Trace as a partner before it works with live money. The sandbox needs no approval. Which multiparty calls need a `PayPal-Auth-Assertion` follows PayPal's guides (refunds and disputes do; authorize, capture, void and reauthorize on the partner's own order don't) and still needs confirming against the sandbox.
 - Supabase anonymous sign-ins must be on for `/try` (Authentication > Sign In / Providers > Anonymous).
 - Trace sends no email of its own. The tradesperson sends the client the job's link (the job page has a copy button), and sends an attester their sign-off link; the attester confirms their email through Supabase's sign-in link before signing, and the client then approves the line.
-- Photos and check results are meant to be kept for 180 days after a job closes; nothing deletes them automatically yet.
+- Photos and proof files are deleted automatically 180 days after a job closes (30 days for demo jobs), unless a dispute is still open; the checks, decisions and payment record stay.
 - AI use is capped per person per hour, and guests and demo jobs share one hourly allowance (`packages/engine/src/budget.ts`). Anonymous sign-up itself has no CAPTCHA; turn on Supabase's CAPTCHA protection before opening this to real traffic.
 - PayPal seller protection targets goods, so a services dispute isn't guaranteed to go the tradesperson's way. The evidence pack is the best possible defence, not a guaranteed win.
 - The multipart field name for dispute evidence (`file1`) still needs confirming against the sandbox.

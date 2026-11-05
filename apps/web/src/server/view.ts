@@ -1,7 +1,7 @@
 import "server-only";
 import * as store from "@trace/db";
 import { BUILTIN_RULES, sum, type ProofSpec, type ProofType } from "@trace/core";
-import { payeeStatus, rulesForJob } from "@trace/engine";
+import { payeeStatus, proofDeletedAt, rulesForJob } from "@trace/engine";
 import { engine } from "./engine";
 import { HttpError } from "./http";
 
@@ -33,6 +33,8 @@ export interface JobView {
     closeConfirmedByTrades: boolean;
     closeConfirmedByHomeowner: boolean;
     /** Work added after the money was held, each with its own hold. */
+    /** When the job's photos and proof files were deleted under the retention policy, if they were. */
+    proofDeletedAt: string | null;
     /** PayPal accepted the payment but is still reviewing it: nothing is held or payable yet. */
     holdPending: boolean;
     changeOrders: { id: string; code: string; status: string; holdPending: boolean; totalCents: number; lines: { code: string; title: string; priceCents: number; criterion: string }[] }[];
@@ -203,6 +205,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
       closeConfirmedByTrades: !!job.close_trades_at,
       closeConfirmedByHomeowner: !!job.close_homeowner_at,
       payee,
+      proofDeletedAt: (await proofDeletedAt(e, jobId))?.toISOString() ?? null,
       holdPending: holds.some((h) => h.kind === "base" && h.status === "PENDING"),
       changeOrders: changeOrders.map((c) => ({
         id: c.id,
