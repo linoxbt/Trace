@@ -22,15 +22,29 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_migrations");
-    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql"]);
+    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql"]);
   });
 
   it("takes migrations as data too, as the scheduled function carries them, and records the worker's heartbeat", async () => {
     expect(await migrate(db, await readMigrations())).toEqual([]);
     await store.recordHeartbeat(db, { released: 1 });
     const s = await store.systemStatus(db);
-    expect(s.migration).toBe("010_eval.sql");
+    expect(s.migration).toBe("011_lock_down.sql");
     expect(Date.now() - s.lastTickAt!.getTime()).toBeLessThan(60_000);
+  });
+
+  it("keeps every public table behind row-level security, read-only to the public roles", async () => {
+    const { rows } = await db.query<{ table: string; rls: boolean; anon: boolean; writes: boolean }>(
+      `select c.relname as table, c.relrowsecurity as rls,
+              has_table_privilege('anon', c.oid, 'select, insert, update, delete') as anon,
+              has_table_privilege('authenticated', c.oid, 'insert, update, delete, truncate') as writes
+       from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relkind = 'r' order by 1`,
+    );
+    expect(rows.map((r) => r.table)).toContain("trace_migrations");
+    expect(rows.filter((r) => !r.rls).map((r) => r.table)).toEqual([]);
+    expect(rows.filter((r) => r.anon).map((r) => r.table)).toEqual([]);
+    expect(rows.filter((r) => r.writes).map((r) => r.table)).toEqual([]);
   });
 
   it("lowercases the homeowner email and enforces money checks", async () => {
@@ -97,12 +111,12 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
       expect(await seen(stranger, table)).toBe(0);
     }
     // A party can read their job but never write it: writes go through the server.
-    const written = await db.tx(async (q) => {
+    const written = db.tx(async (q) => {
       await q.query("set local role authenticated");
       await q.query("select set_config('request.jwt.claims', $1, true)", [JSON.stringify({ sub: trades })]);
       return (await q.query("update jobs set status = 'COMPLETED' where id = $1", [j.id])).rowCount;
     });
-    expect(written).toBe(0);
+    await expect(written).rejects.toThrow(/permission denied/);
     expect((await store.mustGetJob(db, j.id)).status).toBe("DRAFT");
     const tokens = await db.tx(async (q) => {
       await q.query("set local role authenticated");
