@@ -24,6 +24,9 @@ export async function proposeChangeOrder(e: Engine, jobId: string, tradesId: str
     if (job.trades_id !== tradesId) throw forbidden();
     if (!HELD.includes(job.status)) throw conflict("not_held", "a change order is for a job whose money is already held");
     if (job.disputed) throw conflict("disputed", "nothing can be added while a dispute is open");
+    // A demo job is anyone's, guests included: keep it to photo lines, whose
+    // proof Trace checks itself, rather than links it would fetch or emails it would send.
+    if (job.demo && lines.some((l) => (l.proofType ?? "photo") !== "photo")) throw badRequest("demo_photo_only", "the demo job's added lines are proved with photos");
     const existing = await store.getLines(q, jobId);
     const pending = (await store.changeOrdersForJob(q, jobId)).filter((c) => c.status === "AWAITING_APPROVAL");
     if (pending.length) throw conflict("change_order_pending", `${pending[0]!.code} is still waiting for the client`);

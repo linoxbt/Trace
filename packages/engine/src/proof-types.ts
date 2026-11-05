@@ -10,7 +10,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { request as httpRequest } from "node:http";
 import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
+import { BlockList, isIP } from "node:net";
 import {
   CAPTURE_TOKEN_TTL_S,
   CLIP_MAX_S,
@@ -341,18 +341,27 @@ export async function submitDocumentProof(
 // ---------- deliverables ----------
 
 /** Private, loopback, link-local and other non-public addresses: never fetched. */
+// Addresses a deliverable link may never reach: private, loopback, link-local
+// (cloud metadata), shared, documentation and multicast ranges, and the IPv6
+// forms that embed an IPv4 address (mapped, compatible, NAT64, 6to4, Teredo),
+// which could smuggle one of those through. Two lists: Node checks an IPv4
+// address against IPv4-mapped IPv6 rules too, so one list would block them all.
+const PRIVATE4 = new BlockList();
+const PRIVATE6 = new BlockList();
+for (const [net, bits] of [
+  ["0.0.0.0", 8], ["10.0.0.0", 8], ["100.64.0.0", 10], ["127.0.0.0", 8], ["169.254.0.0", 16], ["172.16.0.0", 12],
+  ["192.0.0.0", 24], ["192.0.2.0", 24], ["192.168.0.0", 16], ["198.18.0.0", 15], ["198.51.100.0", 24], ["203.0.113.0", 24], ["224.0.0.0", 3],
+] as const) PRIVATE4.addSubnet(net, bits, "ipv4");
+for (const [net, bits] of [
+  ["::", 96], ["::ffff:0:0", 96], ["64:ff9b::", 96], ["64:ff9b:1::", 48], ["100::", 64], ["2001::", 32], ["2001:db8::", 32],
+  ["2002::", 16], ["fc00::", 7], ["fe80::", 10], ["fec0::", 10], ["ff00::", 8],
+] as const) PRIVATE6.addSubnet(net, bits, "ipv6");
+
+/** True only for an address on the public internet. Anything unparseable is not. */
 export function isPublicAddress(ip: string): boolean {
   const v = isIP(ip);
-  if (v === 4) {
-    const [a, b] = ip.split(".").map(Number) as [number, number];
-    return !(a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 192 && b === 0) || (a === 198 && (b === 18 || b === 19)) || a >= 224);
-  }
-  if (v === 6) {
-    const s = ip.toLowerCase();
-    if (s.startsWith("::ffff:")) return isPublicAddress(s.slice(7));
-    return !(s === "::" || s === "::1" || s.startsWith("fc") || s.startsWith("fd") || s.startsWith("fe8") || s.startsWith("fe9") || s.startsWith("fea") || s.startsWith("feb") || s.startsWith("ff"));
-  }
-  return false;
+  if (!v) return false;
+  return v === 4 ? !PRIVATE4.check(ip, "ipv4") : !PRIVATE6.check(ip, "ipv6");
 }
 
 export interface Fetched {
@@ -362,43 +371,73 @@ export interface Fetched {
   body: Uint8Array;
 }
 
+/** A deliverable link that couldn't be read. The cause is logged, never shown: it would map the network. */
+const unreachable = (msg = "the link couldn't be reached") => new EngineError("url_unreachable", msg, 422);
+
+/** The public address to connect to for this URL's host, or a refusal. */
+async function publicAddressFor(url: URL): Promise<{ address: string; family: 4 | 6 }> {
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const literal = isIP(host);
+  if (literal) {
+    if (!isPublicAddress(host)) throw badRequest("bad_url", "that link points at a private address");
+    return { address: host, family: literal as 4 | 6 };
+  }
+  const addrs = await lookup(host, { all: true }).catch(() => [] as { address: string; family: number }[]);
+  if (!addrs.length) throw unreachable();
+  if (addrs.some((a) => !isPublicAddress(a.address))) throw badRequest("bad_url", "that link points at a private address");
+  const a = addrs[0]!;
+  return { address: a.address, family: a.family === 6 ? 6 : 4 };
+}
+
 /**
- * GET a public URL for a deliverable. The address is checked at connect time
- * (so a DNS answer can't swap in a private one), redirects are re-checked hop
- * by hop, and time and size are capped.
+ * GET a public URL for a deliverable. Every hop is checked before it is
+ * fetched: http or https on the standard port, no credentials, and a host
+ * whose addresses are all public. The connection then goes to the address
+ * that was checked (DNS isn't asked twice, so it can't answer differently),
+ * with the original name for TLS and the Host header, and the connected
+ * peer is checked once more. Size and total time are capped.
  */
 export async function fetchPublic(url: string, opts: { maxBytes?: number; timeoutMs?: number; hops?: number } = {}): Promise<Fetched> {
   const maxBytes = opts.maxBytes ?? 2 * 1024 * 1024;
-  let current = new URL(url);
+  const deadline = Date.now() + (opts.timeoutMs ?? 10_000);
+  let current: URL;
+  try {
+    current = new URL(url);
+  } catch {
+    throw badRequest("bad_url", "that isn't a link");
+  }
   for (let hop = 0; hop <= (opts.hops ?? 3); hop++) {
-    if (current.protocol !== "https:" && current.protocol !== "http:") throw badRequest("bad_url", "only http and https links can be checked");
+    const https = current.protocol === "https:";
+    if (!https && current.protocol !== "http:") throw badRequest("bad_url", "only http and https links can be checked");
     if (current.username || current.password) throw badRequest("bad_url", "links with a username or password can't be checked");
+    if (current.port && current.port !== (https ? "443" : "80")) throw badRequest("bad_url", "only links on the standard web ports can be checked");
+    const target = await publicAddressFor(current);
+    const left = deadline - Date.now();
+    if (left <= 0) throw unreachable("the link took too long to answer");
     const res = await new Promise<{ status: number; location: string | null; contentType: string; body: Uint8Array }>((resolve, reject) => {
-      const req = (current.protocol === "https:" ? httpsRequest : httpRequest)(
-        current,
+      const timer = setTimeout(() => req.destroy(unreachable("the link took too long to answer")), left);
+      const req = (https ? httpsRequest : httpRequest)(
         {
+          host: target.address,
+          family: target.family,
+          port: https ? 443 : 80,
+          path: `${current.pathname}${current.search}`,
           method: "GET",
-          headers: { "User-Agent": "TraceProofCheck/1.0", Accept: "text/html,application/pdf,image/*,text/plain;q=0.9,*/*;q=0.5" },
-          timeout: opts.timeoutMs ?? 10_000,
-          lookup: (host, o, cb) => {
-            lookup(host, { all: true })
-              .then((addrs) => {
-                const bad = addrs.find((a) => !isPublicAddress(a.address));
-                if (bad || !addrs.length) return cb(new Error("that link points at a private address"), "", 4);
-                const ok = addrs[0]!;
-                if ((o as { all?: boolean }).all) return (cb as unknown as (e: null, a: { address: string; family: number }[]) => void)(null, addrs);
-                cb(null, ok.address, ok.family);
-              })
-              .catch((err: Error) => cb(err, "", 4));
-          },
+          servername: isIP(current.hostname.replace(/^\[|\]$/g, "")) ? undefined : current.hostname,
+          headers: { Host: current.host, "User-Agent": "TraceProofCheck/1.0", Accept: "text/html,application/pdf,image/*,text/plain;q=0.9,*/*;q=0.5" },
         },
         (r) => {
+          const peer = r.socket.remoteAddress;
+          if (!peer || !isPublicAddress(peer)) {
+            req.destroy(badRequest("bad_url", "that link points at a private address"));
+            return;
+          }
           const chunks: Buffer[] = [];
           let size = 0;
           r.on("data", (ch: Buffer) => {
             size += ch.length;
             if (size > maxBytes) {
-              req.destroy(new Error("the linked file is too large to check"));
+              req.destroy(badRequest("too_big", "the linked file is too large to check"));
               return;
             }
             chunks.push(ch);
@@ -407,19 +446,24 @@ export async function fetchPublic(url: string, opts: { maxBytes?: number; timeou
           r.on("error", reject);
         },
       );
-      req.on("timeout", () => req.destroy(new Error("the link took too long to answer")));
       req.on("error", reject);
+      req.on("close", () => clearTimeout(timer));
       req.end();
-    }).catch((err: Error) => {
-      throw new EngineError("url_unreachable", err.message || "the link couldn't be reached", 422);
+    }).catch((err: unknown) => {
+      if (err instanceof EngineError) throw err;
+      throw unreachable();
     });
     if (res.status >= 300 && res.status < 400 && res.location) {
-      current = new URL(res.location, current);
+      try {
+        current = new URL(res.location, current);
+      } catch {
+        throw unreachable("the link redirects somewhere that isn't a link");
+      }
       continue;
     }
     return { status: res.status, finalUrl: current.toString(), contentType: res.contentType, body: res.body };
   }
-  throw new EngineError("url_unreachable", "the link redirects too many times", 422);
+  throw unreachable("the link redirects too many times");
 }
 
 /** Visible text of an HTML page, for the model. */

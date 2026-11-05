@@ -3,6 +3,7 @@ import type { Acceptance } from "@trace/core";
 import * as store from "@trace/db";
 import { TEST_DATABASE_URL } from "@trace/db/testing";
 import {
+  fetchPublic,
   isPublicAddress,
   issueCaptureToken,
   pageText,
@@ -35,7 +36,22 @@ const today = () => new Date("2026-11-03T10:00:00Z").toISOString().slice(0, 10);
 describe("link safety for deliverables", () => {
   it("never fetches private, loopback or metadata addresses", () => {
     for (const ip of ["127.0.0.1", "10.1.2.3", "172.20.0.1", "192.168.1.1", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:127.0.0.1"]) expect(isPublicAddress(ip)).toBe(false);
+    // IPv6 forms that carry an IPv4 address, and old site-local space.
+    for (const ip of ["64:ff9b::7f00:1", "2002:7f00:1::1", "::127.0.0.1", "fec0::1", "2001:0:4136:e378::1", "not-an-ip"]) expect(isPublicAddress(ip)).toBe(false);
     for (const ip of ["8.8.8.8", "104.18.0.1", "2606:4700::1111"]) expect(isPublicAddress(ip)).toBe(true);
+  });
+
+  it("refuses a link written as a private IP, in any spelling, before connecting", async () => {
+    for (const url of ["http://127.0.0.1/", "http://2130706433/", "http://0x7f.0.0.1/", "http://[::1]/", "http://[::ffff:169.254.169.254]/", "https://10.0.0.5/admin", "http://169.254.169.254/latest/meta-data/", "http://localhost/"]) {
+      await expect(fetchPublic(url), url).rejects.toMatchObject({ code: "bad_url" });
+    }
+  });
+
+  it("refuses non-web ports, credentials and other schemes", async () => {
+    await expect(fetchPublic("http://8.8.8.8:6379/")).rejects.toMatchObject({ code: "bad_url" });
+    await expect(fetchPublic("https://user:pw@example.com/")).rejects.toMatchObject({ code: "bad_url" });
+    await expect(fetchPublic("file:///etc/passwd")).rejects.toMatchObject({ code: "bad_url" });
+    await expect(fetchPublic("not a link")).rejects.toMatchObject({ code: "bad_url" });
   });
 
   it("reads a page's visible text, not its scripts", () => {

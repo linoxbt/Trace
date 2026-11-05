@@ -84,6 +84,13 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: change orders", () => {
     expect((await store.mustGetJob(e.db, h.jobId)).status).toBe("CLOSED_VOIDED");
   });
 
+  it("a demo job's change orders are photo lines only", async () => {
+    await e.db.query("update jobs set demo = true where id = $1", [h.jobId]);
+    const link = [{ ...EXTRA[0]!, proofType: "deliverable", proofSpec: { kind: "url" } }];
+    await expect(proposeChangeOrder(e, h.jobId, h.trades, link)).rejects.toMatchObject({ code: "demo_photo_only" });
+    expect((await proposeChangeOrder(e, h.jobId, h.trades, EXTRA)).code).toBe("CO1");
+  });
+
   it("the client can decline a change order, and a new one can follow", async () => {
     const co = await proposeChangeOrder(e, h.jobId, h.trades, EXTRA);
     expect((await closeChangeOrder(e, co.id, h.home)).status).toBe("DECLINED");
