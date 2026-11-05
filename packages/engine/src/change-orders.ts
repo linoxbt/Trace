@@ -65,11 +65,18 @@ async function mustChangeOrder(e: Engine, id: string) {
   return { co, job: await store.mustGetJob(e.db, co.job_id) };
 }
 
+/** A change order adds to a job whose money is held and that isn't closing or disputed. */
+function assertOpenForChanges(job: store.JobRow): void {
+  if (!HELD.includes(job.status)) throw conflict("not_held", `the job is ${job.status.toLowerCase().replace(/_/g, " ")}, so nothing more can be added`);
+  if (job.disputed) throw conflict("disputed", "nothing can be added while a dispute is open");
+}
+
 /** The client's PayPal button asks for the change order's own order. Amounts come from its frozen lines only. */
 export async function createChangeOrderOrder(e: Engine, changeOrderId: string, homeownerId: string): Promise<{ orderId: string }> {
   const { co, job } = await mustChangeOrder(e, changeOrderId);
   if (job.homeowner_id !== homeownerId) throw forbidden();
   if (co.status !== "AWAITING_APPROVAL") throw conflict("not_awaiting_approval", "this change order isn't waiting for approval");
+  assertOpenForChanges(job);
   // The same payee as the job's first order: the frozen one if there is one.
   const payee = job.payee_merchant_id ?? (await payeeForJob(e.db, job));
   const order = await e.paypal.createOrder(
@@ -98,23 +105,26 @@ export async function authorizeChangeOrder(e: Engine, changeOrderId: string, ord
   if (co.paypal_order_id !== orderId) throw badRequest("wrong_order", "that order doesn't belong to this change order");
   if (co.status === "AUTHORIZED") return co;
   if (co.status !== "AWAITING_APPROVAL") throw conflict("not_awaiting_approval", "this change order isn't waiting for approval");
+  assertOpenForChanges(job);
 
   const order = await e.paypal.authorizeOrder(orderId, `authorize-${orderId}`);
   const auth = authorizationOf(order);
   const got = auth.amount ? fromPayPalValue(auth.amount.value) : -1;
   const payee = order.purchase_units?.[0]?.payee?.merchant_id ?? null;
   const wrongPayee = !!job.payee_merchant_id && payee !== null && payee !== job.payee_merchant_id;
-  if (wrongPayee || got !== co.total_cents || auth.amount?.currency_code !== job.currency) {
+  if (wrongPayee || got !== co.total_cents || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== co.scope_hash)) {
     await guardedVoid(e, job.id, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
       e.log.error("void after change-order mismatch failed", { err: String(err) }),
     );
     throw new EngineError(wrongPayee ? "payee_mismatch" : "amount_mismatch", wrongPayee ? "PayPal's order pays a different account" : `PayPal authorized ${got}, expected ${co.total_cents}`, 502);
   }
   const created = auth.create_time ? new Date(auth.create_time) : e.now();
-  return e.db.tx(async (q) => {
-    await store.mustGetJob(q, job.id, { lock: true });
+  const outcome = await e.db.tx(async (q) => {
+    const current = await store.mustGetJob(q, job.id, { lock: true });
     const locked = (await store.getChangeOrder(q, co.id, { lock: true }))!;
-    if (locked.status === "AUTHORIZED") return locked;
+    if (locked.status === "AUTHORIZED") return { row: locked };
+    // The job closed, or a dispute opened, while PayPal was authorizing: the new hold has nothing to pay for.
+    if (locked.status !== "AWAITING_APPROVAL" || !HELD.includes(current.status) || current.disputed) return { stale: locked.status !== "AWAITING_APPROVAL" ? "this change order was withdrawn" : current.disputed ? "a dispute opened" : "the job closed" };
     const row = await store.insertAuthorization(q, {
       jobId: job.id,
       orderId,
@@ -134,8 +144,13 @@ export async function authorizeChangeOrder(e: Engine, changeOrderId: string, ord
       type: "AUTHORIZED",
       data: { authorization_id: auth.id, amount_cents: got, change_order: co.code, lines: co.lines.map((l) => l.code), expires_at: auth.expiration_time ?? null },
     });
-    return rows[0]!;
+    return { row: rows[0]! };
   });
+  if (outcome.row) return outcome.row;
+  await guardedVoid(e, job.id, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-stale-${auth.id}` }).catch((err) =>
+    e.log.error("void of a stale change-order hold failed", { err: String(err) }),
+  );
+  throw conflict("not_held", `${outcome.stale}, so the change order's hold was released`);
 }
 
 /** The client declines, or the tradesperson withdraws, a change order that isn't held yet. */

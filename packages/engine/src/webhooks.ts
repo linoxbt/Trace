@@ -7,7 +7,7 @@ import { webhookHeaders, type Capture, type WebhookEvent } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
 import { EngineError } from "./errors.ts";
 import { forgetDisputes } from "./guard/preflight.ts";
-import { settleCapture } from "./money.ts";
+import { closeJobIfSettled, settleCapture } from "./money.ts";
 import { payeeWebhook } from "./payee.ts";
 
 export class WebhookRejected extends EngineError {
@@ -56,14 +56,20 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
       if (!auth) return { result: "ignored", type };
       await e.db.tx(async (q) => {
         await store.appendEvent(q, { jobId: auth.job_id, actor: "paypal", type: type === "PAYMENT.AUTHORIZATION.VOIDED" ? "WEBHOOK_AUTHORIZATION_VOIDED" : "WEBHOOK_AUTHORIZATION_CREATED", data: { authorization_id: auth.paypal_auth_id } });
-        if (type === "PAYMENT.AUTHORIZATION.VOIDED" && auth.status !== "VOIDED") {
-          const job = await store.mustGetJob(q, auth.job_id, { lock: true });
-          await store.updateAuthorization(q, auth.id, { status: "VOIDED" });
-          if (["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"].includes(job.status)) {
-            await store.updateJob(q, job.id, { status: "CLOSED_VOIDED" });
-            await store.appendEvent(q, { jobId: job.id, actor: "paypal", type: "VOIDED", data: { by: "paypal", alert: "both" } });
-          }
-        }
+        if (type !== "PAYMENT.AUTHORIZATION.VOIDED") return;
+        // Read the hold under the job's lock: Trace's own void may be recording it right now.
+        const before = await store.mustGetJob(q, auth.job_id, { lock: true });
+        const locked = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 for update", [auth.id])).rows[0]!;
+        if (locked.status === "VOIDED") return;
+        await store.updateAuthorization(q, auth.id, { status: "VOIDED" });
+        // One hold voided at PayPal (it expired, or was voided there) closes the job only if no other hold is still open.
+        const after = await closeJobIfSettled(q, auth.job_id);
+        await store.appendEvent(q, {
+          jobId: auth.job_id,
+          actor: "paypal",
+          type: "VOIDED",
+          data: { by: "paypal", authorization_id: auth.paypal_auth_id, alert: "both", ...(after !== before.status ? { job: after } : {}) },
+        });
       });
       return { result: "processed", type, jobId: auth.job_id };
     }

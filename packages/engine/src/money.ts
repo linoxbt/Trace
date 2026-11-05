@@ -7,7 +7,7 @@
 // authorization, lines and captures, so two of them on one job queue instead
 // of deadlocking.
 
-import { formatMoney, isResolvedLine, nextJobStatus, nextLineStatus, planClose, sum, type MoneyLine } from "@trace/core";
+import { formatMoney, isResolvedLine, nextJobStatus, nextLineStatus, planClose, sum, type JobStatus, type MoneyLine } from "@trace/core";
 import * as store from "@trace/db";
 import type { Authorization, Capture } from "@trace/paypal";
 import type { Queryable } from "@trace/db";
@@ -225,17 +225,43 @@ export async function voidIfDone(e: Engine, authorizationId: string): Promise<bo
   return (await guardedVoid(e, auth.job_id, { kind: "worker" }, { auth })).voided;
 }
 
+/**
+ * A job has a hold for its scope and one per change order. It closes only
+ * once none of them can be captured any more: completed if money moved on
+ * any of them, voided if none did. Call it under the job's lock, after a
+ * hold changes. Change orders still waiting for the client are withdrawn.
+ */
+export async function closeJobIfSettled(q: Queryable, jobId: string): Promise<JobStatus> {
+  const job = await store.mustGetJob(q, jobId, { lock: true });
+  if (!RELEASABLE_JOB.includes(job.status)) return job.status;
+  const holds = await store.authorizationsForJob(q, jobId);
+  if (holds.some((h) => CAPTURABLE_AUTH.includes(h.status))) return job.status;
+  let captured = 0;
+  for (const h of holds) captured += await store.capturedCents(q, h.id);
+  const status = nextJobStatus(job.status, captured > 0 ? "COMPLETED" : "VOIDED");
+  await store.updateJob(q, jobId, { status });
+  await cancelPendingChangeOrders(q, jobId);
+  return status;
+}
+
+/** Withdraw change orders the client hasn't approved: the job they'd add to is closing. */
+export async function cancelPendingChangeOrders(q: Queryable, jobId: string): Promise<void> {
+  const { rows } = await q.query<{ code: string }>(
+    "update change_orders set status = 'CANCELLED', updated_at = now() where job_id = $1 and status = 'AWAITING_APPROVAL' returning code",
+    [jobId],
+  );
+  for (const r of rows) await store.appendEvent(q, { jobId, actor: "system", type: "CHANGE_ORDER_WITHDRAWN", data: { change_order: r.code, reason: "job closed" } });
+}
+
 /** Record a void PayPal accepted. The money call itself is the guard's. */
 export async function recordVoid(e: Engine, auth: store.AuthorizationRow, actor: store.Actor): Promise<void> {
   await e.db.tx(async (q) => {
-    const job = await store.mustGetJob(q, auth.job_id, { lock: true });
+    await store.mustGetJob(q, auth.job_id, { lock: true });
     const locked = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1 for update", [auth.id])).rows[0]!;
     if (locked.status === "VOIDED") return;
     const captured = await store.capturedCents(q, auth.id);
     await store.updateAuthorization(q, auth.id, { status: "VOIDED" });
-    if (job.status !== "COMPLETED" && job.status !== "CLOSED_VOIDED") {
-      await store.updateJob(q, job.id, { status: captured > 0 ? nextJobStatus(job.status, "COMPLETED") : nextJobStatus(job.status, "VOIDED") });
-    }
+    await closeJobIfSettled(q, auth.job_id);
     await store.appendEvent(q, {
       jobId: auth.job_id,
       actor,
@@ -436,6 +462,8 @@ export async function confirmClose(e: Engine, jobId: string, userId: string, dro
       }
     }
     await store.appendEvent(q, { jobId, actor: "system", type: "CLOSE_AGREED", data: { plan: plans.map((p) => p.plan).join(",") } });
+    // Nothing more can be added once both sides agree to close.
+    await cancelPendingChangeOrders(q, jobId);
     // The two confirmations of this exact proposal are the approvals the guard sees.
     const confirmations = (await store.getEvents(q, jobId))
       .filter((ev) => ev.type === "CLOSE_CONFIRMED" && JSON.stringify(ev.data?.drop ?? []) === JSON.stringify(dropCodes))
@@ -448,7 +476,10 @@ export async function confirmClose(e: Engine, jobId: string, userId: string, dro
   let release: ReleaseResult | null = null;
   let voided = false;
   const reasons: string[] = [];
-  for (const { auth, plan } of ready.plans) {
+  // Captures first: a void that closed the job first would leave approved
+  // lines on another hold unpaid, and that hold never released.
+  const ordered = [...ready.plans].sort((a, b) => (a.plan === "capture" ? 0 : 1) - (b.plan === "capture" ? 0 : 1));
+  for (const { auth, plan } of ordered) {
     if (plan === "capture") {
       release = await guardedCapture(e, jobId, init, { final: true, authorizationId: auth.id, approvalEventIds: ready.confirmations });
     } else if (plan === "void") {
