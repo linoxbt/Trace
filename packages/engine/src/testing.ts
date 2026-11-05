@@ -55,6 +55,16 @@ export class ScriptedScanner implements TextScanner {
     return next;
   }
 
+  /** Documents: queue scans in `documents`; none queued finds no text. */
+  readonly documents: (TextScan | Error)[] = [];
+
+  async scanDocument(_doc: { text?: string; pdf?: Uint8Array }): Promise<TextScan> {
+    this.scanned += 1;
+    const next = this.documents.shift() ?? { texts: [] };
+    if (next instanceof Error) throw next;
+    return next;
+  }
+
   async scanScope(_lines: ScopeLineText[]): Promise<ScopeFlag[]> {
     return this.scopes.shift() ?? [];
   }

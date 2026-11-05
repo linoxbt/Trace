@@ -110,12 +110,15 @@ function addendum(i: ProofInspectInput): string {
     return `Proof type: document (${s?.doc_kind ?? "document"}). Extract the vendor, the date (YYYY-MM-DD), the line items and the total in cents (for example 12000 for 120.00). ${s?.must_match.length ? `It must also match: ${s.must_match.join("; ")}.` : ""} Code checks the total and the date.`;
   }
   const s = i.spec as DeliverableSpec | null;
-  return `Proof type: deliverable (${s?.kind === "url" ? `a web page at ${i.url ?? "the given URL"}` : "a file"}). Judge the checks from its content. extracted: all null.`;
+  return `Proof type: deliverable (${s?.kind === "url" ? `a web page at ${i.url ? safeUrl(i.url) : "the given URL"}` : "a file"}). Judge the checks from its content. extracted: all null.`;
 }
 
 function jpeg(bytes: Uint8Array): Anthropic.Beta.BetaImageBlockParam {
   return { type: "image", source: { type: "base64", media_type: "image/jpeg", data: Buffer.from(bytes).toString("base64") } };
 }
+
+/** A link as the prompt shows it: no quotes or angle brackets to break out of where it sits. */
+const safeUrl = (url: string) => url.replace(/["<>\s]/g, "").slice(0, 300);
 
 export class ClaudeVerifier implements Verifier {
   readonly model: string;
@@ -176,7 +179,12 @@ export class ClaudeVerifier implements Verifier {
     if (input.file?.mime === "application/pdf") {
       content.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: Buffer.from(input.file.bytes).toString("base64") } });
     } else if (input.file) content.push({ type: "text", text: "The file:" }, jpeg(input.file.bytes));
-    if (input.text !== undefined) content.push({ type: "text", text: `<content${input.url ? ` url="${input.url}"` : ""}>\n${input.text.slice(0, 20_000)}\n</content>` });
+    if (input.text !== undefined) {
+      // The page can't close the tag and write its own brief: its tags are defused.
+      const body = input.text.slice(0, 20_000).replace(/<\/?\s*content/gi, (m) => m.replace("<", "\u2039"));
+      const url = input.url ? ` url="${safeUrl(input.url)}"` : "";
+      content.push({ type: "text", text: `<content${url}>\n${body}\n</content>` });
+    }
     content.push({
       type: "text",
       text: [

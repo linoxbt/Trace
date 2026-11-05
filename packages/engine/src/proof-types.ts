@@ -19,6 +19,7 @@ import {
   evaluateIntegrity,
   hamming,
   inJobWindow,
+  isFlagged,
   MAX_PROOF_FILE_BYTES,
   nextJobStatus,
   nextLineStatus,
@@ -83,20 +84,20 @@ async function begin(e: Engine, lineId: string, tradesId: string, type: store.Li
 async function finish(
   e: Engine,
   c: Ctx,
-  r: { decision: { verdict: Verdict; reasons: string[] }; observation: ProofObservation | null; integrity: IntegrityReport; photoId: string | null; proofItemId: string | null; model: string; sample: boolean; data?: Record<string, unknown> },
+  r: { decision: { verdict: Verdict; reasons: string[] }; observation: ProofObservation | null; integrity: IntegrityReport; photoId: string | null; proofItemId: string | null; model: string; sample: boolean; data?: Record<string, unknown>; injectionExcerpt?: string | null },
 ): Promise<ProofResult> {
   await e.db.tx(async (q) => {
     const j = await store.mustGetJob(q, c.job.id, { lock: true });
     const locked = await store.getLine(q, c.line.id, { lock: true });
     if (!locked || locked.status !== "PROVING") throw conflict("not_proving", `${c.line.code} changed while it was being checked`);
     const ev = r.decision.verdict === "VERIFIED" ? "VERDICT_VERIFIED" : r.decision.verdict === "FAILED" ? "VERDICT_FAILED" : "VERDICT_NEEDS_REVIEW";
-    const steered = !!r.observation?.instructions_found;
+    const excerpt = r.injectionExcerpt ?? r.observation?.instructions_found ?? null;
     await store.updateLine(q, c.line.id, {
       status: nextLineStatus(locked.status, ev),
       review_due_at: null,
       flag_note: null,
-      injection_flag: steered,
-      injection_excerpt: steered ? r.observation!.instructions_found : null,
+      injection_flag: !!excerpt,
+      injection_excerpt: excerpt,
     });
     await store.insertVerdict(q, {
       lineId: c.line.id,
@@ -133,6 +134,32 @@ async function inspect(e: Engine, input: ProofInspectInput): Promise<ProofObserv
 }
 
 /** Text aimed at a reviewer sends the line to a person, whatever else it shows. */
+/**
+ * The planted-note check for proofs that aren't a single photo: the text
+ * scanner reads every image and document independently of the verifier, so
+ * a note aimed at the checker is caught even if it sways the model judging
+ * the work. A scan that can't run, or no scanner at all, sends the line to
+ * the client rather than letting it verify on its own.
+ */
+async function scanProof(e: Engine, parts: { images?: Uint8Array[]; text?: string; pdf?: Uint8Array }): Promise<{ checks: ProofCheck[]; excerpt: string | null }> {
+  const scanner = e.scanner;
+  if (!scanner) return { checks: [{ name: "instructions", result: "review", detail: "the planted-note check isn't set up, so the client decides" }], excerpt: null };
+  const doc = parts.text !== undefined || parts.pdf ? [{ text: parts.text, pdf: parts.pdf }] : [];
+  try {
+    if (doc.length && !scanner.scanDocument) throw new Error("this scanner can't read documents");
+    const scans = await Promise.all([...(parts.images ?? []).map((img) => scanner.scanImage(img)), ...doc.map((d) => scanner.scanDocument!(d))]);
+    const hit = scans.map((s) => isFlagged(s)).find((f) => f.flagged);
+    if (hit) {
+      const excerpt = (hit.excerpt ?? "").slice(0, 200);
+      return { checks: [{ name: "instructions", result: "review", detail: `text addressed to the reviewer: "${excerpt}"` }], excerpt };
+    }
+    return { checks: [], excerpt: null };
+  } catch (err) {
+    e.log.warn("planted-note scan failed", { err: String(err) });
+    return { checks: [{ name: "instructions", result: "review", detail: "the planted-note check couldn't run, so the client decides" }], excerpt: null };
+  }
+}
+
 function instructionsCheck(obs: ProofObservation): ProofCheck[] {
   return obs.instructions_found ? [{ name: "instructions", result: "review", detail: `text addressed to the reviewer was ignored: "${obs.instructions_found}"` }] : [];
 }
@@ -216,15 +243,21 @@ export async function submitVideoProof(
   const enough: ProofCheck[] = frames.length >= 4 ? [] : [{ name: "clip_length", result: "fail", detail: "too few frames from the clip" }];
   let integrity = proofIntegrity([...first.checks, length, ...enough], { sample });
   let obs: ProofObservation | null = null;
+  let excerpt: string | null = null;
   let decision: { verdict: Verdict; reasons: string[] };
   if (integrity.status === "fail") decision = { verdict: "FAILED", reasons: integrity.checks.filter((x) => x.result === "fail").map((x) => x.detail) };
   else {
     const before = first.before ? await e.storage.get(first.before.storage_path) : null;
-    obs = await inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "video", spec: c.line.proof_spec, before, frames });
-    integrity = proofIntegrity([...integrity.checks, ...instructionsCheck(obs)], { sample });
+    const [o, scanned] = await Promise.all([
+      inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "video", spec: c.line.proof_spec, before, frames }),
+      scanProof(e, { images: frames.map((f) => f.jpeg) }),
+    ]);
+    obs = o;
+    excerpt = scanned.excerpt;
+    integrity = proofIntegrity([...integrity.checks, ...instructionsCheck(obs), ...scanned.checks], { sample });
     decision = verdictFrom(c, obs, integrity, e);
   }
-  return finish(e, c, { decision, observation: obs, integrity: { ...integrity, distanceM: first.distanceM }, photoId: first.photo.id, proofItemId: null, model: obs ? e.verifier.model : "integrity", sample, data: { frames: frames.length } });
+  return finish(e, c, { decision, observation: obs, integrity: { ...integrity, distanceM: first.distanceM }, photoId: first.photo.id, proofItemId: null, model: obs ? e.verifier.model : "integrity", sample, data: { frames: frames.length }, injectionExcerpt: excerpt });
 }
 
 // ---------- reading ----------
@@ -239,11 +272,19 @@ export async function submitReadingProof(
   const shot = await cameraPhoto(e, c, input.photo, { gps: input.gps, deviceId: input.deviceId, token: input.token, sample });
   let integrity = proofIntegrity(shot.checks, { sample });
   let obs: ProofObservation | null = null;
+  let excerpt: string | null = null;
+  let scanChecks: ProofCheck[] = [];
   let decision: { verdict: Verdict; reasons: string[] };
   if (integrity.status === "fail") decision = { verdict: "FAILED", reasons: integrity.checks.filter((x) => x.result === "fail").map((x) => x.detail) };
   else {
     const before = shot.before ? await e.storage.get(shot.before.storage_path) : null;
-    obs = await inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "reading", spec, before, photo: shot.jpeg });
+    const [o, scanned] = await Promise.all([
+      inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "reading", spec, before, photo: shot.jpeg }),
+      scanProof(e, { images: [shot.jpeg] }),
+    ]);
+    obs = o;
+    excerpt = scanned.excerpt;
+    scanChecks = scanned.checks;
     const value = obs.extracted.value;
     // Code, not the model, decides whether the number is good enough.
     const reading: ProofCheck[] =
@@ -257,7 +298,7 @@ export async function submitReadingProof(
               ? [{ name: "reading" as const, result: "review" as const, detail: `entered ${input.enteredValue} ${spec.unit}, but the photo reads ${value}` }]
               : []),
           ];
-    integrity = proofIntegrity([...integrity.checks, ...reading, ...instructionsCheck(obs)], { sample });
+    integrity = proofIntegrity([...integrity.checks, ...reading, ...instructionsCheck(obs), ...scanChecks], { sample });
     decision = verdictFrom(c, obs, integrity, e);
   }
   return finish(e, c, {
@@ -269,6 +310,7 @@ export async function submitReadingProof(
     model: obs ? e.verifier.model : "integrity",
     sample,
     data: { value: obs?.extracted.value ?? null, entered: input.enteredValue },
+    injectionExcerpt: excerpt,
   });
 }
 
@@ -310,10 +352,18 @@ export async function submitDocumentProof(
   ];
   let integrity = proofIntegrity(base, { sample });
   let obs: ProofObservation | null = null;
+  let excerpt: string | null = null;
+  let scanChecks: ProofCheck[] = [];
   let decision: { verdict: Verdict; reasons: string[] };
   if (integrity.status === "fail") decision = { verdict: "FAILED", reasons: integrity.checks.filter((x) => x.result === "fail").map((x) => x.detail) };
   else {
-    obs = await inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "document", spec, file });
+    const [o, scanned] = await Promise.all([
+      inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "document", spec, file }),
+      scanProof(e, file.mime === "application/pdf" ? { pdf: file.bytes } : { images: [file.bytes] }),
+    ]);
+    obs = o;
+    excerpt = scanned.excerpt;
+    scanChecks = scanned.checks;
     const x = obs.extracted;
     const checks: ProofCheck[] = [];
     if (spec.total_at_most_price) {
@@ -333,10 +383,10 @@ export async function submitDocumentProof(
           ? { name: "document_date", result: "pass", detail: `dated ${x.date}` }
           : { name: "document_date", result: "fail", detail: `dated ${x.date}, outside this job's dates` },
     );
-    integrity = proofIntegrity([...integrity.checks, ...checks, ...instructionsCheck(obs)], { sample });
+    integrity = proofIntegrity([...integrity.checks, ...checks, ...instructionsCheck(obs), ...scanChecks], { sample });
     decision = verdictFrom(c, obs, integrity, e);
   }
-  return finish(e, c, { decision, observation: obs, integrity, photoId: null, proofItemId: item.id, model: obs ? e.verifier.model : "integrity", sample, data: { document: item.id } });
+  return finish(e, c, { decision, observation: obs, integrity, photoId: null, proofItemId: item.id, model: obs ? e.verifier.model : "integrity", sample, data: { document: item.id }, injectionExcerpt: excerpt });
 }
 
 // ---------- deliverables ----------
@@ -556,14 +606,20 @@ export async function submitDeliverableProof(
 
   let integrity = proofIntegrity(checks, { sample });
   let obs: ProofObservation | null = null;
+  let excerpt: string | null = null;
   let decision: { verdict: Verdict; reasons: string[] };
   if (integrity.status === "fail") decision = { verdict: "FAILED", reasons: integrity.checks.filter((x) => x.result === "fail").map((x) => x.detail) };
   else {
-    obs = await inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "deliverable", spec, ...look });
-    integrity = proofIntegrity([...integrity.checks, ...instructionsCheck(obs)], { sample });
+    const [o, scanned] = await Promise.all([
+      inspect(e, { lineId: c.line.code, title: c.line.title, acceptance: c.line.acceptance, type: "deliverable", spec, ...look }),
+      scanProof(e, look.file?.mime === "application/pdf" ? { pdf: look.file.bytes } : look.file ? { images: [look.file.bytes] } : { text: look.text ?? "" }),
+    ]);
+    obs = o;
+    excerpt = scanned.excerpt;
+    integrity = proofIntegrity([...integrity.checks, ...instructionsCheck(obs), ...scanned.checks], { sample });
     decision = verdictFrom(c, obs, integrity, e);
   }
-  return finish(e, c, { decision, observation: obs, integrity, photoId: null, proofItemId: item.id, model: obs ? e.verifier.model : "integrity", sample, data: { deliverable: item.id } });
+  return finish(e, c, { decision, observation: obs, integrity, photoId: null, proofItemId: item.id, model: obs ? e.verifier.model : "integrity", sample, data: { deliverable: item.id }, injectionExcerpt: excerpt });
 }
 
 // ---------- attestation ----------
