@@ -13,6 +13,7 @@ import {
 } from "@trace/core";
 import * as store from "@trace/db";
 import { authorizationOf } from "@trace/paypal";
+import { z } from "zod";
 import type { Engine } from "./deps.ts";
 import type { ScopeFlag } from "./inject/text-scan.ts";
 import { guardedVoid } from "./guard/execute.ts";
@@ -76,6 +77,22 @@ export interface ScopeLineInput {
   proofType?: string;
   proofSpec?: unknown;
 }
+
+/**
+ * One proposed line as the app sends it, for the scope and change-order
+ * routes alike. Every field the engine reads must be listed: zod drops the
+ * rest, which once lost every line's proof type on the way in.
+ */
+export const LineBody = z.object({
+  title: z.string().trim().min(1).max(60),
+  description: z.string().max(280).nullish(),
+  priceCents: z.number().int().positive(),
+  acceptance: z.unknown(),
+  verifiableByPhoto: z.boolean(),
+  proofType: z.string().optional(),
+  proofSpec: z.unknown().optional(),
+});
+export const ScopeLineBody = LineBody.extend({ code: z.string().regex(/^L\d{1,2}$/) });
 
 /** Check and normalise proposed lines (a scope or a change order). Throws a plain-words error on the first problem. */
 export function cleanLines(lines: ScopeLineInput[]) {

@@ -8,6 +8,7 @@ import {
   pageText,
   requestAttestation,
   saveScope,
+  ScopeLineBody,
   signAttestation,
   submitDeliverableProof,
   submitDocumentProof,
@@ -53,6 +54,16 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof types", () => {
 
   const token = async (code: string) => (await issueCaptureToken(e, h.lines[code]!.id, h.trades, DEVICE)).token;
   const status = async (code: string) => (await store.getLine(e.db, h.lines[code]!.id))!.status;
+
+  it("keeps each line's proof type and details through the scope route's request schema", async () => {
+    const parsed = LINES.map((l) => ScopeLineBody.parse(JSON.parse(JSON.stringify(l))));
+    expect(parsed.map((l) => l.proofType)).toEqual(["video", "reading", "document", "deliverable", "attestation"]);
+    const trades = await makeUser(e.db, "t3");
+    const job = (await e.db.query<{ id: string }>("insert into jobs (trades_id, homeowner_email, address) values ($1, 'x@example.test', 'a') returning id", [trades])).rows[0]!;
+    const saved = await saveScope(e, job.id, trades, parsed);
+    expect(saved.map((l) => l.proof_type)).toEqual(["video", "reading", "document", "deliverable", "attestation"]);
+    expect(saved[1]!.proof_spec).toMatchObject({ unit: "bar", op: "between" });
+  });
 
   it("stores each line's proof type and details, and refuses details that don't fit the type", async () => {
     expect(h.lines.L2).toMatchObject({ proof_type: "reading", proof_spec: { unit: "bar", op: "between" } });
