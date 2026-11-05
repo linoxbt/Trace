@@ -176,7 +176,7 @@ The Tripwire tests cover:
 
 ## Deploy on Netlify
 
-`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `apps/web/netlify/tick.mts` (bundled into `netlify/functions/tick.mjs` at build time, schedule in `netlify.toml`), once a minute: Netlify has no always-on processes, and a minute is its finest schedule. Netlify's build can't reach the database, so the function carries the migrations in its bundle and applies any pending ones within a minute of a deploy. Each run writes a heartbeat; `/api/health` reports its age and the newest migration, and the steady write keeps a free Supabase project from pausing.
+`netlify.toml` builds `apps/web` with Netlify's Next.js runtime. Middleware becomes an Edge Function and the API routes become Functions. The worker's periodic jobs run as a scheduled function, `apps/web/netlify/tick.mts` (bundled into `netlify/functions/tick.mjs` at build time, schedule in `netlify.toml`), once a minute: Netlify has no always-on processes, and a minute is its finest schedule. Netlify's build can't reach the database, so the function carries the migrations in its bundle and applies any pending ones within a minute of a deploy. Each run writes a heartbeat, and the steady write keeps a free Supabase project from pausing. `/api/health` is for an uptime monitor: 200 when the database answers, the worker ran in the last five minutes and the schema is current; 503 with the reasons (`worker_stale`, `schema_behind`) otherwise.
 
 Set these in Netlify under **Site configuration > Environment variables**, then trigger a new deploy, because values are fixed at build time:
 

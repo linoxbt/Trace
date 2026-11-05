@@ -35,6 +35,10 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
     expect(await db.withLock("dead", async () => "taken over")).toBe("taken over");
   });
 
+  it("names the newest migration file as LATEST_MIGRATION", async () => {
+    expect(store.LATEST_MIGRATION).toBe((await readMigrations()).map((m) => m.name).sort().at(-1));
+  });
+
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_schema_migrations");

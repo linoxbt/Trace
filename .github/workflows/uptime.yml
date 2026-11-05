@@ -1,0 +1,30 @@
+# Uptime check: every 15 minutes, the live site's /api/health must answer 200
+# (database up, worker running, schema current). A failed run is a red run in
+# Actions, and GitHub emails the repository's owner about it. Three tries a
+# minute apart, so the minute after a deploy (schema catching up) isn't an alert.
+name: uptime
+on:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: GET /api/health
+        env:
+          SITE: https://trace-proof.netlify.app
+        run: |
+          for i in 1 2 3; do
+            body=$(curl -sS --max-time 20 -w '\n%{http_code}' "$SITE/api/health") || body=$'\n000'
+            code=$(printf '%s' "$body" | tail -n1)
+            echo "try $i: $code $(printf '%s' "$body" | head -n1)"
+            [ "$code" = "200" ] && exit 0
+            sleep 60
+          done
+          echo "::error::$SITE/api/health is not healthy"
+          exit 1
