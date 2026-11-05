@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import pg from "pg";
 
 /** The pool, or a client inside a transaction. */
@@ -68,21 +69,25 @@ export class Db {
   }
 
   /**
-   * Hold a session-level advisory lock while `fn` runs, or return null at once
-   * if another process holds it. Keeps one worker doing the periodic jobs.
+   * Hold the named lease while `fn` runs, or return null at once if another
+   * process holds it. Keeps one worker doing the periodic jobs. A lease, not a
+   * session lock, so it works through a transaction pooler; it lapses after
+   * `leaseS` if its holder dies without letting go.
    */
-  async withLock<T>(key: number, fn: () => Promise<T>): Promise<T | null> {
-    const client = await this.pool.connect();
+  async withLock<T>(key: number | string, fn: () => Promise<T>, leaseS = 120): Promise<T | null> {
+    const name = String(key);
+    const holder = randomUUID();
+    const got = await this.pool.query(
+      `insert into worker_leases (name, holder, until) values ($1, $2, now() + make_interval(secs => $3))
+       on conflict (name) do update set holder = excluded.holder, until = excluded.until where worker_leases.until < now()
+       returning 1`,
+      [name, holder, leaseS],
+    );
+    if (got.rowCount !== 1) return null;
     try {
-      const { rows } = await client.query<{ ok: boolean }>("select pg_try_advisory_lock($1) as ok", [key]);
-      if (!rows[0]?.ok) return null;
-      try {
-        return await fn();
-      } finally {
-        await client.query("select pg_advisory_unlock($1)", [key]).catch(() => {});
-      }
+      return await fn();
     } finally {
-      client.release();
+      await this.pool.query("delete from worker_leases where name = $1 and holder = $2", [name, holder]).catch(() => {});
     }
   }
 

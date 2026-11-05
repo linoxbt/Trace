@@ -19,17 +19,33 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
     return { trades, home, job: j };
   }
 
+  it("lets one worker hold the lease at a time, and frees it after, or once it lapses", async () => {
+    let inside = 0;
+    const slow = () => db.withLock("test-lease", async () => {
+      inside += 1;
+      await new Promise((r) => setTimeout(r, 150));
+      return "ran";
+    });
+    const results = await Promise.all([slow(), slow(), slow()]);
+    expect(results.filter((r) => r === "ran")).toHaveLength(1);
+    expect(inside).toBe(1);
+    expect(await db.withLock("test-lease", async () => "again")).toBe("again");
+    // A holder that died: its lease lapses.
+    await db.query("insert into worker_leases (name, holder, until) values ('dead', 'x', now() - interval '1 second')");
+    expect(await db.withLock("dead", async () => "taken over")).toBe("taken over");
+  });
+
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_schema_migrations");
-    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql", "014_capture_balances.sql", "015_webhook_claims.sql", "016_rule_drafts.sql", "017_proof_retention.sql"]);
+    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql", "014_capture_balances.sql", "015_webhook_claims.sql", "016_rule_drafts.sql", "017_proof_retention.sql", "018_worker_lease.sql"]);
   });
 
   it("takes migrations as data too, as the scheduled function carries them, and records the worker's heartbeat", async () => {
     expect(await migrate(db, await readMigrations())).toEqual([]);
     await store.recordHeartbeat(db, { released: 1 });
     const s = await store.systemStatus(db);
-    expect(s.migration).toBe("017_proof_retention.sql");
+    expect(s.migration).toBe("018_worker_lease.sql");
     expect(Date.now() - s.lastTickAt!.getTime()).toBeLessThan(60_000);
   });
 
