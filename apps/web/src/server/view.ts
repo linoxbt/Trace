@@ -167,7 +167,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
   // Every hold on the job: the original scope's, and each change order's.
   const holds = await store.authorizationsForJob(e.db, jobId);
   const { rows: relRows } = await e.db.query<{ n: number }>(
-    "select coalesce(sum(c.amount_cents - c.refunded_cents),0)::int8 as n from captures c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')",
+    "select coalesce(sum(c.amount_cents - c.refunded_cents),0)::int8 as n from capture_balances c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')",
     [jobId],
   );
   const released = relRows[0]!.n;
@@ -227,7 +227,7 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
     captures: auth
       ? (
           await e.db.query<store.CaptureRow>(
-            "select c.* from captures c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status <> 'FAILED' order by c.created_at",
+            "select c.* from capture_balances c join authorizations a on a.id = c.authorization_id where a.job_id = $1 and c.status <> 'FAILED' order by c.created_at",
             [jobId],
           )
         ).rows.map((c) => ({
@@ -327,7 +327,7 @@ export async function myJobs(userId: string) {
        (select count(*)::int8 from lines where job_id = j.id) as lines,
        (select count(*)::int8 from lines where job_id = j.id and status = 'CAPTURED') as paid,
        (select sum(a.amount_cents)::int8 from authorizations a where a.job_id = j.id) as held,
-       coalesce((select sum(c.amount_cents - c.refunded_cents) from captures c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')),0)::int8 as released
+       coalesce((select sum(c.amount_cents - c.refunded_cents) from capture_balances c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')),0)::int8 as released
      from jobs j
      where $1 in (j.trades_id, j.homeowner_id)
      order by j.created_at desc limit 50`,

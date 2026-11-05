@@ -21,7 +21,7 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
 
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
-    const { rows } = await db.query("select name from trace_migrations");
+    const { rows } = await db.query("select name from trace_schema_migrations");
     expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql"]);
   });
 
@@ -33,6 +33,22 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
     expect(Date.now() - s.lastTickAt!.getTime()).toBeLessThan(60_000);
   });
 
+  it("never has a new migration alter a table an earlier one created: production runs them as a role that doesn't own those", async () => {
+    // 001 to 010 were applied by Supabase's postgres role, which owns their tables.
+    const OWNER_APPLIED = "010";
+    const created = new Map<string, string>();
+    for (const m of await readMigrations()) {
+      const sql = m.sql.replace(/--.*$/gm, "");
+      if (m.name.slice(0, 3) > OWNER_APPLIED) {
+        for (const [, table] of sql.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?(\w+)/gi)) {
+          const by = created.get(table!.toLowerCase());
+          if (by && by !== m.name) expect.fail(`${m.name} alters ${table}, created by ${by}: add a new table or view instead`);
+        }
+      }
+      for (const [, table] of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?(\w+)/gi)) created.set(table!.toLowerCase(), m.name);
+    }
+  });
+
   it("keeps every public table behind row-level security, read-only to the public roles", async () => {
     const { rows } = await db.query<{ table: string; rls: boolean; anon: boolean; writes: boolean }>(
       `select c.relname as table, c.relrowsecurity as rls,
@@ -41,7 +57,7 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
        from pg_class c join pg_namespace n on n.oid = c.relnamespace
        where n.nspname = 'public' and c.relkind = 'r' order by 1`,
     );
-    expect(rows.map((r) => r.table)).toContain("trace_migrations");
+    expect(rows.map((r) => r.table)).toContain("trace_schema_migrations");
     expect(rows.filter((r) => !r.rls).map((r) => r.table)).toEqual([]);
     expect(rows.filter((r) => r.anon).map((r) => r.table)).toEqual([]);
     expect(rows.filter((r) => r.writes).map((r) => r.table)).toEqual([]);

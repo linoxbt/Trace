@@ -1,12 +1,11 @@
 -- The public roles (the publishable key, guest and signed-in sessions) only
 -- ever read their own jobs, through row-level security; every write goes
 -- through the server. Supabase grants them everything on each new public
--- table by default, so this takes the writes back on every table, and closes
--- the migration ledger, which the runner creates without row-level security.
+-- table by default, so this takes the writes back. Run as the app's role, it
+-- can only revoke on tables that role owns (on the others PostgreSQL warns
+-- and moves on), and row-level security already refuses the public roles'
+-- writes on every table. The migration ledger is locked down by the runner.
 -- A test checks every public table stays this way.
-
-alter table trace_migrations enable row level security;
-revoke all on trace_migrations from anon, authenticated;
 
 revoke all on all tables in schema public from anon;
 revoke insert, update, delete, truncate, references, trigger on all tables in schema public from authenticated;

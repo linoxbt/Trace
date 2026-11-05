@@ -115,7 +115,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
        (select count(*)::int8 from lines where job_id = j.id and status not in ('CAPTURED','DROPPED')) as open,
        (select sum(a.amount_cents)::int8 from authorizations a where a.job_id = j.id) as held,
        ${STILL_HELD_SQL} as still_held,
-       coalesce((select sum(c.amount_cents - c.refunded_cents) from captures c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')),0)::int8 as released,
+       coalesce((select sum(c.amount_cents - c.refunded_cents) from capture_balances c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')),0)::int8 as released,
        j.category
      from jobs j
      where $1 in (j.trades_id, j.homeowner_id)

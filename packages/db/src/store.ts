@@ -90,16 +90,12 @@ export interface CaptureRow {
   status: CaptureStatus;
   attempts: number;
   last_error: string | null;
-  /** How much of this capture has been refunded, and by which PayPal refunds. */
+  /** How much of this capture has been refunded, and by which PayPal refunds (from capture_balances). */
   refunded_cents: number;
   refund_ids: string[];
   created_at: Date;
   updated_at: Date;
 }
-
-/** Money still kept from a capture after any refunds; nothing for one PayPal didn't take. */
-export const keptCents = (c: Pick<CaptureRow, "status" | "amount_cents" | "refunded_cents">): number =>
-  ["COMPLETED", "PENDING", "PARTIALLY_REFUNDED"].includes(c.status) ? c.amount_cents - c.refunded_cents : 0;
 
 export interface PhotoRow {
   id: string;
@@ -475,7 +471,8 @@ export async function insertCapture(
 }
 
 export async function getCapture(q: Queryable, id: string, opts: { lock?: boolean } = {}): Promise<CaptureRow | null> {
-  const { rows } = await q.query<CaptureRow>(`select * from captures where id = $1${opts.lock ? " for update" : ""}`, [id]);
+  if (opts.lock) await q.query("select 1 from captures where id = $1 for update", [id]);
+  const { rows } = await q.query<CaptureRow>("select * from capture_balances where id = $1", [id]);
   return rows[0] ?? null;
 }
 
@@ -489,12 +486,12 @@ export async function jobIdOfCapture(q: Queryable, captureId: string): Promise<s
 }
 
 export async function getCaptureByPayPalId(q: Queryable, paypalCaptureId: string): Promise<CaptureRow | null> {
-  const { rows } = await q.query<CaptureRow>("select * from captures where paypal_capture_id = $1", [paypalCaptureId]);
+  const { rows } = await q.query<CaptureRow>("select * from capture_balances where paypal_capture_id = $1", [paypalCaptureId]);
   return rows[0] ?? null;
 }
 
 export async function getCaptureByInvoiceId(q: Queryable, invoiceId: string): Promise<CaptureRow | null> {
-  const { rows } = await q.query<CaptureRow>("select * from captures where invoice_id = $1", [invoiceId]);
+  const { rows } = await q.query<CaptureRow>("select * from capture_balances where invoice_id = $1", [invoiceId]);
   return rows[0] ?? null;
 }
 
@@ -504,17 +501,16 @@ export async function getCaptureByInvoiceId(q: Queryable, invoiceId: string): Pr
  * or null if this refund was already counted.
  */
 export async function recordRefund(q: Queryable, captureId: string, refundId: string, cents: number): Promise<CaptureRow | null> {
-  const { rows } = await q.query<CaptureRow>(
-    `update captures set
-       refunded_cents = least(amount_cents, refunded_cents + $3),
-       refund_ids = array_append(refund_ids, $2),
-       status = case when least(amount_cents, refunded_cents + $3) >= amount_cents then 'REFUNDED' else 'PARTIALLY_REFUNDED' end,
-       updated_at = now()
-     where id = $1 and not ($2 = any(refund_ids))
-     returning *`,
-    [captureId, refundId, cents],
+  await q.query("select 1 from captures where id = $1 for update", [captureId]);
+  const added = await q.query("insert into capture_refunds (capture_id, refund_id, cents) values ($1, $2, $3) on conflict do nothing", [captureId, refundId, Math.max(1, cents)]);
+  if (!added.rowCount) return null;
+  await q.query(
+    `update captures c set updated_at = now(),
+       status = case when b.refunded_cents >= c.amount_cents then 'REFUNDED' else 'PARTIALLY_REFUNDED' end
+     from capture_balances b where b.id = c.id and c.id = $1`,
+    [captureId],
   );
-  return rows[0] ?? null;
+  return (await getCapture(q, captureId))!;
 }
 
 export async function updateCapture(
@@ -797,7 +793,7 @@ export async function recordHeartbeat(q: Queryable, report: Record<string, unkno
 export async function systemStatus(q: Queryable): Promise<{ lastTickAt: Date | null; migration: string | null }> {
   const { rows } = await q.query<{ last_tick_at: Date | null; migration: string | null }>(
     `select (select last_tick_at from worker_heartbeat where id = 1) as last_tick_at,
-            (select max(name) from trace_migrations) as migration`,
+            (select max(name) from trace_schema_migrations) as migration`,
   );
   return { lastTickAt: rows[0]?.last_tick_at ?? null, migration: rows[0]?.migration ?? null };
 }
