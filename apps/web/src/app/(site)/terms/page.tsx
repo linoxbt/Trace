@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LegalPage, type LegalSection } from "@/components/marketing/legal";
+import { SANDBOX } from "@/lib/paypal-env";
 
 export const metadata: Metadata = { title: "Terms", description: "The terms for using Trace: what it does with your money, your proof and your account." };
 
@@ -9,7 +10,7 @@ const SECTIONS: LegalSection[] = [
     paras: [
       "Trace is software that connects a client who wants on-site work done with the person doing it. The client approves a scope of priced lines and PayPal holds the money; each line is paid out only after its work is proved and approved.",
       "Trace is not a bank, an escrow agent or a party to your agreement for the work. The agreement is between the client and the person doing the work. Money is held and moved by PayPal under PayPal's own terms, which apply to you as a PayPal user.",
-      "This build runs on PayPal's sandbox: no real money moves, and it is offered as a demonstration.",
+      ...(SANDBOX ? ["This build runs on PayPal's sandbox: no real money moves, and it is offered as a demonstration."] : []),
     ],
   },
   {

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SANDBOX } from "@/lib/paypal-env";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app/shell";
 import { IconActivity, IconChevron, IconDispute, IconShield } from "@/components/app/icons";
@@ -70,7 +71,7 @@ export default async function Settings({ searchParams }: { searchParams: Promise
       </Card>
       <Card className="mt-5 p-5 text-[13.5px] leading-relaxed text-muted sm:p-6">
         <div className="mb-2 text-[15px] font-semibold text-ink">Your data</div>
-        Photos and proof files are kept for 180 days after a job closes, the window in which a payment can be disputed, then deleted automatically; the record of what was checked and paid stays. Locations are only recorded with photos, never tracked. Payments for your jobs settle in your own PayPal account, never in Trace's. This is a PayPal sandbox build: no real money moves.
+        Photos and proof files are kept for 180 days after a job closes, the window in which a payment can be disputed, then deleted automatically; the record of what was checked and paid stays. Locations are only recorded with photos, never tracked. Payments for your jobs settle in your own PayPal account, never in Trace's.{SANDBOX ? " This is a PayPal sandbox build: no real money moves." : ""}
       </Card>
     </AppShell>
   );

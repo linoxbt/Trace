@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Mark } from "@/components/logo";
 import { Eyebrow } from "./blocks";
+import { SANDBOX } from "@/lib/paypal-env";
 
 const COLS = [
   { title: "Pages", links: [["Home", "/"], ["How it works", "/how-it-works"], ["Homeowners", "/homeowners"], ["Tradespeople", "/tradespeople"], ["Security", "/security"], ["Accuracy", "/accuracy"]] },
@@ -50,7 +51,7 @@ export function Footer() {
 
         <p className="mt-14 max-w-3xl text-[12.5px] leading-relaxed text-white/45">
           <span className="font-semibold text-white/70">Built for the PayPal AI Hackathon 2026.</span> PayPal Orders v2 with intent AUTHORIZE, partial and final captures,
-          reauthorization, verified webhooks and dispute evidence. Sandbox only: no real money moves.
+          reauthorization, verified webhooks and dispute evidence.{SANDBOX ? " Sandbox only: no real money moves." : ""}
         </p>
 
         <div className="mt-12 border-t border-white/10 pt-12">

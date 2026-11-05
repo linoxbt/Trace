@@ -3,6 +3,7 @@
 // Building blocks shared by the marketing pages.
 
 import { useEffect, useRef, useState } from "react";
+import { SANDBOX } from "@/lib/paypal-env";
 import Link from "next/link";
 import { Reveal } from "@/components/ui/reveal";
 import { getLenis } from "@/components/motion/smooth-scroll";
@@ -298,7 +299,7 @@ export function Cta({ title, body, primary = { href: "/demo", label: "Try the de
             </div>
             <div className="mt-10 space-y-1 font-mono text-[12px] tracking-[0.06em] text-white/45">
               <div>Held by PayPal · released on proof</div>
-              <div>Sandbox demo · no real money moves</div>
+              {SANDBOX && <div>Sandbox demo · no real money moves</div>}
             </div>
           </div>
         </div>

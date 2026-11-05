@@ -197,10 +197,10 @@ Set these in Netlify under **Site configuration > Environment variables**, then 
 
 ## Known limits
 
-- Paying tradespeople directly needs PayPal to approve Trace as a partner before it works with live money. The sandbox needs no approval. Which multiparty calls need a `PayPal-Auth-Assertion` follows PayPal's guides (refunds and disputes do; authorize, capture, void and reauthorize on the partner's own order don't) and still needs confirming against the sandbox.
+- Paying tradespeople directly needs PayPal to approve Trace as a partner before it works with live money. The sandbox needs no approval. [docs/going-live.md](docs/going-live.md) is the checklist for switching to live PayPal. Which multiparty calls need a `PayPal-Auth-Assertion` follows PayPal's guides (refunds and disputes do; authorize, capture, void and reauthorize on the partner's own order don't) and still needs confirming against the sandbox.
 - Supabase anonymous sign-ins must be on for `/try` (Authentication > Sign In / Providers > Anonymous).
-- Trace sends no email of its own. The tradesperson sends the client the job's link (the job page has a copy button), and sends an attester their sign-off link; the attester confirms their email through Supabase's sign-in link before signing, and the client then approves the line.
+- Trace's own emails (the client's job link, an attester's sign-off link) go out once `RESEND_API_KEY` and `MAIL_FROM` are set; until then the tradesperson shares them from the job page. The attester confirms their email through Supabase's sign-in link before signing, and the client then approves the line. Supabase's built-in mailer only reaches the project's team: real customers need custom SMTP set in Supabase.
 - Photos and proof files are deleted automatically 180 days after a job closes (30 days for demo jobs), unless a dispute is still open; the checks, decisions and payment record stay.
-- AI use is capped per person per hour, and guests and demo jobs share one hourly allowance (`packages/engine/src/budget.ts`). Anonymous sign-up itself has no CAPTCHA; turn on Supabase's CAPTCHA protection before opening this to real traffic.
+- AI use is capped per person per hour, and guests and demo jobs share one hourly allowance (`packages/engine/src/budget.ts`). Sign-ins, guest ones included, can sit behind Cloudflare Turnstile (`NEXT_PUBLIC_TURNSTILE_SITE_KEY`, plus its secret in Supabase); it is off until those are set.
 - PayPal seller protection targets goods, so a services dispute isn't guaranteed to go the tradesperson's way. The evidence pack is the best possible defence, not a guaranteed win.
 - The multipart field name for dispute evidence (`file1`) still needs confirming against the sandbox.

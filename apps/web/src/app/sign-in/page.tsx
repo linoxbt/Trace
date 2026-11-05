@@ -6,6 +6,7 @@ import { Logo } from "@/components/logo";
 import { ArrowDisc, Eyebrow, FloatDots } from "@/components/marketing/blocks";
 import { ParticleHero } from "@/components/marketing/particle-hero";
 import { safeNext } from "@/lib/safe-next";
+import { SANDBOX } from "@/lib/paypal-env";
 import { supabaseBrowser } from "@/lib/supabase-browser";
 import { useTurnstile } from "@/components/turnstile";
 import Link from "next/link";
@@ -66,7 +67,7 @@ function SignInForm() {
             <ParticleHero />
           </div>
         </div>
-        <p className="relative font-mono text-[11px] uppercase tracking-[0.14em] text-faint">Sandbox demo · no real money moves</p>
+        <p className="relative font-mono text-[11px] uppercase tracking-[0.14em] text-faint">{SANDBOX ? "Sandbox demo · no real money moves" : "Held by PayPal · released on proof"}</p>
       </aside>
 
       {/* Form */}
