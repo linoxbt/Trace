@@ -12,7 +12,7 @@ PayPal's window asks for a sandbox buyer login. The demo job shows one beside th
 
 ## Status
 
-Everything below is built and covered by the test suite (248 tests). The money flows have run against a fake PayPal and recorded responses, not yet end to end against the PayPal sandbox with real logins. The AI has run for real only in the server's evals (`/accuracy`); the tests use scripted models.
+Everything below is built and covered by the test suite (248 tests). On 5 Nov 2026 the live site was driven end to end against the PayPal sandbox, with a sandbox buyer approving in PayPal's own window and the real Claude verifier: $420 authorized; L1 to L3 verified and $310 captured while $110 stayed held; the unfinished grout failed; redone, it verified and the last $110 was the final capture; a $20 partial refund went through after both sides approved; a second job closed early, capturing $120 and voiding the rest. PayPal's webhooks for those runs all verified. Reauthorization (after the 3-day honor period) and multiparty payment to a separately onboarded seller haven't been run against the sandbox yet; demo jobs pay the partner account. The AI has run for real only in the server's evals (`/accuracy`); the tests use scripted models.
 
 | Part | State |
 | --- | --- |
