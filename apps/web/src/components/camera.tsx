@@ -47,22 +47,34 @@ export function Camera(props: {
 
   useEffect(() => {
     let stream: MediaStream | null = null;
+    // Closed while the browser was still opening the camera: the stream that
+    // arrives afterwards is stopped at once, so the camera light goes off.
+    let closed = false;
     (async () => {
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } }, audio: false });
+        const s = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", width: { ideal: 1920 } }, audio: false });
+        if (closed) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        stream = s;
         if (video.current) {
           video.current.srcObject = stream;
           await video.current.play();
         }
         await getToken();
-        setStatus("live");
+        if (!closed) setStatus("live");
       } catch (e) {
+        if (closed) return;
         setStatus("error");
         setMessage(e instanceof ApiError ? e.message : "The camera isn't available. Allow camera access and try again.");
       }
     })();
     position().then(setGps);
-    return () => stream?.getTracks().forEach((t) => t.stop());
+    return () => {
+      closed = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   }, [getToken]);
 
   const grab = async (quality = 0.9): Promise<Blob | null> => {

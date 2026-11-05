@@ -39,7 +39,10 @@ export interface JobRowView {
   side: Side;
   otherParty: string;
   totalCents: number;
+  /** Everything ever authorized on the job. */
   heldCents: number;
+  /** What PayPal holds right now. */
+  stillHeldCents: number;
   releasedCents: number;
   lines: number;
   paid: number;
@@ -71,6 +74,16 @@ export async function coversFor(jobIds: string[]): Promise<Map<string, string>> 
 }
 
 /** The user's jobs, newest activity first. */
+/**
+ * Money PayPal still holds on a job: for each open hold (the scope's and each
+ * change order's), its amount less what was captured from it, refunds
+ * included (refunded money came out of the hold). Voided and expired holds
+ * hold nothing.
+ */
+const STILL_HELD_SQL = `(select coalesce(sum(greatest(0, a.amount_cents - coalesce((select sum(c.amount_cents) from captures c
+      where c.authorization_id = a.id and c.status in ('COMPLETED','PENDING','REFUNDED','PARTIALLY_REFUNDED')), 0))), 0)::int8
+    from authorizations a where a.job_id = j.id and a.status in ('CREATED','PARTIALLY_CAPTURED'))`;
+
 export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]> {
   const { rows } = await engine().db.query<{
     id: string;
@@ -87,6 +100,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
     paid: number;
     open: number;
     held: number | null;
+    still_held: number;
     released: number;
     created_at: Date;
     updated_at: Date;
@@ -100,6 +114,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
        (select count(*)::int8 from lines where job_id = j.id and status = 'CAPTURED') as paid,
        (select count(*)::int8 from lines where job_id = j.id and status not in ('CAPTURED','DROPPED')) as open,
        (select sum(a.amount_cents)::int8 from authorizations a where a.job_id = j.id) as held,
+       ${STILL_HELD_SQL} as still_held,
        coalesce((select sum(c.amount_cents - c.refunded_cents) from captures c join authorizations a on a.id = c.authorization_id where a.job_id = j.id and c.status in ('COMPLETED','PENDING','PARTIALLY_REFUNDED')),0)::int8 as released,
        j.category
      from jobs j
@@ -118,6 +133,7 @@ export async function jobsOf(userId: string, limit = 200): Promise<JobRowView[]>
       otherParty: r.trades_id === userId ? r.homeowner_email : (r.trades_name ?? "Who does the work"),
       totalCents: r.total,
       heldCents: r.held ?? 0,
+      stillHeldCents: r.still_held,
       releasedCents: r.released,
       lines: r.lines,
       paid: r.paid,

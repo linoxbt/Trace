@@ -5,7 +5,7 @@ import { PaymentsList } from "@/components/app/payments-list";
 import { BigMoney, Card, Empty, PageTitle } from "@/components/app/ui";
 import { money } from "@/lib/format";
 import { currentUser } from "@/server/auth";
-import { ledgerOf } from "@/server/app-data";
+import { jobsOf, ledgerOf } from "@/server/app-data";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Payments" };
@@ -21,7 +21,7 @@ export default async function Payments() {
   const earned = released.filter((l) => l.side === "tradesperson").reduce((n, l) => n + l.amountCents, 0);
   const paid = released.filter((l) => l.side === "homeowner").reduce((n, l) => n + l.amountCents, 0);
   const openHolds = ledger.filter((l) => l.kind === "hold" && (l.status === "CREATED" || l.status === "PARTIALLY_CAPTURED"));
-  const heldNow = openHolds.reduce((n, h) => n + Math.max(0, h.amountCents - released.filter((r) => r.jobId === h.jobId).reduce((m, r) => m + r.amountCents, 0)), 0);
+  const heldNow = (await jobsOf(user.id)).reduce((n, j) => n + j.stillHeldCents, 0);
 
   return (
     <AppShell user={user}>

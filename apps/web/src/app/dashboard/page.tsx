@@ -43,10 +43,10 @@ export default async function Home() {
   ]);
 
   const live = jobs.filter((j) => !["COMPLETED", "CLOSED_VOIDED"].includes(j.status));
-  const held = live.filter((j) => j.status !== "DRAFT").reduce((n, j) => n + Math.max(0, j.heldCents - j.releasedCents), 0);
+  const held = live.reduce((n, j) => n + j.stillHeldCents, 0);
   const earned = jobs.filter((j) => j.side === "tradesperson").reduce((n, j) => n + j.releasedCents, 0);
   const paid = jobs.filter((j) => j.side === "homeowner").reduce((n, j) => n + j.releasedCents, 0);
-  const holding = live.filter((j) => j.heldCents > j.releasedCents).length;
+  const holding = live.filter((j) => j.stillHeldCents > 0).length;
   const checked = guard.allowed + guard.asked + guard.blocked;
   // Tradespeople (and new accounts, who may be one) are asked to link the PayPal account they're paid into.
   const askToConnect = !user.anonymous && payee.state !== "ready" && (jobs.length === 0 || jobs.some((j) => j.side === "tradesperson" && !j.demo));
