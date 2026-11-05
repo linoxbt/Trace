@@ -22,7 +22,11 @@ const g = globalThis as unknown as { __traceEngine?: Engine };
 export function engine(): Engine {
   if (g.__traceEngine) return g.__traceEngine;
   const e = env();
-  const db = new Db({ connectionString: e.DATABASE_URL, caCert: e.DATABASE_CA_CERT, max: 5 });
+  // Supabase's session pooler allows 15 connections in all, and Netlify runs
+  // several copies of this function at once (more during a deploy): each
+  // holds at most 3 (some flows use a second connection inside a
+  // transaction), and lets idle ones go after 5 s.
+  const db = new Db({ connectionString: e.DATABASE_URL, caCert: e.DATABASE_CA_CERT, max: 3, idleTimeoutMs: 5_000 });
   g.__traceEngine = {
     db,
     paypal:

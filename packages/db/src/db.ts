@@ -10,6 +10,8 @@ export interface DbOptions {
   /** PEM of the server's CA. Unset means TLS only when the URL asks for it. */
   caCert?: string;
   max?: number;
+  /** Close a connection idle this long (ms). Serverless instances should let go quickly. */
+  idleTimeoutMs?: number;
 }
 
 // int8 and numeric come back as strings by default. Counts and sums here fit
@@ -38,6 +40,9 @@ export class Db {
     this.pool = new pg.Pool({
       connectionString: opts.caCert ? withoutSslParams(opts.connectionString) : opts.connectionString,
       max: opts.max ?? 10,
+      idleTimeoutMillis: opts.idleTimeoutMs ?? 10_000,
+      // A pooler that's full answers slowly or not at all: fail fast instead of hanging a request.
+      connectionTimeoutMillis: 10_000,
       ...(opts.caCert ? { ssl: { ca: opts.caCert, rejectUnauthorized: true } } : {}),
     });
   }
