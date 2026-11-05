@@ -80,7 +80,7 @@ function Verifier({ view }: { view: EvalView }) {
                   </span>
                 </div>
                 <p className="mt-1 text-[14px] text-muted">
-                  {c.kind === "real" ? "Real photos" : "Drawn scene"} · {c.note}
+                  {c.kind === "photo" ? "Generated photo" : "Drawn scene"} · {c.note}
                 </p>
                 <p className="mt-3 text-[14px]">
                   Should be <strong>{c.expect === "release" ? "verified" : "held"}</strong>. Got <strong>{got}</strong>.
@@ -153,7 +153,7 @@ export default async function Accuracy() {
                 Does it pay for finished work, <span className="text-violet">and only finished work?</span>
               </>
             }
-            body={`${CASES.length} cases. ${CASES.filter((c) => c.kind === "real").length} use real photos of the demo bathroom: the true pairs, a wall left half-grouted, the before-photo sent again, and a photo of the wrong spot. ${CASES.filter((c) => c.kind === "drawn").length} are simple drawn scenes, one finished and one unfinished for each job type. A case is right when finished work is verified and unfinished work isn't; sending a finished job to the client to look at counts as a miss, but costs nobody money.`}
+            body={`${CASES.length} cases. ${CASES.filter((c) => c.kind === "photo").length} use the demo bathroom's photos, which are AI-generated stand-ins, not photos of real work: the true pairs, the before-photo reframed or taken again with nothing fixed, and a photo of the wrong spot. ${CASES.filter((c) => c.kind === "drawn").length} are simple drawn scenes, one finished and one unfinished for each job type. No case sends the same image twice, which the app stops in code before the model is asked. A case is right when finished work is verified and unfinished work isn't; sending a finished job to the client to look at counts as a miss, but costs nobody money.`}
           />
           {verifier ? <Verifier view={verifier} /> : <NotYet error={error} />}
         </div>
@@ -179,8 +179,8 @@ export default async function Accuracy() {
           <SectionHead clause="What this doesn't measure" title={<>The limits, <span className="text-violet">plainly.</span></>} />
           <ul className="mt-6 space-y-3 leading-relaxed text-muted">
             <li>The location, timing and reuse checks are code, tested on every build; here they are taken as passed, so the score is the model and the verdict rule alone.</li>
-            <li>Drawn scenes test judgement (is the agreed outcome visible?), not how the model copes with real light, blur or clutter. The real-photo cases are a small set from one bathroom.</li>
-            <li>A new model or a changed set starts a fresh run, so the numbers always match what the app runs today. The sets and scoring are in the open-source repo, under <code>eval/</code>.</li>
+            <li>None of these are photos of real work. The bathroom photos are AI-generated, and the drawn scenes are simple shapes: they test judgement (is the agreed outcome visible?), not how the model copes with real light, blur or clutter. The set is small, and it is also what the demo uses, so it is not held out.</li>
+            <li>A new model, a changed prompt or verdict rule, or a changed set starts a fresh run, so the numbers match what the app runs today. The sets and scoring are in the open-source repo, under <code>eval/</code>.</li>
           </ul>
         </div>
       </section>

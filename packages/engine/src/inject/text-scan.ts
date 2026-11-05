@@ -3,6 +3,7 @@
 // text in photos isn't enough on its own, so the text is found here, then
 // masked and the line re-judged without it (proof.ts).
 
+import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
@@ -25,6 +26,8 @@ export interface ScopeLineText {
 
 export interface TextScanner {
   readonly model: string;
+  /** Changes whenever its prompt or settings do. */
+  readonly fingerprint?: string;
   /** Every piece of visible text in a photo, with where it is and who it is aimed at. */
   scanImage(image: Uint8Array): Promise<TextScan>;
   /** Scope-time check: instructions to the AI written into the lines. */
@@ -89,6 +92,9 @@ export function toTextScan(m: z.infer<typeof ModelScan>): TextScan {
 
 export class ClaudeTextScanner implements TextScanner {
   readonly model: string;
+  get fingerprint(): string {
+    return createHash("sha256").update(JSON.stringify([this.model, IMAGE_SYSTEM])).digest("hex").slice(0, 10);
+  }
   private readonly client: Anthropic;
 
   constructor(opts: { apiKey?: string; model?: string; client?: Anthropic } = {}) {

@@ -1,13 +1,14 @@
 // The evals' server runs (spec section 12): each step judges one photo case
 // and scans a few planted-note images with the production models, and records
-// the outcome. A run belongs to a set version and model, so it happens once; a
-// changed set or model starts a new one. The site calls a step once a minute
-// from its scheduled worker; the /accuracy page shows the results.
+// the outcome. A run belongs to the set's version, the model and its prompt,
+// and the verdict rule, so it happens once; a change to any starts a new one.
+// The site calls a step once a minute from its scheduled worker; the
+// /accuracy page shows the results.
 
 import { createHash } from "node:crypto";
 import { isFlagged } from "@trace/core";
 import * as store from "@trace/db";
-import { judgePair, type Engine } from "@trace/engine";
+import { judgePair, verdictFingerprint, type Engine } from "@trace/engine";
 import { ITEMS } from "./inject/set.ts";
 import { summarizeInject, summarizeVerifier } from "./summary.ts";
 import { CASES, caseImages, setVersion } from "./verifier/set.ts";
@@ -33,7 +34,9 @@ const todo = (rows: store.EvalResultRow[], ids: string[]) => {
 const outcomes = (rows: store.EvalResultRow[]) => rows.map((r) => ({ caseId: r.case_id, expected: r.expected, got: r.got, error: r.error }));
 
 async function verifierStep(e: Engine, loadAsset: (path: string) => Promise<Uint8Array>): Promise<string> {
-  const run = await store.evalRunFor(e.db, { kind: "verifier", setVersion: setVersion(), model: e.verifier.model, total: CASES.length });
+  // The set, the verifier's prompts and settings, and the verdict rule: a change to any starts a fresh run.
+  const version = `${setVersion()}.${e.verifier.fingerprint ?? "unversioned"}.${verdictFingerprint(e.settings.confidenceThreshold)}`;
+  const run = await store.evalRunFor(e.db, { kind: "verifier", setVersion: version, model: e.verifier.model, total: CASES.length });
   if (run.status === "done") return "verifier: done";
   const rows = await store.evalResults(e.db, run.id);
   const next = todo(rows, CASES.map((c) => c.id))[0];
@@ -64,7 +67,7 @@ async function verifierStep(e: Engine, loadAsset: (path: string) => Promise<Uint
 async function injectStep(e: Engine, loadAsset: (path: string) => Promise<Uint8Array>): Promise<string> {
   if (!e.scanner) return "inject: no scanner";
   const scanner = e.scanner;
-  const run = await store.evalRunFor(e.db, { kind: "inject", setVersion: injectVersion(), model: scanner.model, total: ITEMS.length });
+  const run = await store.evalRunFor(e.db, { kind: "inject", setVersion: `${injectVersion()}.${scanner.fingerprint ?? "unversioned"}`, model: scanner.model, total: ITEMS.length });
   if (run.status === "done") return "inject: done";
   const rows = await store.evalResults(e.db, run.id);
   const next = todo(rows, ITEMS.map((i) => i.id)).slice(0, INJECT_PER_STEP);

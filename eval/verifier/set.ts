@@ -5,12 +5,18 @@
 // keep the money held).
 //
 // Two kinds of case:
-// - real: the demo job's bathroom photos (apps/web/public/photos), in true
-//   pairs and in pairs that must not pass (an unfinished wall, an unchanged
-//   spot, the wrong spot);
+// - photo: the demo job's bathroom photos (apps/web/public/photos). They are
+//   AI-generated stand-ins, not photos of real work (see that folder's
+//   README), used in true pairs and in pairs that must not pass: the
+//   before-photo reframed, retaken unchanged, or of the wrong spot;
 // - drawn: simple scenes drawn in code, one per job type, so anyone can
 //   rebuild them byte for byte. They test the judgement (is the stated
 //   outcome visible?), not how the model copes with real light and blur.
+//
+// No case sends the same image twice: production's no-change check stops
+// that in code before any model call, so it would only flatter the score.
+// "Unchanged" cases use a retake instead (reframed, rotated a little,
+// darker), which gets past that check and has to be caught by the model.
 //
 // The eval scores the model's look and Trace's verdict rule together, as the
 // proof flow runs them, with the location and capture checks taken as passed:
@@ -23,7 +29,7 @@ export type Expect = "release" | "hold";
 
 export interface VerifierCase {
   id: string;
-  kind: "real" | "drawn";
+  kind: "photo" | "drawn";
   category: string;
   title: string;
   acceptance: Acceptance;
@@ -33,8 +39,8 @@ export interface VerifierCase {
   note: string;
 }
 
-/** A demo photo by file name, or a drawn scene. */
-export type Source = { photo: string } | { scene: Scene };
+/** A demo photo by file name, or a drawn scene; `retake` reframes and relights it, as a second photo of the same thing would. */
+export type Source = ({ photo: string } | { scene: Scene }) & { retake?: boolean };
 
 const acc = (criterion: string, show: string[], notShow: string[]): Acceptance => ({
   criterion,
@@ -49,14 +55,14 @@ const SEAL = acc("A continuous sealant bead runs along the bath edge", ["continu
 const RAIL = acc("The towel rail is level and fixed at both ends", ["rail level and fixed at both ends"], ["loose or missing bracket"]);
 const GROUT = acc("Every joint on the wall is filled with grout", ["continuous grout in every joint"], ["visible cracks in the grout"]);
 
-const real = (id: string, title: string, a: Acceptance, before: string, after: string, expect: Expect, note: string): VerifierCase => ({
+const photo = (id: string, title: string, a: Acceptance, before: string, after: string, expect: Expect, note: string, opts: { retake?: boolean } = {}): VerifierCase => ({
   id,
-  kind: "real",
+  kind: "photo",
   category: "home_repair",
   title,
   acceptance: a,
   before: { photo: before },
-  after: { photo: after },
+  after: { photo: after, retake: opts.retake },
   expect,
   note,
 });
@@ -70,14 +76,14 @@ export type Scene =
   | "door_scratch" | "door_clean"
   | "hall_bare" | "hall_set";
 
-const drawn = (id: string, category: string, title: string, a: Acceptance, before: Scene, after: Scene, expect: Expect, note: string): VerifierCase => ({
+const drawn = (id: string, category: string, title: string, a: Acceptance, before: Scene, after: Scene, expect: Expect, note: string, opts: { retake?: boolean } = {}): VerifierCase => ({
   id,
   kind: "drawn",
   category,
   title,
   acceptance: a,
   before: { scene: before },
-  after: { scene: after },
+  after: { scene: after, retake: opts.retake },
   expect,
   note,
 });
@@ -91,20 +97,20 @@ const DOOR = acc("The scratch on the car door is gone", ["a clean, even door pan
 const HALL = acc("Tables are set up in rows, each with a white cloth", ["rows of tables", "a white cloth on every table"], ["an empty hall"]);
 
 export const CASES: VerifierCase[] = [
-  // Real photos: the demo bathroom.
-  real("r01", "Fix dripping tap", TAP, "l1-before", "l1-after", "release", "the demo's own pair"),
-  real("r02", "Reseal bath edge", SEAL, "l2-before", "l2-after", "release", "the demo's own pair"),
-  real("r03", "Refit towel rail", RAIL, "l3-before", "l3-after", "release", "the demo's own pair"),
-  real("r04", "Regrout shower wall", GROUT, "l4-before", "l4-after", "release", "the demo's own pair"),
-  real("r05", "Regrout shower wall", GROUT, "l4-before", "l4-unfinished", "hold", "grout only partly redone"),
-  real("r06", "Reseal bath edge", SEAL, "l2-before", "l2-before", "hold", "nothing changed: the before-photo again"),
-  real("r07", "Fix dripping tap", TAP, "l1-before", "l1-before", "hold", "nothing changed: still dripping"),
-  real("r08", "Refit towel rail", RAIL, "l3-before", "l3-before", "hold", "nothing changed: rail still loose"),
-  real("r09", "Fix dripping tap", TAP, "l1-before", "l2-after", "hold", "the wrong spot: a bath edge, not the tap"),
-  real("r10", "Regrout shower wall", GROUT, "l4-before", "l3-after", "hold", "the wrong spot: a towel rail"),
+  // Generated photos of the demo bathroom.
+  photo("r01", "Fix dripping tap", TAP, "l1-before", "l1-after", "release", "the demo's own pair"),
+  photo("r02", "Reseal bath edge", SEAL, "l2-before", "l2-after", "release", "the demo's own pair"),
+  photo("r03", "Refit towel rail", RAIL, "l3-before", "l3-after", "release", "the demo's own pair"),
+  photo("r04", "Regrout shower wall", GROUT, "l4-before", "l4-after", "release", "the demo's own pair"),
+  photo("r05", "Regrout shower wall", GROUT, "l4-before", "l4-unfinished", "hold", "the before-photo reframed: the grout wasn't redone"),
+  photo("r06", "Reseal bath edge", SEAL, "l2-before", "l2-before", "hold", "nothing changed: the old sealant, photographed again", { retake: true }),
+  photo("r07", "Fix dripping tap", TAP, "l1-before", "l1-before", "hold", "nothing changed: still dripping, photographed again", { retake: true }),
+  photo("r08", "Refit towel rail", RAIL, "l3-before", "l3-before", "hold", "nothing changed: rail still loose, photographed again", { retake: true }),
+  photo("r09", "Fix dripping tap", TAP, "l1-before", "l2-after", "hold", "the wrong spot: a bath edge, not the tap"),
+  photo("r10", "Regrout shower wall", GROUT, "l4-before", "l3-after", "hold", "the wrong spot: a towel rail"),
   // Drawn scenes: one or more per job type.
   drawn("d01", "home_repair", "Fill cracked joint", WALL_TILE, "crack", "crack_fixed", "release", "crack gone"),
-  drawn("d02", "home_repair", "Fill cracked joint", WALL_TILE, "crack", "crack", "hold", "crack still there"),
+  drawn("d02", "home_repair", "Fill cracked joint", WALL_TILE, "crack", "crack", "hold", "crack still there, photographed again", { retake: true }),
   drawn("d03", "home_repair", "Patch and paint hole", PATCH, "hole", "hole_patched", "release", "patched and painted"),
   drawn("d04", "home_repair", "Patch and paint hole", PATCH, "hole", "hole_patch_unpainted", "hold", "filled, not painted"),
   drawn("d05", "garden", "Mow the lawn", LAWN, "lawn_long", "lawn_mowed", "release", "all mown"),
@@ -112,11 +118,11 @@ export const CASES: VerifierCase[] = [
   drawn("d07", "cleaning", "Clear the floor", ROOM, "room_messy", "room_clear", "release", "floor clear"),
   drawn("d08", "cleaning", "Clear the floor", ROOM, "room_messy", "room_part", "hold", "two items left"),
   drawn("d09", "install", "Fit ceiling light", LIGHT, "wires", "lamp", "release", "light fitted"),
-  drawn("d10", "install", "Fit ceiling light", LIGHT, "wires", "wires", "hold", "still bare wires"),
+  drawn("d10", "install", "Fit ceiling light", LIGHT, "wires", "wires", "hold", "still bare wires, photographed again", { retake: true }),
   drawn("d11", "car", "Remove door scratch", DOOR, "door_scratch", "door_clean", "release", "scratch gone"),
-  drawn("d12", "car", "Remove door scratch", DOOR, "door_scratch", "door_scratch", "hold", "scratch still there"),
+  drawn("d12", "car", "Remove door scratch", DOOR, "door_scratch", "door_scratch", "hold", "scratch still there, photographed again", { retake: true }),
   drawn("d13", "events", "Set up tables", HALL, "hall_bare", "hall_set", "release", "tables set"),
-  drawn("d14", "events", "Set up tables", HALL, "hall_bare", "hall_bare", "hold", "hall still empty"),
+  drawn("d14", "events", "Set up tables", HALL, "hall_bare", "hall_bare", "hold", "hall still empty, photographed again", { retake: true }),
 ];
 
 /** A stable name for this set: a new or changed case gives a new version, and a fresh run. */
@@ -249,6 +255,25 @@ export async function drawScene(s: Scene): Promise<Buffer> {
   return sharp(Buffer.from(svg)).jpeg({ quality: 85 }).toBuffer();
 }
 
+/**
+ * A second photo of the same unchanged thing: framed a little tighter and
+ * off-centre, tilted 1.5°, and 6% darker. Enough to get past the app's
+ * no-change check (it differs in every 8x8 cell), so the model has to judge it.
+ */
+export async function retake(img: Buffer): Promise<Buffer> {
+  const { width = 0, height = 0 } = await sharp(img).metadata();
+  const dx = Math.round(width * 0.04);
+  const dy = Math.round(height * 0.03);
+  return sharp(img)
+    .extract({ left: dx, top: dy, width: width - dx * 2, height: height - dy * 2 })
+    .resize(width, height)
+    .modulate({ brightness: 0.94 })
+    .rotate(1.5, { background: "#888888" })
+    .resize(width, height, { fit: "cover" })
+    .jpeg({ quality: 84 })
+    .toBuffer();
+}
+
 /** Any photo as a JPEG no wider than the app's (the demo photos are WebP). */
 export async function toJpeg(bytes: Uint8Array): Promise<Buffer> {
   return sharp(bytes).rotate().resize({ width: 1600, withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer();
@@ -259,7 +284,10 @@ export async function toJpeg(bytes: Uint8Array): Promise<Buffer> {
  * script reads apps/web/public/photos; the server fetches them from the site).
  */
 export async function caseImages(c: VerifierCase, loadPhoto: (name: string) => Promise<Uint8Array>): Promise<{ before: Buffer; after: Buffer }> {
-  const one = async (s: Source) => ("photo" in s ? toJpeg(await loadPhoto(s.photo)) : drawScene(s.scene));
+  const one = async (s: Source) => {
+    const img = "photo" in s ? await toJpeg(await loadPhoto(s.photo)) : await drawScene(s.scene);
+    return s.retake ? retake(img) : img;
+  };
   const [before, after] = await Promise.all([one(c.before), one(c.after)]);
   return { before, after };
 }

@@ -5,7 +5,9 @@ import * as store from "@trace/db";
 import { TEST_DATABASE_URL } from "@trace/db/testing";
 import { evalStep, evalViews } from "@trace/eval/runner";
 import { summarizeVerifier } from "@trace/eval/summary";
-import { CASES } from "@trace/eval/verifier";
+import { CASES, caseImages } from "@trace/eval/verifier";
+import { SAME_IMAGE_CELL_DIFF, SAME_IMAGE_HAMMING } from "@trace/core";
+import { dHash, maxCellDiff, normalizePhoto } from "../src/index.ts";
 import { ITEMS } from "@trace/eval/inject";
 import { testEngine, type TestEngine } from "../src/testing.ts";
 
@@ -58,6 +60,16 @@ describe.skipIf(!TEST_DATABASE_URL)("evals on the server", () => {
 
   it("ships a drawn image for every planted-note item (the server has no fonts to draw them)", async () => {
     for (const i of ITEMS) expect((await loadPhoto(`eval/inject/${i.id}.jpg`)).length).toBeGreaterThan(10_000);
+  });
+
+  it("has no case the app's no-change check would stop before the model: every pair reaches the verifier", async () => {
+    const hamming = (a: string, b: string) => [...(BigInt(`0x${a}`) ^ BigInt(`0x${b}`)).toString(2)].filter((c) => c === "1").length;
+    for (const c of CASES) {
+      const { before, after } = await caseImages(c, (name) => loadPhoto(`photos/${name}.webp`));
+      const [b, a] = await Promise.all([normalizePhoto(before), normalizePhoto(after)]);
+      const same = hamming(await dHash(b), await dHash(a)) <= SAME_IMAGE_HAMMING && (await maxCellDiff(b, a)) <= SAME_IMAGE_CELL_DIFF;
+      expect(same, `${c.id} would be stopped as "no change" in code`).toBe(false);
+    }
   });
 
   it("scores a wrongly verified unfinished job as the costly error", () => {

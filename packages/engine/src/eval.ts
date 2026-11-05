@@ -4,8 +4,18 @@
 // text scan has its own eval.
 
 import { combinePasses, decideVerdict, needsSecondPass, proofIntegrity, type Acceptance, type LineObservation, type Verdict } from "@trace/core";
+import { createHash } from "node:crypto";
 import { cropRegion } from "./image.ts";
 import type { Verifier } from "./verifier.ts";
+
+/**
+ * Changes whenever the verdict rule's code or threshold does: with the set's
+ * version and the verifier's fingerprint, it names exactly what an eval run
+ * measured, so a change to any of them starts a fresh run.
+ */
+export function verdictFingerprint(threshold: number): string {
+  return createHash("sha256").update([decideVerdict, needsSecondPass, combinePasses].map(String).join("\n") + `|${threshold}`).digest("hex").slice(0, 10);
+}
 
 export interface JudgedPair {
   verdict: Verdict;

@@ -53,6 +53,8 @@ export interface ProofObservation extends LineObservation {
 
 export interface Verifier {
   readonly model: string;
+  /** Changes whenever its prompts or settings do, so an eval run belongs to exactly this verifier. */
+  readonly fingerprint?: string;
   inspect(input: InspectInput): Promise<LineObservation>;
   /** The other proof types. A verifier without it can only judge photos. */
   inspectProof?(input: ProofInspectInput): Promise<ProofObservation>;

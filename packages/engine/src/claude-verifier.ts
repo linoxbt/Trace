@@ -3,6 +3,7 @@
 // check by check. It never decides the verdict or an amount: core/verdict.ts
 // does that from these observations.
 
+import { createHash } from "node:crypto";
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
@@ -118,6 +119,9 @@ function jpeg(bytes: Uint8Array): Anthropic.Beta.BetaImageBlockParam {
 
 export class ClaudeVerifier implements Verifier {
   readonly model: string;
+  get fingerprint(): string {
+    return createHash("sha256").update(JSON.stringify([this.model, this.effort, SYSTEM, PROOF_SYSTEM])).digest("hex").slice(0, 10);
+  }
   private readonly client: Anthropic;
   private readonly effort: "low" | "medium" | "high";
 
