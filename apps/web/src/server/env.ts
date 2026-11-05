@@ -10,6 +10,13 @@ const Env = z.object({
   // PayPal steps themselves refuse until all three are set.
   PAYPAL_CLIENT_ID: z.string().min(1).optional(),
   PAYPAL_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * A PayPal sandbox personal (buyer) account for judges, shown on demo jobs
+   * next to the hold button. Sandbox only: never shown against live PayPal.
+   * It is a throwaway test login by design, not a secret.
+   */
+  DEMO_BUYER_EMAIL: z.string().email().optional(),
+  DEMO_BUYER_PASSWORD: z.string().min(1).optional(),
   /** "fetch" switches orders and payments back from PayPal's Server SDK to the hand-written client. */
   PAYPAL_HTTP: z.enum(["sdk", "fetch"]).optional(),
   PAYPAL_WEBHOOK_ID: z.string().min(1).optional(),

@@ -92,6 +92,13 @@ describe("PayPalClient", () => {
     expect(isRetryable(await pp2.getCapture("C").catch((e) => e))).toBe(true);
   });
 
+  it("treats a 401 as retryable: PayPal refused before acting, and a new token follows", async () => {
+    const { f } = mockFetch([token, json({ error: "invalid_token", error_description: "Token signature verification failed" }, 401)]);
+    const pp = new PayPalClient({ clientId: "id", clientSecret: "s", fetch: f });
+    const err = await pp.reauthorize("A", null, "r").catch((e) => e);
+    expect(err).toMatchObject({ status: 401, retryable: true });
+  });
+
   it("treats a dropped connection as retryable", async () => {
     const f = (async () => {
       throw new TypeError("fetch failed");

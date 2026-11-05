@@ -28,7 +28,20 @@ type Line = JobView["lines"][number];
 type Toast = { id: number; tone: "ok" | "bad" | "info"; text: string };
 const HELD = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
 
-export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initial: JobView; paypalClientId: string; bnCode: string; sandbox: boolean }) {
+export function JobScreen({
+  initial,
+  paypalClientId,
+  bnCode,
+  sandbox,
+  sandboxBuyer = null,
+}: {
+  initial: JobView;
+  paypalClientId: string;
+  bnCode: string;
+  sandbox: boolean;
+  /** Demo jobs on the sandbox: the shared test buyer judges log in to PayPal with. */
+  sandboxBuyer?: { email: string; password: string } | null;
+}) {
   const [view, setView] = useState(initial);
   const [camera, setCamera] = useState<{ mode: "before" | "after"; line?: Line } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -207,6 +220,7 @@ export function JobScreen({ initial, paypalClientId, bnCode, sandbox }: { initia
           onHeld={() => { toast("ok", "Held by PayPal. Nothing has been charged."); refresh(); }}
         />
       )}
+      {job.status === "AWAITING_APPROVAL" && isHome && job.demo && sandbox && <SandboxBuyer buyer={sandboxBuyer} />}
       {job.status === "AWAITING_APPROVAL" && isHome && !job.demo && job.payee.state !== "ready" && (
         <Waiting title={`Waiting for the ${w.proPos} PayPal`} body={`Payments go straight into the ${w.proPos} own PayPal account, and theirs isn't ready to receive yet. You'll be able to approve as soon as it is.`} />
       )}
@@ -849,6 +863,34 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
         <button disabled={busy} onClick={async () => setLink(await onSignOff())} className="press btn-ink flex h-11 w-full items-center justify-center rounded-full text-[14px] font-medium disabled:opacity-60">
           {l.status === "PROVING" ? "Send a new sign-off link" : "Send for sign-off"}
         </button>
+      )}
+    </div>
+  );
+}
+
+/** What to log in to PayPal's sandbox window with, for the demo job's hold. */
+function SandboxBuyer({ buyer }: { buyer: { email: string; password: string } | null }) {
+  return (
+    <div className="rounded-2xl bg-paper p-4 text-[13.5px] leading-relaxed">
+      <div className="font-medium">PayPal sandbox: no real money</div>
+      {buyer ? (
+        <>
+          <p className="mt-1 text-muted">PayPal&apos;s window asks you to log in. Use this test buyer:</p>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 font-mono text-[13px]">
+            <dt className="text-muted">Email</dt>
+            <dd className="select-all break-all">{buyer.email}</dd>
+            <dt className="text-muted">Password</dt>
+            <dd className="select-all break-all">{buyer.password}</dd>
+          </dl>
+        </>
+      ) : (
+        <p className="mt-1 text-muted">
+          PayPal&apos;s window asks you to log in with a sandbox buyer. Create one free under Testing tools, Sandbox accounts at{" "}
+          <a href="https://developer.paypal.com/dashboard/accounts" target="_blank" rel="noreferrer" className="font-medium text-violet">
+            developer.paypal.com
+          </a>
+          .
+        </p>
       )}
     </div>
   );

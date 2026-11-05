@@ -17,9 +17,13 @@ export class PayPalError extends Error {
     return this.issues.includes(issue) || this.errorName === issue;
   }
 
-  /** Safe to retry with the same PayPal-Request-Id. */
+  /**
+   * Safe to retry with the same PayPal-Request-Id. A 401 is an expired or
+   * revoked token: PayPal refused before acting, and the client fetches a new
+   * one, so the attempt (say, the single reauthorization) isn't used up.
+   */
   get retryable(): boolean {
-    return this.status === 429 || this.status >= 500;
+    return this.status === 401 || this.status === 429 || this.status >= 500;
   }
 
   static async from(res: Response): Promise<PayPalError> {
