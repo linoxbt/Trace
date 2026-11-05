@@ -1,24 +1,17 @@
-import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import { signAttestation } from "@trace/engine";
 import { engine } from "@/server/engine";
-import { env } from "@/server/env";
-import { errorResponse, HttpError } from "@/server/http";
+import { body, route } from "@/server/http";
 
 /**
- * POST /api/attest/:token: the named person signs off a line. No account is
- * needed: the single-use link is the credential. Name, time and IP are recorded.
+ * POST /api/attest/:token: the person named on a line signs it off. They must
+ * be signed in with the email the line names, and not be either side of the
+ * job; the link alone is not enough. Name, time and IP are recorded, and the
+ * client then approves the line.
  */
-export async function POST(req: NextRequest, ctx: { params: Promise<{ token: string }> }) {
-  try {
-    const origin = req.headers.get("origin");
-    if (!origin || (origin !== new URL(env().APP_URL).origin && origin !== req.nextUrl.origin)) throw new HttpError(403, "bad_origin", "cross-site request refused");
-    const { token } = await ctx.params;
-    const { name } = z.object({ name: z.string().min(2).max(80) }).parse(await req.json());
-    const ip = req.headers.get("x-nf-client-connection-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
-    const r = await signAttestation(engine(), token, { name, ip });
-    return NextResponse.json({ verdict: r.verdict });
-  } catch (err) {
-    return errorResponse(err);
-  }
-}
+export const POST = route<{ token: string }>(async (req, { params, user }) => {
+  const { name } = await body(req, z.object({ name: z.string().min(2).max(80) }));
+  const ip = req.headers.get("x-nf-client-connection-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const r = await signAttestation(engine(), params.token, { name, ip, signer: { id: user.id, email: user.anonymous ? null : user.email } });
+  return { verdict: r.verdict };
+});

@@ -580,6 +580,8 @@ export async function requestAttestation(e: Engine, lineId: string, tradesId: st
   const token = randomBytes(24).toString("base64url");
   const expiresAt = new Date(e.now().getTime() + ATTESTATION_TTL_DAYS * 86_400_000);
   await e.db.tx(async (q) => {
+    // One live link per line: a new one cancels any earlier, unsigned link.
+    await q.query("update attestations set expires_at = $2 where line_id = $1 and signed_at is null and expires_at > $2", [c.line.id, e.now()]);
     await q.query("insert into attestations (line_id, token_hash, email, statement, expires_at) values ($1, $2, $3, $4, $5)", [c.line.id, tokenHash(token), spec.email, spec.statement, expiresAt]);
     await store.appendEvent(q, { jobId: c.job.id, actor: "tradesperson", type: "ATTESTATION_REQUESTED", data: { line: c.line.code, email: spec.email } });
   });
@@ -615,22 +617,38 @@ export async function attestationView(e: Engine, token: string): Promise<Attesta
     email: att.email,
     signedName: att.signed_name,
     signedAt: att.signed_at?.toISOString() ?? null,
-    expired: att.expires_at.getTime() < e.now().getTime(),
+    expired: att.expires_at.getTime() <= e.now().getTime(),
   };
 }
 
-/** The named person signs. Records name, time and IP, and the line is verified: no model call. */
-export async function signAttestation(e: Engine, token: string, input: { name: string; ip: string | null }): Promise<ProofResult> {
+/**
+ * The named person signs. They must be signed in with the email the line
+ * names (Supabase's sign-in link proves they read that inbox), and can't be
+ * either side of the job, so the tradesperson can't sign their own work off.
+ * Name, time and IP are recorded. The line then waits for the client's own
+ * approval: a signature is evidence, never a release on its own.
+ */
+export async function signAttestation(e: Engine, token: string, input: { name: string; ip: string | null; signer: { id: string; email: string | null } }): Promise<ProofResult> {
   const name = input.name.trim().slice(0, 80);
   if (name.length < 2) throw badRequest("bad_name", "type your full name to sign");
   const { att, line, job } = await attestationByToken(e, token);
   if (att.signed_at) throw conflict("already_signed", "this has already been signed");
-  if (att.expires_at.getTime() < e.now().getTime()) throw conflict("expired", "this sign-off link has expired; ask for a new one");
+  if (att.expires_at.getTime() <= e.now().getTime()) throw conflict("expired", "this sign-off link has expired; ask for a new one");
+  if (input.signer.id === job.trades_id || input.signer.id === job.homeowner_id) throw forbidden("the people on the job can't sign its sign-off; it's for the person named on the line");
+  if (!input.signer.email || input.signer.email.toLowerCase() !== att.email.toLowerCase()) {
+    throw forbidden(`this sign-off is for ${maskEmail(att.email)}; sign in with that email to sign it`);
+  }
   if (line.status !== "PROVING") throw conflict("not_proving", `${line.code} isn't waiting for a sign-off`);
   const signedAt = e.now();
   const claimed = await e.db.query("update attestations set signed_name = $2, signed_at = $3, signed_ip = $4 where id = $1 and signed_at is null", [att.id, name, signedAt, input.ip]);
   if (!claimed.rowCount) throw conflict("already_signed", "this has already been signed");
-  const item = await store.insertProofItem(e.db, { jobId: job.id, lineId: line.id, kind: "attestation", meta: { attestation: att.id, name, email: att.email, statement: att.statement, signed_at: signedAt.toISOString(), ip: input.ip } });
+  const unclaim = () => e.db.query("update attestations set signed_name = null, signed_at = null, signed_ip = null where id = $1", [att.id]).catch(() => {});
+  const item = await store
+    .insertProofItem(e.db, { jobId: job.id, lineId: line.id, kind: "attestation", meta: { attestation: att.id, name, email: att.email, signer: input.signer.id, statement: att.statement, signed_at: signedAt.toISOString(), ip: input.ip } })
+    .catch(async (err) => {
+      await unclaim();
+      throw err;
+    });
   const observation: ProofObservation = {
     line_id: line.code,
     same_location: "yes",
@@ -646,7 +664,7 @@ export async function signAttestation(e: Engine, token: string, input: { name: s
   };
   const integrity = proofIntegrity([{ name: "signature", result: "pass", detail: `signed by ${name} (${att.email}) on ${signedAt.toISOString()}` }]);
   return finish(e, { job, line }, {
-    decision: { verdict: "VERIFIED", reasons: [`signed by ${name}`] },
+    decision: { verdict: "NEEDS_REVIEW", reasons: [`signed by ${name} (${att.email}); approve it to release payment`] },
     observation,
     integrity,
     photoId: null,
@@ -654,5 +672,14 @@ export async function signAttestation(e: Engine, token: string, input: { name: s
     model: "attestation",
     sample: false,
     data: { signed_by: name },
+  }).catch(async (err) => {
+    await unclaim();
+    throw err;
   });
+}
+
+/** a•••@example.com: enough for the right person to recognise, not enough to harvest. */
+export function maskEmail(email: string): string {
+  const [user = "", domain = ""] = email.split("@");
+  return `${user.slice(0, 1)}•••@${domain}`;
 }

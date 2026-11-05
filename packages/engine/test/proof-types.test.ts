@@ -154,17 +154,29 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof types", () => {
     expect(gone).toMatchObject({ verdict: "FAILED", reasons: expect.arrayContaining(["https://menu.example.com/ answered 404"]) });
   });
 
-  it("attestation: a single-use link, signed by the named person, verifies the line with no model call", async () => {
+  it("attestation: only the named person, signed in with that email, can sign; the client then approves", async () => {
     const { token: t, email } = await requestAttestation(e, h.lines.L5!.id, h.trades);
     expect(email).toBe("inspector@example.test");
     expect(await status("L5")).toBe("PROVING");
-    const r = await signAttestation(e, t, { name: "Ada Obi", ip: "203.0.113.9" });
-    expect(r.verdict).toBe("VERIFIED");
-    expect(await status("L5")).toBe("VERIFIED");
-    await expect(signAttestation(e, t, { name: "Ada Obi", ip: null })).rejects.toMatchObject({ code: "already_signed" });
+    const inspector = await makeUser(e.db, "inspector");
+    // The tradesperson holding the link can't sign it, nor can anyone signed in with another email.
+    await expect(signAttestation(e, t, { name: "Ada Obi", ip: null, signer: { id: h.trades, email: "inspector@example.test" } })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(signAttestation(e, t, { name: "Ada Obi", ip: null, signer: { id: inspector, email: "someone@example.test" } })).rejects.toMatchObject({ code: "forbidden" });
+    await expect(signAttestation(e, t, { name: "Ada Obi", ip: null, signer: { id: inspector, email: null } })).rejects.toMatchObject({ code: "forbidden" });
+    const r = await signAttestation(e, t, { name: "Ada Obi", ip: "203.0.113.9", signer: { id: inspector, email: "Inspector@Example.test" } });
+    expect(r.verdict).toBe("NEEDS_REVIEW");
+    expect(await status("L5")).toBe("NEEDS_REVIEW");
+    await expect(signAttestation(e, t, { name: "Ada Obi", ip: null, signer: { id: inspector, email: "inspector@example.test" } })).rejects.toMatchObject({ code: "already_signed" });
     const row = (await e.db.query("select signed_name, signed_ip from attestations")).rows[0];
     expect(row).toEqual({ signed_name: "Ada Obi", signed_ip: "203.0.113.9" });
     expect(e.verifier.proofCalls).toHaveLength(0);
+  });
+
+  it("attestation: a new link cancels the earlier one", async () => {
+    const first = await requestAttestation(e, h.lines.L5!.id, h.trades);
+    await requestAttestation(e, h.lines.L5!.id, h.trades);
+    const inspector = await makeUser(e.db, "inspector2");
+    await expect(signAttestation(e, first.token, { name: "Ada Obi", ip: null, signer: { id: inspector, email: "inspector@example.test" } })).rejects.toMatchObject({ code: "expired" });
   });
 
   it("refuses proof of the wrong type for a line", async () => {

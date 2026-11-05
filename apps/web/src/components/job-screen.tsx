@@ -831,7 +831,7 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
       {link ? (
         <div className="rounded-2xl bg-paper p-3.5 text-[13.5px]">
           <div className="font-medium">Send this link to {link.email}</div>
-          <p className="mt-0.5 text-[12.5px] text-muted">It works once, for 14 days. It isn&apos;t shown again.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. It works once, for 14 days, and replaces any earlier link. The client then approves the line.</p>
           <div className="mt-2 flex gap-2">
             <input readOnly value={link.link} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />
             <button
