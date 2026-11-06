@@ -22,7 +22,7 @@ import {
 import type { ApiResponse, OrderRequest } from "@paypal/paypal-server-sdk";
 import { sum, toPayPalValue } from "@trace/core";
 import { authAssertion, PayPalClient, SANDBOX_BASE, type PayPalClientOptions } from "./client.ts";
-import { PayPalError, PayPalNetworkError } from "./errors.ts";
+import { PayPalError, PayPalNetworkError, PayPalRequestInvalid } from "./errors.ts";
 import type { Authorization, Capture, CaptureInput, CreateOrderInput, Order, Refund } from "./types.ts";
 
 export interface PayPalSdkClientOptions extends PayPalClientOptions {
@@ -66,13 +66,18 @@ export class PayPalSdkClient extends PayPalClient {
     } catch (err) {
       if (err instanceof ResponseValidationError) body = err.body;
       // Rejected before sending: a bug in the request, never worth retrying.
-      else if (err instanceof ArgumentsValidationError) throw err;
+      else if (err instanceof ArgumentsValidationError) throw new PayPalRequestInvalid(err);
       else if (err instanceof ApiError) {
         throw PayPalError.fromText(err.statusCode, "", typeof err.body === "string" ? err.body : "", err.headers?.["paypal-debug-id"]);
       } else throw new PayPalNetworkError(err);
     }
     const text = typeof body === "string" ? body : "";
-    return (text ? JSON.parse(text) : undefined) as T;
+    try {
+      return (text ? JSON.parse(text) : undefined) as T;
+    } catch (err) {
+      // PayPal answered 2xx but the body is unreadable: the call may have landed, so treat it as no answer.
+      throw new PayPalNetworkError(err);
+    }
   }
 
   private sellerAssertion(seller?: string | null): string | undefined {

@@ -16,6 +16,7 @@ import {
   nextLineStatus,
   SAME_IMAGE_CELL_DIFF,
   SAME_IMAGE_HAMMING,
+  EDIT_CHECK_HAMMING,
   type IntegrityReport,
   type LineObservation,
   type TextScan,
@@ -24,7 +25,7 @@ import {
 import * as store from "@trace/db";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
-import { cropRegion, dHash, maxCellDiff, normalizePhoto } from "./image.ts";
+import { compareCells, cropRegion, dHash, maxCellDiff, normalizePhoto } from "./image.ts";
 import { maskText } from "./inject/mask.ts";
 import { spendBudget } from "./budget.ts";
 import { photoPath } from "./storage.ts";
@@ -117,9 +118,11 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
     }
   }
   // A close hash alone can't tell a small fix from a re-used photo; the pixels can.
-  const beforeCellDiff = hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? await maxCellDiff(await e.storage.get(before.storage_path), after) : null;
+  const near = hamming(hash, before.dhash) <= EDIT_CHECK_HAMMING ? await compareCells(await e.storage.get(before.storage_path), after) : null;
+  const beforeCellDiff = near && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? near.max : null;
   const integrity = evaluateIntegrity({
     beforeCellDiff,
+    beforeIdenticalShare: near?.identicalShare ?? null,
     sample: !!input.sample,
     tokenValid: true,
     gps: input.gps,

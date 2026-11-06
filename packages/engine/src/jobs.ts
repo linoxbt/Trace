@@ -15,7 +15,7 @@ import { authorizationOf } from "@trace/paypal";
 import { z } from "zod";
 import type { Engine } from "./deps.ts";
 import type { ScopeFlag } from "./inject/text-scan.ts";
-import { guardedVoid } from "./guard/execute.ts";
+import { releaseUnusedHold } from "./holds.ts";
 import { DEMO_REVIEW_WINDOW_S, HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { payeeForJob, payeeOfOrder } from "./payee.ts";
@@ -225,9 +225,7 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
   const wrongPayee = !!job.payee_merchant_id && payee !== job.payee_merchant_id;
   if (wrongPayee || got !== expected || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== job.scope_hash)) {
     // The hold doesn't match the frozen scope. Release it rather than keep a wrong one.
-    await guardedVoid(e, jobId, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
-      e.log.error("void after mismatch failed", { err: String(err) }),
-    );
+    await releaseUnusedHold(e, jobId, { paypalAuthId: auth.id }, "mismatch");
     if (wrongPayee) throw new EngineError("payee_mismatch", "PayPal's order pays a different account than this job's tradesperson", 502);
     throw new EngineError("amount_mismatch", `PayPal authorized ${got} ${auth.amount?.currency_code}, expected ${expected} ${job.currency}`, 502);
   }

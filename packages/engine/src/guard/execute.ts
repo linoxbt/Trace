@@ -24,7 +24,7 @@ import {
   type Rule,
 } from "@trace/core";
 import * as store from "@trace/db";
-import { isRetryable, PayPalError, type Capture, type EvidenceInput } from "@trace/paypal";
+import { isDefinitiveFailure, isRetryable, PayPalError, type Capture, type EvidenceInput } from "@trace/paypal";
 import type { Engine } from "../deps.ts";
 import { conflict, EngineError, forbidden } from "../errors.ts";
 // money.ts and this file call each other (functions only, never at load time):
@@ -224,7 +224,9 @@ export async function sendCapture(e: Engine, captureId: string, decisionId?: num
       cap.request_id,
     );
   } catch (err) {
-    if (isRetryable(err)) {
+    // Only a clear refusal ends the capture. Anything else (no answer, an unreadable answer, an
+    // unexpected error) may have taken the money: keep it sending, and resend with the same request ID.
+    if (isRetryable(err) || !isDefinitiveFailure(err)) {
       e.log.warn("capture outcome unknown, will retry", { capture: cap.id, err: String(err) });
       await store.updateCapture(e.db, cap.id, { last_error: String(err) });
       await store.markDecisionExecuted(e.db, decisionId ?? allowed.id, { capture: cap.id, outcome: "unknown" });

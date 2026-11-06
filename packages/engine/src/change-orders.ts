@@ -10,7 +10,7 @@ import { authorizationOf } from "@trace/paypal";
 import type { Engine } from "./deps.ts";
 import { HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
-import { guardedVoid } from "./guard/execute.ts";
+import { releaseUnusedHold } from "./holds.ts";
 import { cleanLines, MAX_JOB_CENTS, MAX_LINES, type ScopeLineInput } from "./jobs.ts";
 import { payeeForJob, payeeOfOrder } from "./payee.ts";
 
@@ -114,9 +114,7 @@ export async function authorizeChangeOrder(e: Engine, changeOrderId: string, ord
   const payee = job.payee_merchant_id ? await payeeOfOrder(e, order) : null;
   const wrongPayee = !!job.payee_merchant_id && payee !== job.payee_merchant_id;
   if (wrongPayee || got !== co.total_cents || auth.amount?.currency_code !== job.currency || (auth.custom_id !== undefined && auth.custom_id !== co.scope_hash)) {
-    await guardedVoid(e, job.id, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-mismatch-${auth.id}` }).catch((err) =>
-      e.log.error("void after change-order mismatch failed", { err: String(err) }),
-    );
+    await releaseUnusedHold(e, job.id, { paypalAuthId: auth.id }, "mismatch");
     throw new EngineError(wrongPayee ? "payee_mismatch" : "amount_mismatch", wrongPayee ? "PayPal's order pays a different account" : `PayPal authorized ${got}, expected ${co.total_cents}`, 502);
   }
   // PayPal may hold the payment for review first: record it as pending, and the worker or webhook finishes it.
@@ -156,9 +154,7 @@ export async function authorizeChangeOrder(e: Engine, changeOrderId: string, ord
     return { row: rows[0]! };
   });
   if (outcome.row) return outcome.row;
-  await guardedVoid(e, job.id, { kind: "worker" }, { paypalAuthId: auth.id }, { requestId: `void-stale-${auth.id}` }).catch((err) =>
-    e.log.error("void of a stale change-order hold failed", { err: String(err) }),
-  );
+  await releaseUnusedHold(e, job.id, { paypalAuthId: auth.id }, "stale");
   throw conflict("not_held", `${outcome.stale}, so the change order's hold was released`);
 }
 

@@ -63,10 +63,9 @@ export async function settlePendingHold(e: Engine, authRowId: string, fresh: Aut
     return { result: "held" as const };
   });
   if ("voidId" in outcome && outcome.voidId) {
-    const row = (await e.db.query<{ job_id: string }>("select job_id from authorizations where id = $1", [authRowId])).rows[0]!;
-    await guardedVoid(e, row.job_id, { kind: "worker" }, { paypalAuthId: outcome.voidId }, { requestId: `void-stale-${outcome.voidId}` }).catch((err) =>
-      e.log.error("void of a hold confirmed after its job moved on failed", { err: String(err) }),
-    );
+    // The row is ours (now CREATED): void it through it, so the record follows.
+    const row = (await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [authRowId])).rows[0]!;
+    await releaseUnusedHold(e, row.job_id, { auth: row }, "stale");
   }
   return outcome.result;
 }
@@ -88,4 +87,25 @@ export async function checkPendingHolds(e: Engine, limit = 10): Promise<number> 
     }
   }
   return moved;
+}
+
+/**
+ * Release a hold Trace won't use (it came back wrong, or its job or change
+ * order moved on while PayPal authorized it). If PayPal can't be reached or the
+ * guard won't allow it, both sides are told, so a person can release it, rather
+ * than the client's money staying held unseen until PayPal lets it lapse.
+ */
+export async function releaseUnusedHold(e: Engine, jobId: string, target: { auth: store.AuthorizationRow } | { paypalAuthId: string }, why: string): Promise<boolean> {
+  const id = "auth" in target ? target.auth.paypal_auth_id : target.paypalAuthId;
+  let reason: string;
+  try {
+    const v = await guardedVoid(e, jobId, { kind: "worker" }, target, { requestId: `void-${why}-${id}` });
+    if (v.voided) return true;
+    reason = v.reasons.join(" ");
+  } catch (err) {
+    reason = err instanceof Error ? err.message : String(err);
+  }
+  e.log.error("an unused hold couldn't be released", { job: jobId, authorization: id, why, reason });
+  await store.appendEvent(e.db, { jobId, actor: "system", type: "HOLD_NOT_RELEASED", data: { authorization_id: id, why, reason, alert: "both" } }).catch(() => undefined);
+  return false;
 }

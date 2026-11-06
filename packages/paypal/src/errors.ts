@@ -66,6 +66,19 @@ export class PayPalNetworkError extends Error {
   }
 }
 
+/** A request the client refused to send (it failed its own checks): nothing reached PayPal, so nothing moved. */
+export class PayPalRequestInvalid extends Error {
+  constructor(override readonly cause: unknown) {
+    super(`PayPal request not sent: ${cause instanceof Error ? cause.message : String(cause)}`);
+    this.name = "PayPalRequestInvalid";
+  }
+}
+
+/** A PayPal answer that settles the outcome: a refusal, or a request never sent. Anything else may have moved money. */
+export function isDefinitiveFailure(err: unknown): boolean {
+  return (err instanceof PayPalError && !err.retryable) || err instanceof PayPalRequestInvalid;
+}
+
 export function isRetryable(err: unknown): boolean {
   return (err instanceof PayPalError && err.retryable) || err instanceof PayPalNetworkError;
 }

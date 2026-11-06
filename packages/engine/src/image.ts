@@ -36,17 +36,31 @@ export async function dHash(input: Uint8Array): Promise<string> {
  * small local change (a drip gone, a crack filled) still lifts one cell.
  */
 export async function maxCellDiff(a: Uint8Array, b: Uint8Array): Promise<number> {
+  return (await compareCells(a, b)).max;
+}
+
+/**
+ * Cell by cell, how two photos differ: the largest cell difference, and the
+ * share of cells that are effectively identical (mean difference at most 1.5).
+ * A genuine retake moves every cell a little (the phone shifts, the light
+ * changes); the before-photo with one area painted over leaves most cells
+ * identical and one or two far apart.
+ */
+export async function compareCells(a: Uint8Array, b: Uint8Array): Promise<{ max: number; identicalShare: number }> {
   const grey = (x: Uint8Array) => sharp(x).greyscale().resize(64, 64, { fit: "fill" }).raw().toBuffer();
   const [pa, pb] = await Promise.all([grey(a), grey(b)]);
   let max = 0;
+  let identical = 0;
   for (let cy = 0; cy < 8; cy++) {
     for (let cx = 0; cx < 8; cx++) {
       let sum = 0;
       for (let y = cy * 8; y < cy * 8 + 8; y++) for (let x = cx * 8; x < cx * 8 + 8; x++) sum += Math.abs(pa[y * 64 + x]! - pb[y * 64 + x]!);
-      max = Math.max(max, sum / 64);
+      const mean = sum / 64;
+      max = Math.max(max, mean);
+      if (mean <= 1.5) identical += 1;
     }
   }
-  return Math.round(max * 10) / 10;
+  return { max: Math.round(max * 10) / 10, identicalShare: identical / 64 };
 }
 
 /** The region the model pointed at, padded and enlarged 2x, for the second pass. */

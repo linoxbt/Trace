@@ -54,6 +54,26 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: change orders", () => {
     expect(l5).toMatchObject({ change_order_id: co.id, status: "PENDING" });
   });
 
+  it("releases a withdrawn change order's hold even while the scope has approved, unpaid lines", async () => {
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    const co = await proposeChangeOrder(e, h.jobId, h.trades, EXTRA);
+    const { orderId } = await createChangeOrderOrder(e, co.id, h.home);
+    e.paypal.approve(orderId);
+    // Withdrawn while PayPal was authorizing it.
+    const authorize = e.paypal.authorizeOrder.bind(e.paypal);
+    e.paypal.authorizeOrder = async (...args) => {
+      const out = await authorize(...args);
+      await e.db.query("update change_orders set status = 'CANCELLED' where id = $1", [co.id]);
+      return out;
+    };
+    await expect(authorizeChangeOrder(e, co.id, orderId, h.home)).rejects.toMatchObject({ code: "not_held" });
+    const coAuth = [...e.paypal.auths.values()].find((a) => a.orderId === orderId)!;
+    expect(coAuth.status).toBe("VOIDED");
+    // The scope's own hold is untouched.
+    expect(e.paypal.auths.get(h.authId)!.status).toBe("CREATED");
+  });
+
   it("a hold that can't be released doesn't stop the others", async () => {
     await heldChangeOrder();
     const l5 = (await store.getLines(e.db, h.jobId)).find((l) => l.code === "L5")!;

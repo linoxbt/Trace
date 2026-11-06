@@ -182,6 +182,55 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
   });
 
+  it("an unexpected error during a capture keeps it sending instead of freeing the lines", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.failNext("captureAuthorization", new TypeError("body stream already read"));
+    expect((await release(e, h.jobId)).kind).toBe("sending");
+    // The line stays reserved: a second release can't capture it again under a new request.
+    expect(await release(e, h.jobId)).toEqual({ kind: "nothing" });
+  });
+
+  it("won't drop a line whose payment is still on its way to PayPal", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.loseNextResponse("captureAuthorization");
+    expect((await release(e, h.jobId)).kind).toBe("sending");
+    const all = ["L1", "L2", "L3", "L4"].map((c) => h.lines[c]!.id);
+    await expect(confirmClose(e, h.jobId, h.trades, all)).rejects.toMatchObject({ code: "capture_in_flight" });
+  });
+
+  it("a capture that lands after the job closed is recorded without reopening the hold", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.loseNextResponse("captureAuthorization");
+    const r = await release(e, h.jobId);
+    if (r.kind !== "sending") throw new Error(r.kind);
+    // PayPal voids the hold (it expired) while the capture's outcome is still unknown.
+    await e.db.query("update authorizations set status = 'VOIDED' where paypal_auth_id = $1", [h.authId]);
+    await e.db.query("update jobs set status = 'CLOSED_VOIDED' where id = $1", [h.jobId]);
+    const pp = [...e.paypal.captures.values()][0]!;
+    await settleCapture(e, r.captureId, { ...pp, status: "COMPLETED" } as Capture);
+    expect((await store.getBaseAuthorization(e.db, h.jobId))!.status).toBe("VOIDED");
+    expect((await store.mustGetJob(e.db, h.jobId)).status).toBe("COMPLETED");
+    expect((await store.getEvents(e.db, h.jobId)).map((x) => x.type)).toContain("LATE_CAPTURE");
+  });
+
+  it("stops resending a capture whose outcome stays unknown, and tells both sides once", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.loseNextResponse("captureAuthorization");
+    await release(e, h.jobId);
+    await e.db.query("update captures set attempts = $1 where status = 'SENDING'", [store.MAX_CAPTURE_SENDS]);
+    expect(await retrySendingCaptures(e, 0)).toEqual([]);
+    await retrySendingCaptures(e, 0);
+    expect((await store.getEvents(e.db, h.jobId)).filter((x) => x.type === "CAPTURE_STUCK")).toHaveLength(1);
+  });
+
   it("two workers retrying at once send a lost capture only once", async () => {
     const h = await heldJob(e);
     await prove(e, h, "L1");
@@ -360,6 +409,21 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof integrity", () => {
     expect(r.verdict).toBe("FAILED");
     expect(r.reasons[0]).toMatch(/m from the job, limit 150 m/);
     expect(e.verifier.calls).toHaveLength(0);
+  });
+
+  it("sends the before-photo with the fix painted on to the client, not to Verified", async () => {
+    const h = await heldJob(e);
+    // The job's before-photo, as the tradesperson could download it, with one area painted over.
+    const before = [...e.storage.files.entries()].find(([k]) => k.includes("/before/"))![1].bytes;
+    const meta = await sharp(before).metadata();
+    const patch = await sharp({ create: { width: Math.round(meta.width! / 5), height: Math.round(meta.height! / 5), channels: 3, background: "#e8e8e8" } }).jpeg().toBuffer();
+    const edited = await sharp(before).composite([{ input: patch, left: Math.round(meta.width! / 2), top: Math.round(meta.height! / 2) }]).jpeg({ quality: 88 }).toBuffer();
+    const r = await prove(e, h, "L1", { photo: edited });
+    expect(r.verdict).toBe("NEEDS_REVIEW");
+    expect(r.integrity.checks.find((c) => c.name === "edited_copy")).toMatchObject({ result: "review" });
+    // A genuinely new photo isn't flagged.
+    const fresh = await prove(e, h, "L2");
+    expect(fresh.integrity.checks.find((c) => c.name === "edited_copy")).toBeUndefined();
   });
 
   it("fails a photo already used on another line", async () => {

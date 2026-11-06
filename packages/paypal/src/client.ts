@@ -130,10 +130,17 @@ export class PayPalClient implements PayPalApi {
     const res = await this.send(`${this.base}${path}`, { method, headers, body });
     if (res.status === 401) this.token = null;
     if (res.status === 404 && o.allow404) return null as T;
-    if (!res.ok) throw await PayPalError.from(res);
-    if (res.status === 204) return undefined as T;
-    const text = await res.text();
-    return (text ? JSON.parse(text) : undefined) as T;
+    // Reading the answer can fail too (a reset socket, the timeout firing mid-body). PayPal may
+    // have acted, so that counts as no answer, never as a refusal.
+    try {
+      if (!res.ok) throw await PayPalError.from(res);
+      if (res.status === 204) return undefined as T;
+      const text = await res.text();
+      return (text ? JSON.parse(text) : undefined) as T;
+    } catch (err) {
+      if (err instanceof PayPalError) throw err;
+      throw new PayPalNetworkError(err);
+    }
   }
 
   createOrder(input: CreateOrderInput, requestId: string): Promise<Order> {

@@ -172,11 +172,21 @@ export async function settleCapture(e: Engine, captureRowId: string, pp: Capture
       const after = await store.getLines(q, auth.job_id);
       const allResolved = after.every((l) => isResolvedLine(l.status));
       const captured = await store.capturedCents(q, auth.id);
-      await store.updateAuthorization(q, auth.id, {
-        status: cap.final || captured >= auth.amount_cents ? "CAPTURED" : "PARTIALLY_CAPTURED",
-      });
-      const jobNext = allResolved ? nextJobStatus(job.status, "COMPLETED") : nextJobStatus(job.status, "PARTIAL_RELEASE");
-      await store.updateJob(q, job.id, { status: jobNext });
+      // A hold only moves forward: a capture that lands late never reopens a voided or fully captured hold.
+      if (auth.status !== "VOIDED" && auth.status !== "CAPTURED") {
+        await store.updateAuthorization(q, auth.id, {
+          status: cap.final || captured >= auth.amount_cents ? "CAPTURED" : "PARTIALLY_CAPTURED",
+        });
+      }
+      const closed = job.status === "COMPLETED" || job.status === "CLOSED_VOIDED";
+      if (!closed) {
+        const jobNext = allResolved ? nextJobStatus(job.status, "COMPLETED") : nextJobStatus(job.status, "PARTIAL_RELEASE");
+        await store.updateJob(q, job.id, { status: jobNext });
+      } else {
+        // The job closed while this capture was on its way: money moved, so it isn't "voided", and both sides should know.
+        if (job.status === "CLOSED_VOIDED") await store.updateJob(q, job.id, { status: "COMPLETED" });
+        await store.appendEvent(q, { jobId: job.id, actor: "system", type: "LATE_CAPTURE", data: { capture: cap.id, amount_cents: cap.amount_cents, alert: "both" } });
+      }
       await store.appendEvent(q, {
         jobId: job.id,
         actor: "paypal",
@@ -197,9 +207,11 @@ export async function settleCapture(e: Engine, captureRowId: string, pp: Capture
         if (l.status === "CAPTURED") await store.updateLine(q, l.id, { status: nextLineStatus(l.status, "CAPTURE_DENIED"), capture_id: null });
         else if (l.capture_id === cap.id) await store.updateLine(q, l.id, { capture_id: null });
       }
-      if (wasLive) {
+      if (wasLive && auth.status !== "VOIDED") {
         const captured = await store.capturedCents(q, auth.id);
-        await store.updateAuthorization(q, auth.id, { status: captured > 0 ? "PARTIALLY_CAPTURED" : "CREATED" });
+        // Never reopen a hold that was voided, or closed by a final capture other than this one.
+        const closedByOther = auth.status === "CAPTURED" && !cap.final;
+        if (!closedByOther) await store.updateAuthorization(q, auth.id, { status: captured > 0 ? "PARTIALLY_CAPTURED" : "CREATED" });
         if (job.status === "COMPLETED" || job.status === "PARTIALLY_RELEASED") {
           await store.updateJob(q, job.id, { status: nextJobStatus(job.status, "CAPTURE_REVERSED") });
         }
@@ -366,6 +378,17 @@ export const CAPTURE_STALE_S = 90;
 
 export async function retrySendingCaptures(e: Engine, staleS = CAPTURE_STALE_S): Promise<ReleaseResult[]> {
   const out: ReleaseResult[] = [];
+  // Resent as often as is safe and still unknown: stop, and tell both sides once, so a person checks PayPal.
+  const { rows: stuck } = await e.db.query<{ id: string; job_id: string; amount_cents: number }>(
+    `select c.id, a.job_id, c.amount_cents from captures c join authorizations a on a.id = c.authorization_id
+      where c.status = 'SENDING' and c.attempts >= $1
+        and not exists (select 1 from events ev where ev.job_id = a.job_id and ev.type = 'CAPTURE_STUCK' and ev.data->>'capture' = c.id::text)`,
+    [store.MAX_CAPTURE_SENDS],
+  );
+  for (const s of stuck) {
+    await store.appendEvent(e.db, { jobId: s.job_id, actor: "system", type: "CAPTURE_STUCK", data: { capture: s.id, amount_cents: s.amount_cents, alert: "both" } });
+    e.log.error("capture outcome still unknown after the last resend", { capture: s.id });
+  }
   for (const cap of await store.sendingCaptures(e.db, staleS)) {
     try {
       if (!(await store.claimStaleCapture(e.db, cap.id, staleS))) continue;
@@ -437,6 +460,8 @@ export async function confirmClose(e: Engine, jobId: string, userId: string, dro
       if (!known.has(id)) throw new EngineError("bad_line", `line ${id} is not on this job`, 400);
       const l = lines.find((x) => x.id === id)!;
       if (l.status === "CAPTURED") throw conflict("captured", `${l.code} is already paid and can't be dropped`);
+      // A payment on its way may already have landed at PayPal: dropping the line would void money that was taken.
+      if (l.capture_id !== null) throw conflict("capture_in_flight", `${l.code} has a payment on its way to PayPal; close once it lands`);
     }
     const same = JSON.stringify([...(job.close_drop_line_ids ?? [])].sort()) === JSON.stringify(drop);
     const now = e.now();

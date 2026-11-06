@@ -28,6 +28,7 @@ import {
   readingsAgree,
   readingTarget,
   SAME_IMAGE_HAMMING,
+  EDIT_CHECK_HAMMING,
   VIDEO_FRAMES,
   type DeliverableSpec,
   type DocumentSpec,
@@ -40,7 +41,7 @@ import * as store from "@trace/db";
 import { spendBudget } from "./budget.ts";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
-import { dHash, maxCellDiff, normalizePhoto } from "./image.ts";
+import { compareCells, dHash, normalizePhoto } from "./image.ts";
 import { TokenRejected, type ProofResult } from "./proof.ts";
 import { photoPath } from "./storage.ts";
 import type { ProofInspectInput, ProofObservation } from "./verifier.ts";
@@ -188,7 +189,8 @@ async function cameraPhoto(e: Engine, c: Ctx, raw: Uint8Array, opts: { gps: Proo
   const before = await store.beforePhotoFor(e.db, c.line);
   const hash = await dHash(jpeg);
   const nearest = await store.nearestOtherHamming(e.db, hash, before ? [before.id] : [], opts.sample ? { jobId: c.job.id } : {});
-  const cellDiff = before && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? await maxCellDiff(await e.storage.get(before.storage_path), jpeg) : null;
+  const near = before && hamming(hash, before.dhash) <= EDIT_CHECK_HAMMING ? await compareCells(await e.storage.get(before.storage_path), jpeg) : null;
+  const cellDiff = near && before && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? near.max : null;
   const report = evaluateIntegrity({
     sample: opts.sample,
     tokenValid: true,
@@ -198,6 +200,7 @@ async function cameraPhoto(e: Engine, c: Ctx, raw: Uint8Array, opts: { gps: Proo
     // Without a before-photo, there's nothing to compare against: the no-change check is dropped below.
     beforeDhash: before?.dhash ?? hash.replace(/./g, (ch) => (ch === "0" ? "f" : "0")),
     beforeCellDiff: cellDiff,
+    beforeIdenticalShare: near?.identicalShare ?? null,
     nearestOtherHamming: nearest,
     sameDevice: !!opts.deviceId && opts.deviceId === c.job.trades_device_id,
   });

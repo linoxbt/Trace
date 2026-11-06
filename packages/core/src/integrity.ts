@@ -10,7 +10,7 @@ export type CheckResult = "pass" | "review" | "fail" | "skipped";
 
 export interface IntegrityCheck {
   /** Photo checks; other proof types add their own (file type, clip length, URL status, ...). */
-  name: "capture_token" | "geofence" | "no_change" | "reuse" | "device" | "file_type" | "duplicate_file" | "clip_length" | "url_status" | "document_date" | "document_total" | "reading" | "instructions" | "signature" | "frame_reused" | "frame_is_before" | "clip_moves";
+  name: "capture_token" | "geofence" | "no_change" | "reuse" | "device" | "file_type" | "duplicate_file" | "clip_length" | "url_status" | "document_date" | "document_total" | "reading" | "instructions" | "signature" | "frame_reused" | "frame_is_before" | "clip_moves" | "edited_copy";
   result: CheckResult;
   detail: string;
 }
@@ -47,7 +47,18 @@ export interface IntegrityInput {
    * its before-photo; only a near-identical one (a re-saved copy) is "no change".
    */
   beforeCellDiff?: number | null;
+  /**
+   * Share of the 8x8 cells that are pixel-for-pixel the before-photo (0 to 1),
+   * when the dHashes are near. A real retake moves every cell a little; the
+   * before-photo with the fix painted on leaves most cells untouched.
+   */
+  beforeIdenticalShare?: number | null;
 }
+
+/** dHash distance up to which an after-photo is compared cell by cell with its before-photo for edits. */
+export const EDIT_CHECK_HAMMING = 16;
+/** At or over this share of identical cells, with some cell changed, the after-photo looks like an edited before-photo. */
+export const EDITED_COPY_SHARE = 0.5;
 
 /** At or under this cell difference, a close dHash really is the same photo. */
 export const SAME_IMAGE_CELL_DIFF = 4;
@@ -109,6 +120,12 @@ export function evaluateIntegrity(input: IntegrityInput): IntegrityReport {
         ? { name: "device", result: "pass", detail: "same signed-in device that started the job" }
         : { name: "device", result: "review", detail: "a different device from the one that started the job" },
     );
+  }
+
+  // The before-photo with the fix painted on: same pixels almost everywhere, one area changed.
+  const share = input.beforeIdenticalShare ?? null;
+  if (share !== null && share >= EDITED_COPY_SHARE && !(hamming(input.dhash, input.beforeDhash) <= SAME_IMAGE_HAMMING && (input.beforeCellDiff ?? 0) <= SAME_IMAGE_CELL_DIFF)) {
+    checks.push({ name: "edited_copy", result: "review", detail: `${Math.round(share * 100)}% of the after-photo is pixel-for-pixel the before-photo: it may be the before-photo edited, not a new photo` });
   }
 
   const beforeHamming = hamming(input.dhash, input.beforeDhash);

@@ -29,6 +29,21 @@ const json = (body: unknown, status = 200) => () => new Response(JSON.stringify(
 const token = json({ access_token: "A21AA-token", expires_in: 32400 });
 
 describe("PayPalClient", () => {
+  it("a capture whose answer can't be read counts as no answer, never as a refusal", async () => {
+    // PayPal captured (201), then the body stream failed mid-read.
+    const broken = () =>
+      new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode('{"id":"CAP')); c.error(new Error("socket reset")); } }), { status: 201 });
+    const { f } = mockFetch([token, broken]);
+    const pp = new PayPalClient({ clientId: "id", clientSecret: "secret", fetch: f });
+    const err = await pp.captureAuthorization("AUTH1", { amountCents: 100, currency: "USD", invoiceId: "inv", finalCapture: false }, "req-1").catch((x) => x);
+    expect(err).toBeInstanceOf(PayPalNetworkError);
+    expect(isRetryable(err)).toBe(true);
+    // A garbled 2xx body too.
+    const { f: g } = mockFetch([token, () => new Response("{not json", { status: 201 })]);
+    const pp2 = new PayPalClient({ clientId: "id", clientSecret: "secret", fetch: g });
+    expect(await pp2.getAuthorization("AUTH1").catch((x) => x)).toBeInstanceOf(PayPalNetworkError);
+  });
+
   it("gets a token once and reuses it", async () => {
     const { f, seen } = mockFetch([token, json({ id: "AUTH1", status: "CREATED" }), json({ id: "AUTH1", status: "CREATED" })]);
     const pp = new PayPalClient({ clientId: "id", clientSecret: "secret", fetch: f });

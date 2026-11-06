@@ -68,9 +68,17 @@ async function disputeOpen(e: Engine, jobId: string, authId: string | null, sell
 
 export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
   const job = await store.mustGetJob(e.db, a.job_id);
-  const auth = a.authorization_id
-    ? ((await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [a.authorization_id])).rows[0] ?? null)
-    : await store.getBaseAuthorization(e.db, job.id);
+  // A void of a hold Trace never recorded (refused before it was saved: wrong amount, wrong payee,
+  // a change order withdrawn meanwhile) pays for no line; releasing it only returns the client's money.
+  const untracked =
+    a.type === "VOID" && !a.authorization_id && !!a.paypal_authorization_id && !(await store.getAuthorizationByPayPalId(e.db, a.paypal_authorization_id));
+  const auth = untracked
+    ? null
+    : a.authorization_id
+      ? ((await e.db.query<store.AuthorizationRow>("select * from authorizations where id = $1", [a.authorization_id])).rows[0] ?? null)
+      : a.paypal_authorization_id
+        ? ((await store.getAuthorizationByPayPalId(e.db, a.paypal_authorization_id)) ?? (await store.getBaseAuthorization(e.db, job.id)))
+        : await store.getBaseAuthorization(e.db, job.id);
   const paypalAuthId = a.paypal_authorization_id ?? auth?.paypal_auth_id ?? null;
 
   // The PayPal reads run in parallel: the hold's live status, and disputes.
@@ -80,7 +88,7 @@ export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
           throw new FactsUnavailable(`authorization: ${err instanceof Error ? err.message : String(err)}`);
         })
       : Promise.resolve(null),
-    disputeOpen(e, job.id, auth?.id ?? null, job.payee_merchant_id),
+    untracked ? Promise.resolve(false) : disputeOpen(e, job.id, auth?.id ?? null, job.payee_merchant_id),
   ]);
 
   const authAmount = auth?.amount_cents ?? (live?.amount ? fromPayPalValue(live.amount.value) : 0);
@@ -149,7 +157,8 @@ export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
     verdict_any_second_pass: verdicts.some((v) => v.second),
     injection_lines,
     injection_unapproved_lines,
-    approved_uncaptured_count: lines.filter((l) => l.status === "APPROVED" && l.capture_id === null).length,
+    // Only the lines the hold in question pays for: voiding a change order's hold doesn't touch the scope's approved lines.
+    approved_uncaptured_count: (auth ? await store.linesOfAuthorization(e.db, auth) : []).filter((l) => l.status === "APPROVED" && l.capture_id === null).length,
     released_24h_cents: window.c24 + (isCapture ? a.amount_cents : 0),
     releases_10m_count: window.n10 + (isCapture ? 1 : 0),
     hours_since_authorization: window.hours,

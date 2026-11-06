@@ -540,18 +540,21 @@ export async function updateCapture(
  * updated_at, so a second worker, or the original request still waiting on
  * PayPal, can't send it at the same time. Null if someone else has it.
  */
+/** Resends of a capture whose outcome is unknown, before the worker stops and asks a person. */
+export const MAX_CAPTURE_SENDS = 8;
+
 export async function claimStaleCapture(q: Queryable, captureId: string, staleS: number): Promise<CaptureRow | null> {
   const { rows } = await q.query<CaptureRow>(
-    `update captures set updated_at = now() where id = $1 and status = 'SENDING' and updated_at <= now() - make_interval(secs => $2) returning *`,
-    [captureId, staleS],
+    `update captures set updated_at = now(), attempts = attempts + 1 where id = $1 and status = 'SENDING' and updated_at <= now() - make_interval(secs => $2) and attempts < $3 returning *`,
+    [captureId, staleS, MAX_CAPTURE_SENDS],
   );
   return rows[0] ?? null;
 }
 
 export async function sendingCaptures(q: Queryable, staleS: number): Promise<CaptureRow[]> {
   const { rows } = await q.query<CaptureRow>(
-    `select * from captures where status = 'SENDING' and updated_at <= now() - make_interval(secs => $1) order by created_at`,
-    [staleS],
+    `select * from captures where status = 'SENDING' and updated_at <= now() - make_interval(secs => $1) and attempts < $2 order by created_at`,
+    [staleS, MAX_CAPTURE_SENDS],
   );
   return rows;
 }
