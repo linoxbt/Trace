@@ -14,7 +14,9 @@ export async function POST(req: NextRequest) {
   if (raw.length > 512 * 1024) return NextResponse.json({ error: "too_large" }, { status: 413 });
   const e = engine();
   try {
-    return NextResponse.json(await handleWebhook(e, raw, (n) => req.headers.get(n)));
+    const out = await handleWebhook(e, raw, (n) => req.headers.get(n));
+    // Still running from another delivery: a non-2xx makes PayPal try again later.
+    return NextResponse.json(out, { status: out.result === "busy" ? 409 : 200 });
   } catch (err) {
     if (err instanceof WebhookRejected) {
       e.log.warn("webhook rejected", { reason: err.message });

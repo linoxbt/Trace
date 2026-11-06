@@ -42,7 +42,12 @@ export const POST = route<{ id: string }>(async (req, { params, user }) => {
     case "video": {
       const frames = form.getAll("frame").filter((x): x is File => x instanceof File).slice(0, 8);
       if (frames.some((fr) => fr.size > MAX_PHOTO_BYTES)) throw new HttpError(413, "photo_too_big", "each video frame is limited to 12 MB");
-      const times = JSON.parse(String(form.get("times") ?? "[]")) as unknown;
+      let times: unknown;
+      try {
+        times = JSON.parse(String(form.get("times") ?? "[]"));
+      } catch {
+        throw new HttpError(400, "bad_times", "the clip's frame times aren't readable");
+      }
       const at = Array.isArray(times) ? times.map(Number) : [];
       r = await submitVideoProof(e, {
         ...base,

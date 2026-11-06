@@ -18,7 +18,7 @@ export class WebhookRejected extends EngineError {
   }
 }
 
-export type WebhookOutcome = { result: "processed" | "duplicate" | "ignored"; type: string; jobId?: string };
+export type WebhookOutcome = { result: "processed" | "duplicate" | "busy" | "ignored"; type: string; jobId?: string };
 
 export async function handleWebhook(e: Engine, rawBody: string, header: (name: string) => string | null): Promise<WebhookOutcome> {
   const headers = webhookHeaders(header);
@@ -35,8 +35,14 @@ export async function handleWebhook(e: Engine, rawBody: string, header: (name: s
     throw new WebhookRejected("signature did not verify");
   }
 
-  const fresh = await e.db.tx((q) => store.claimWebhookEvent(q, { id: event.id, type: event.event_type, payload: event }));
-  if (!fresh) return { result: "duplicate", type: event.event_type };
+  const claim = await e.db.tx((q) => store.claimWebhook(q, { id: event.id, type: event.event_type, payload: event }));
+  if (claim === "done") return { result: "duplicate", type: event.event_type };
+  // Another delivery is running it: answer "not yet", so PayPal retries in case that one fails.
+  if (claim === "busy") return { result: "busy", type: event.event_type };
+  return runClaimed(e, event);
+}
+
+async function runClaimed(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
   try {
     const out = await route(e, event);
     await store.finishWebhookEvent(e.db, event.id, null);
@@ -46,6 +52,33 @@ export async function handleWebhook(e: Engine, rawBody: string, header: (name: s
     await store.finishWebhookEvent(e.db, event.id, err instanceof Error ? err.message : String(err));
     throw err;
   }
+}
+
+/**
+ * Worker: run again the events that failed and that PayPal may not resend (a
+ * failure after another delivery was already answered). They were verified
+ * when they arrived. Kept to recent ones, a few at a time.
+ */
+export async function retryFailedWebhooks(e: Engine, limit = 10): Promise<number> {
+  const { rows } = await e.db.query<{ paypal_event_id: string; payload: WebhookEvent }>(
+    `select paypal_event_id, payload from webhook_events
+      where processed_at is null and error is not null and received_at > now() - interval '3 days'
+        and received_at < now() - interval '2 minutes'
+      order by received_at limit $1`,
+    [limit],
+  );
+  let n = 0;
+  for (const r of rows) {
+    const claim = await e.db.tx((q) => store.claimWebhook(q, { id: r.paypal_event_id, type: r.payload.event_type, payload: r.payload }));
+    if (claim !== "claimed") continue;
+    try {
+      await runClaimed(e, r.payload);
+      n += 1;
+    } catch (err) {
+      e.log.warn("webhook retry failed", { event: r.paypal_event_id, err: String(err) });
+    }
+  }
+  return n;
 }
 
 async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {

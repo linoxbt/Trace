@@ -28,6 +28,7 @@ import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { compareCells, cropRegion, dHash, maxCellDiff, normalizePhoto } from "./image.ts";
 import { maskText } from "./inject/mask.ts";
 import { spendBudget } from "./budget.ts";
+import { assertTriesLeft, onLastTry } from "./tries.ts";
 import { photoPath } from "./storage.ts";
 
 const PROVABLE_JOB = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
@@ -84,6 +85,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   if (job.trades_id !== input.tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
   if (line.proof_type !== "photo") throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not a photo`);
+  const triesBefore = input.sample ? 0 : await assertTriesLeft(e.db, line, "camera");
   await spendBudget(e, input.tradesId, job.demo ? "demo_proof" : "proof", { guest: job.demo });
   const now = e.now();
 
@@ -195,6 +197,14 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
     decision = { verdict: "NEEDS_REVIEW", reasons: [...decision.reasons, "hidden work: a during-photo can't show the finished result, so the client approves it"] };
   }
 
+  if (!input.sample) {
+    // Re-checked once saved: the same photo sent to two lines at once passes both first checks.
+    if (decision.verdict !== "FAILED" && (await store.earlierNearPhoto(e.db, photo.id, hash, own.map((p) => p.id), SAME_IMAGE_HAMMING))) {
+      decision = { verdict: "FAILED", reasons: ["photo already used"] };
+    }
+    decision = onLastTry(decision, triesBefore, "camera");
+  }
+
   // The masked copy is stored beside the original, which is never changed.
   let maskedPhoto: store.PhotoRow | null = null;
   if (injection?.masked) {
@@ -294,6 +304,8 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   return { verdict: decision.verdict, reasons: decision.reasons, photoId: photo.id, integrity, observation };
 }
 
+const MAX_BEFORE_PHOTOS = 6;
+
 /** A before-photo for the job (flow A). The first one sets the job's location anchor. */
 export async function addBeforePhoto(
   e: Engine,
@@ -303,7 +315,9 @@ export async function addBeforePhoto(
   if (job.trades_id !== input.tradesId) throw forbidden();
   if (job.status !== "DRAFT") throw conflict("scope_frozen", "before-photos are taken while the job is a draft");
   const count = await e.db.query<{ n: number }>("select count(*)::int8 as n from photos where job_id = $1 and kind = 'before'", [job.id]);
-  if (count.rows[0]!.n >= 6) throw conflict("too_many_photos", "a job takes up to 6 before-photos");
+  if (count.rows[0]!.n >= MAX_BEFORE_PHOTOS) throw conflict("too_many_photos", "a job takes up to 6 before-photos");
+  // Each before-photo is scanned by a model: it counts toward the person's hourly allowance.
+  await spendBudget(e, input.tradesId, "before_photo", { guest: job.demo });
   let bytes: Buffer;
   try {
     bytes = await normalizePhoto(input.photo);
@@ -314,7 +328,12 @@ export async function addBeforePhoto(
   const photoId = randomUUID();
   const path = photoPath(job.id, "before", photoId);
   await e.storage.put(path, bytes, "image/jpeg");
-  const photo = await store.insertPhoto(e.db, {
+  const photo = await e.db.tx(async (q) => {
+    // Counted again under the job's lock, so parallel uploads can't pass six together.
+    await store.mustGetJob(q, job.id, { lock: true });
+    const again = await q.query<{ n: number }>("select count(*)::int8 as n from photos where job_id = $1 and kind = 'before'", [job.id]);
+    if (again.rows[0]!.n >= MAX_BEFORE_PHOTOS) throw conflict("too_many_photos", "a job takes up to 6 before-photos");
+    return store.insertPhoto(q, {
     id: photoId,
     job_id: job.id,
     line_id: input.lineId ?? null,
@@ -328,6 +347,7 @@ export async function addBeforePhoto(
     device_id: input.deviceId,
     sample: false,
     taken_at: e.now(),
+    });
   });
   // Scanned now, so a re-judge can paint out text in the before-photo too.
   const scan = await scanText(e, bytes);

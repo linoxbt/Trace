@@ -3,7 +3,7 @@
 Trace runs on PayPal's sandbox. This is the checklist for switching it to live
 PayPal. Most of it is PayPal's own approval and settings. The code already
 behaves for live: demo jobs and demo mode only work on the sandbox, and the
-"no real money" notices go away once `NEXT_PUBLIC_PAYPAL_ENV=live` is set.
+"no real money" notices go away by themselves once `PAYPAL_API_BASE` is live PayPal.
 
 ## 1. PayPal approval (only PayPal can do this)
 
@@ -52,7 +52,6 @@ Set these, then redeploy. Mark secrets as secret.
 | Variable | Live value |
 | --- | --- |
 | `PAYPAL_API_BASE` | `https://api-m.paypal.com` |
-| `NEXT_PUBLIC_PAYPAL_ENV` | `live` |
 | `PAYPAL_CLIENT_ID`, `NEXT_PUBLIC_PAYPAL_CLIENT_ID` | the live app's client ID |
 | `PAYPAL_CLIENT_SECRET` | the live app's secret (secret) |
 | `PAYPAL_WEBHOOK_ID` | the live webhook's ID |

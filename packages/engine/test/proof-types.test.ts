@@ -19,7 +19,7 @@ import {
   type Fetched,
 } from "../src/index.ts";
 import { makeUser, testEngine, testPhoto, type TestEngine } from "../src/testing.ts";
-import { ANCHOR, DEVICE, heldJob, type Held } from "./helpers.ts";
+import { ANCHOR, DEVICE, heldJob, prove, type Held } from "./helpers.ts";
 
 const acc = (show: string): Acceptance => ({ criterion: show, must_show: [show], must_not_show: [], framing: "Straight on" });
 
@@ -153,10 +153,30 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof types", () => {
 
   it("document: a line takes a few tries, not endless ones", async () => {
     e.verifier.proofScript.set("L3", { extracted: { value: null, unit: null, vendor: "X", date: today(), total_cents: 999_999, items: [] } });
-    for (let i = 0; i < MAX_FILE_PROOF_TRIES; i++) {
+    for (let i = 0; i < MAX_FILE_PROOF_TRIES - 1; i++) {
       expect((await submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf(`try ${i}`), mime: "application/pdf", name: "r.pdf" })).verdict).toBe("FAILED");
     }
-    await expect(submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf("one more"), mime: "application/pdf", name: "r.pdf" })).rejects.toMatchObject({ code: "too_many_tries" });
+    // The last try doesn't leave the line stuck: the client decides.
+    const last = await submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf("last"), mime: "application/pdf", name: "r.pdf" });
+    expect(last).toMatchObject({ verdict: "NEEDS_REVIEW", reasons: expect.arrayContaining([expect.stringContaining("the client decides")]) });
+    await expect(submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf("one more"), mime: "application/pdf", name: "r.pdf" })).rejects.toMatchObject({ code: expect.stringMatching(/too_many_tries|not_provable/) });
+  });
+
+  it("document: the same receipt saved again (new bytes) on another line goes to the client", async () => {
+    e.verifier.proofScript.set("L3", { extracted: { value: null, unit: null, vendor: "Plumb Co", date: today(), total_cents: 4200, items: [] } });
+    expect((await submitDocumentProof(e, { lineId: h.lines.L3!.id, tradesId: h.trades, bytes: pdf("receipt A"), mime: "application/pdf", name: "a.pdf" })).verdict).toBe("VERIFIED");
+    const h2 = await heldJob(e, { lines: LINES as never });
+    const again = await submitDocumentProof(e, { lineId: h2.lines.L3!.id, tradesId: h2.trades, bytes: pdf("receipt A, re-saved"), mime: "application/pdf", name: "a.pdf" });
+    expect(again.verdict).toBe("NEEDS_REVIEW");
+    expect(again.integrity.checks.some((c) => c.name === "duplicate_file" && c.result === "review")).toBe(true);
+  });
+
+  it("video: a frame of one clip can't be the proof photo of another line", async () => {
+    const frames = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(async (i) => ({ atS: i, bytes: await testPhoto(880 + i) })));
+    expect((await submitVideoProof(e, { lineId: h.lines.L1!.id, tradesId: h.trades, frames, durationS: 8, deviceId: DEVICE, gps: ANCHOR, token: await token("L1") })).verdict).toBe("VERIFIED");
+    const h2 = await heldJob(e);
+    const r = await prove(e, h2, "L1", { photo: frames[5]!.bytes });
+    expect(r).toMatchObject({ verdict: "FAILED", reasons: ["photo already used"] });
   });
 
   it("document: text addressed to the reviewer sends the line to the client", async () => {

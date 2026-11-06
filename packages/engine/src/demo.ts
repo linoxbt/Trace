@@ -65,12 +65,14 @@ export async function createDemoJob(e: Engine, user: { id: string; email: string
  * Opening /try again doesn't pile up jobs (each costs model calls and
  * stored photos), and new ones are capped per visitor and across guests.
  */
-export async function demoJobFor(e: Engine, user: { id: string; email: string | null }, assets: () => Promise<DemoAssets>): Promise<store.JobRow> {
+export async function demoJobFor(e: Engine, user: { id: string; email: string | null }, assets: () => Promise<DemoAssets>, opts: { network?: string } = {}): Promise<store.JobRow> {
   const { rows } = await e.db.query<store.JobRow>(
     "select * from jobs where demo and trades_id = $1 and address <> $2 and status not in ('COMPLETED', 'CLOSED_VOIDED') order by created_at desc limit 1",
     [user.id, HISTORY_ADDRESS],
   );
   if (rows[0]) return rows[0];
+  // Many guest sessions from one network still share one allowance.
+  if (opts.network) await spendBudget(e, opts.network, "demo_job_network", { guest: false });
   await spendBudget(e, user.id, "demo_job", { guest: true });
   return createDemoJob(e, user, await assets());
 }

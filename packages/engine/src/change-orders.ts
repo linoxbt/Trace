@@ -11,7 +11,8 @@ import type { Engine } from "./deps.ts";
 import { HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { releaseUnusedHold } from "./holds.ts";
-import { cleanLines, MAX_JOB_CENTS, MAX_LINES, type ScopeLineInput } from "./jobs.ts";
+import { checkScope, cleanLines, MAX_JOB_CENTS, MAX_LINES, type ScopeLineInput } from "./jobs.ts";
+import { spendBudget } from "./budget.ts";
 import { payeeForJob, payeeOfOrder } from "./payee.ts";
 
 const HELD = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
@@ -19,6 +20,16 @@ const HELD = ["AUTHORIZED", "IN_PROGRESS", "PARTIALLY_RELEASED"];
 /** The tradesperson proposes added lines on a held job. Their codes continue the job's (L5, L6, ...). */
 export async function proposeChangeOrder(e: Engine, jobId: string, tradesId: string, lines: Omit<ScopeLineInput, "code">[]): Promise<store.ChangeOrderRow> {
   if (lines.length === 0 || lines.length > MAX_LINES) throw badRequest("bad_scope", `a change order has 1 to ${MAX_LINES} lines`);
+  // Added lines get the same check as the scope: no text aimed at the AI checker. They go
+  // straight to the client's PayPal window, so a flagged line is refused rather than marked.
+  const owner = await store.mustGetJob(e.db, jobId);
+  if (owner.trades_id !== tradesId) throw forbidden();
+  if (e.scanner) {
+    const draft = cleanLines(lines.map((l, i) => ({ ...l, code: `L${i + 1}` })));
+    await spendBudget(e, tradesId, "scope_check", { guest: owner.demo });
+    const flags = await checkScope(e, draft.map((l) => ({ code: l.code, title: l.title, acceptance: l.acceptance, proof_spec: l.proofSpec ?? null })));
+    if (flags?.length) throw new EngineError("scope_flagged", `"${flags[0]!.text.slice(0, 120)}" reads as an instruction to Trace's checker, not part of the work. Reword the line.`, 422);
+  }
   return e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId, { lock: true });
     if (job.trades_id !== tradesId) throw forbidden();

@@ -19,6 +19,7 @@ import { releaseUnusedHold } from "./holds.ts";
 import { DEMO_REVIEW_WINDOW_S, HONOR_PERIOD_DAYS } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { payeeForJob, payeeOfOrder } from "./payee.ts";
+import { spendBudget } from "./budget.ts";
 
 export const MAX_LINES = 8;
 export const MAX_JOB_CENTS = 10_000_00;
@@ -39,6 +40,8 @@ export async function createJob(
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(input.homeownerEmail)) throw badRequest("bad_email", "the client's email is not valid");
   if (!input.address.trim()) throw badRequest("bad_address", "address is required");
   if (input.demo && !e.settings.sandbox) throw new EngineError("not_demo", "the demo job runs on the PayPal sandbox only", 404);
+  // Real jobs are capped per hour too: each one can carry six model-scanned photos.
+  if (!input.demo) await spendBudget(e, input.tradesId, "new_job");
   if (input.category !== undefined && !isJobCategory(input.category)) throw badRequest("bad_category", "that job type isn't one Trace takes");
   return e.db.tx(async (q) => {
     const job = await store.insertJob(q, {
@@ -135,12 +138,23 @@ export async function saveScope(e: Engine, jobId: string, tradesId: string, line
 
 /** Send the scope: hash and freeze it. DRAFT -> AWAITING_APPROVAL. */
 export async function sendScope(e: Engine, jobId: string, tradesId: string): Promise<store.JobRow> {
-  const flags = await checkScope(e, jobId);
+  // Everything that costs nothing is checked before the model is asked.
+  const before = await store.mustGetJob(e.db, jobId);
+  if (before.trades_id !== tradesId) throw forbidden();
+  const checked = await store.getLines(e.db, jobId);
+  if (checked.length === 0) throw conflict("empty_scope", "add at least one line first");
+  await payeeForJob(e.db, before).catch(() => {
+    throw conflict("payee_not_ready", "Connect your PayPal in Settings before sending. That's where the money for this job goes.");
+  });
+  if (e.scanner) await spendBudget(e, tradesId, "scope_check", { guest: before.demo });
+  const flags = await checkScope(e, checked);
   return e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId, { lock: true });
     if (job.trades_id !== tradesId) throw forbidden();
     const lines = await store.getLines(q, jobId);
     if (lines.length === 0) throw conflict("empty_scope", "add at least one line first");
+    // The lines sent are the lines checked: an edit while the check ran means checking again.
+    if (scopeFingerprint(lines) !== scopeFingerprint(checked)) throw conflict("scope_changed", "the lines changed while they were being checked; send again");
     // A scope the homeowner can't pay is never sent: the money needs somewhere to land.
     await payeeForJob(q, job).catch(() => {
       throw conflict("payee_not_ready", "Connect your PayPal in Settings before sending. That's where the money for this job goes.");
@@ -158,8 +172,7 @@ export async function sendScope(e: Engine, jobId: string, tradesId: string): Pro
         proofSpec: l.proof_spec,
       })),
     });
-    // Flags only count for lines that still read as they did when checked.
-    const current = flags?.filter((f) => lines.some((l) => l.code === f.line && l.title === f.title));
+    const current = flags;
     const out = await store.updateJob(q, jobId, {
       status: nextJobStatus(job.status, "SCOPE_SENT"),
       scope_hash: hash,
@@ -264,20 +277,34 @@ export async function authorizeJob(e: Engine, jobId: string, orderId: string, ho
   });
 }
 
+/** Everything the tradesperson wrote on a line, as the scope check and the verifier read it. */
+export function scopeLineText(l: Pick<store.LineRow, "code" | "title" | "acceptance" | "proof_spec">): { code: string; title: string; acceptance: store.LineRow["acceptance"]; extra: string[] } {
+  const extra: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === "string" && v.trim()) extra.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(l.proof_spec);
+  return { code: l.code, title: l.title, acceptance: l.acceptance, extra };
+}
+
+function scopeFingerprint(lines: Pick<store.LineRow, "code" | "title" | "acceptance" | "proof_spec" | "price_cents">[]): string {
+  return JSON.stringify(lines.map((l) => [l.code, l.title, l.acceptance, l.proof_spec, l.price_cents]));
+}
+
 /**
- * Scope-time check (Tripwire section 7): instructions aimed at the AI in the
- * lines are flagged for the homeowner to see beside them. Null when the check
- * couldn't run; sending isn't held up for it.
+ * Scope-time check (Tripwire section 7): instructions aimed at the AI in any
+ * text the tradesperson wrote on the lines are flagged for the client to see
+ * beside them. If the check can't run, the scope isn't sent: it fails closed.
+ * Null only when no scanner is configured (local development).
  */
-async function checkScope(e: Engine, jobId: string): Promise<(ScopeFlag & { title: string })[] | null> {
-  if (!e.scanner) return null;
-  const lines = await store.getLines(e.db, jobId);
-  if (lines.length === 0) return null;
+export async function checkScope(e: Engine, lines: Pick<store.LineRow, "code" | "title" | "acceptance" | "proof_spec">[]): Promise<ScopeFlag[] | null> {
+  if (!e.scanner || lines.length === 0) return null;
   try {
-    const flags = await e.scanner.scanScope(lines.map((l) => ({ code: l.code, title: l.title, acceptance: l.acceptance })));
-    return flags.map((f) => ({ ...f, title: lines.find((l) => l.code === f.line)!.title }));
+    return await e.scanner.scanScope(lines.map(scopeLineText));
   } catch (err) {
-    e.log.warn("scope check failed", { job: jobId, err: String(err) });
-    return null;
+    e.log.warn("scope check failed", { err: String(err) });
+    throw new EngineError("scope_check_unavailable", "the check of the lines couldn't run; try sending again in a minute", 503);
   }
 }

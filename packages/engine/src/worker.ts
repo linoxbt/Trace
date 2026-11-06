@@ -4,6 +4,7 @@ export * from "./deps.ts";
 export * from "./errors.ts";
 export * from "./money.ts";
 export * from "./holds.ts";
+export { retryFailedWebhooks } from "./webhooks.ts";
 export * from "./retention.ts";
 export { PostgresStorage, type PhotoStorage } from "./storage.ts";
 export * from "./guard/execute.ts";

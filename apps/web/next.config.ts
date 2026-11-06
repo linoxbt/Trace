@@ -29,6 +29,9 @@ const config: NextConfig = {
   transpilePackages: ["@trace/core", "@trace/db", "@trace/engine", "@trace/eval", "@trace/paypal"],
   serverExternalPackages: ["sharp", "pg"],
   poweredByHeader: false,
+  // Whether pages say "sandbox, no real money" follows the PayPal the server
+  // talks to, so going live can't leave the notice up by mistake.
+  env: { NEXT_PUBLIC_PAYPAL_ENV: (process.env.PAYPAL_API_BASE ?? "https://api-m.sandbox.paypal.com").includes("sandbox") ? "sandbox" : "live" },
   async headers() {
     return [
       {

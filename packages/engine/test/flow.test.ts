@@ -426,6 +426,22 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof integrity", () => {
     expect(fresh.integrity.checks.find((c) => c.name === "edited_copy")).toBeUndefined();
   });
 
+  it("caps photo retries: the last failed try goes to the client, then no more tries", async () => {
+    const h = await heldJob(e);
+    e.verifier.script.set(h.lines.L1!.id, failing("water drops at the spout", "drops at the spout"));
+    let last;
+    for (let i = 0; i < 8; i++) last = await prove(e, h, "L1");
+    expect(last).toMatchObject({ verdict: "NEEDS_REVIEW", reasons: expect.arrayContaining([expect.stringContaining("the client decides")]) });
+    await expect(prove(e, h, "L1")).rejects.toThrow();
+  });
+
+  it("the same photo sent to two lines at once: only the first one counts", async () => {
+    const h = await heldJob(e);
+    const photo = await testPhoto();
+    const [a, b] = await Promise.all([prove(e, h, "L1", { photo }), prove(e, h, "L2", { photo })]);
+    expect([a.verdict, b.verdict].sort()).toEqual(["FAILED", "VERIFIED"]);
+  });
+
   it("fails a photo already used on another line", async () => {
     const h = await heldJob(e);
     const photo = await testPhoto();

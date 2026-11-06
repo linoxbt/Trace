@@ -615,13 +615,62 @@ export async function ownPhotos(q: Queryable, jobId: string, lineId: string): Pr
  * line's own before-photos. With `jobId`, only that job's photos: every demo
  * copy holds the same sample photos, so a sample is only "reused" within its job.
  */
-export async function nearestOtherHamming(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string } = {}): Promise<number | null> {
+export async function nearestOtherHamming(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string; lineId?: string } = {}): Promise<number | null> {
+  // Photos, and the other images proof is made of (video frames, photographed documents).
   const { rows } = await q.query<{ d: number | null }>(
-    `select min(bit_count(('x' || dhash)::bit(64) # ('x' || $1)::bit(64)))::int8 as d
-     from photos where kind <> 'masked' and not (id = any($2::uuid[])) and ($3::uuid is null or job_id = $3)`,
-    [dhash, excludePhotoIds, opts.jobId ?? null],
+    `select min(d)::int8 as d from (
+       select bit_count(('x' || dhash)::bit(64) # ('x' || $1)::bit(64)) as d
+         from photos where kind <> 'masked' and not (id = any($2::uuid[])) and ($3::uuid is null or job_id = $3)
+       union all
+       select bit_count(('x' || (meta->>'dhash'))::bit(64) # ('x' || $1)::bit(64))
+         from proof_items where meta ? 'dhash' and ($3::uuid is null or job_id = $3) and ($4::uuid is null or line_id <> $4)
+     ) m`,
+    [dhash, excludePhotoIds, opts.jobId ?? null, opts.lineId ?? null],
   );
   return rows[0]?.d ?? null;
+}
+
+/**
+ * Two proofs of the same image sent at once each pass the reuse check before
+ * either is saved. Checked again once saved: an earlier near-identical photo
+ * from somewhere else means this one is the copy.
+ */
+export async function earlierNearPhoto(q: Queryable, photoId: string, dhash: string, excludePhotoIds: string[], hamming: number): Promise<boolean> {
+  const { rowCount } = await q.query(
+    `select 1 from photos p, (select taken_at, id from photos where id = $1) me
+      where p.id <> $1 and p.kind <> 'masked' and not (p.id = any($2::uuid[]))
+        and bit_count(('x' || p.dhash)::bit(64) # ('x' || $3)::bit(64)) <= $4
+        and (p.taken_at, p.id) < (me.taken_at, me.id)
+      limit 1`,
+    [photoId, excludePhotoIds, dhash, hamming],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** The same for files: an earlier proof item with the same bytes on another line. */
+export async function earlierSameFile(q: Queryable, itemId: string, sha256: string, lineId: string): Promise<boolean> {
+  const { rowCount } = await q.query(
+    `select 1 from proof_items p, (select created_at, id from proof_items where id = $1) me
+      where p.id <> $1 and p.sha256 = $2 and p.line_id <> $3 and (p.created_at, p.id) < (me.created_at, me.id) limit 1`,
+    [itemId, sha256, lineId],
+  );
+  return (rowCount ?? 0) > 0;
+}
+
+/** Another line's document with the same vendor, date and total: the same receipt, re-saved or re-photographed. */
+export async function sameReceiptElsewhere(q: Queryable, fingerprint: string, lineId: string): Promise<boolean> {
+  const { rowCount } = await q.query("select 1 from proof_items where meta->>'receipt' = $1 and line_id <> $2 and not sample limit 1", [fingerprint, lineId]);
+  return (rowCount ?? 0) > 0;
+}
+
+/** Another line's proof was this same link. */
+export async function sameUrlElsewhere(q: Queryable, url: string, lineId: string): Promise<boolean> {
+  const { rowCount } = await q.query("select 1 from proof_items where kind = 'url' and meta->>'final_url' = $1 and line_id <> $2 and not sample limit 1", [url, lineId]);
+  return (rowCount ?? 0) > 0;
+}
+
+export async function setProofItemMeta(q: Queryable, id: string, meta: Record<string, unknown>): Promise<void> {
+  await q.query("update proof_items set meta = meta || $2::jsonb where id = $1", [id, JSON.stringify(meta)]);
 }
 
 export async function issueCaptureToken(q: Queryable, t: { token: string; lineId: string; issuedTo: string; deviceId: string | null; now: Date }): Promise<void> {
@@ -719,7 +768,9 @@ export async function upsertDispute(
 ): Promise<{ row: DisputeRow; created: boolean }> {
   const { rows } = await q.query<DisputeRow & { created: boolean }>(
     `insert into disputes (job_id, capture_id, paypal_dispute_id, reason, status) values ($1, $2, $3, $4, $5)
-     on conflict (paypal_dispute_id) do update set status = coalesce(excluded.status, disputes.status),
+     on conflict (paypal_dispute_id) do update set
+       -- A resolved dispute stays resolved: a late or retried update can't reopen it.
+       status = case when disputes.status = 'RESOLVED' then disputes.status else coalesce(excluded.status, disputes.status) end,
        reason = coalesce(excluded.reason, disputes.reason), updated_at = now()
      returning *, (xmax = 0) as created`,
     [d.jobId, d.captureId, d.paypalDisputeId, d.reason, d.status],
@@ -752,6 +803,11 @@ export async function getEvents(q: Queryable, jobId: string): Promise<EventRow[]
  * already processed, or another delivery of it is running right now.
  */
 export async function claimWebhookEvent(q: Queryable, e: { id: string; type: string; payload: unknown }, leaseS = 120): Promise<boolean> {
+  return (await claimWebhook(q, e, leaseS)) === "claimed";
+}
+
+/** "done": processed already; "busy": another delivery of it is running now; "claimed": this delivery runs it. */
+export async function claimWebhook(q: Queryable, e: { id: string; type: string; payload: unknown }, leaseS = 120): Promise<"done" | "busy" | "claimed"> {
   await q.query(
     `insert into webhook_events (paypal_event_id, type, payload) values ($1, $2, $3) on conflict (paypal_event_id) do nothing`,
     [e.id, e.type, JSON.stringify(e.payload)],
@@ -760,14 +816,14 @@ export async function claimWebhookEvent(q: Queryable, e: { id: string; type: str
     "select processed_at from webhook_events where paypal_event_id = $1 for update",
     [e.id],
   );
-  if (rows[0]?.processed_at != null) return false;
+  if (rows[0]?.processed_at != null) return "done";
   const claim = await q.query(
     `insert into webhook_claims (paypal_event_id, claimed_until) values ($1, now() + make_interval(secs => $2))
      on conflict (paypal_event_id) do update set claimed_until = excluded.claimed_until where webhook_claims.claimed_until < now()
      returning 1`,
     [e.id, leaseS],
   );
-  return claim.rowCount === 1;
+  return claim.rowCount === 1 ? "claimed" : "busy";
 }
 
 export async function finishWebhookEvent(q: Queryable, id: string, error: string | null): Promise<void> {

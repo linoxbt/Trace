@@ -1,4 +1,5 @@
-import { demoJobFor, type DemoAssets, type DemoCode } from "@trace/engine";
+import { demoJobFor, networkKey, type DemoAssets, type DemoCode } from "@trace/engine";
+import { env } from "@/server/env";
 import { engine } from "@/server/engine";
 import { HttpError, route } from "@/server/http";
 
@@ -21,6 +22,8 @@ export const POST = route(async (req, { user }) => {
     }
     return { before };
   };
-  const job = await demoJobFor(engine(), { id: user.id, email: user.anonymous ? null : user.email }, assets);
+  const ip = req.headers.get("x-nf-client-connection-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const network = ip ? networkKey(ip, env().EVAL_STEP_SECRET ?? env().PAYPAL_CLIENT_SECRET ?? "trace") : undefined;
+  const job = await demoJobFor(engine(), { id: user.id, email: user.anonymous ? null : user.email }, assets, { network });
   return { id: job.id };
 });

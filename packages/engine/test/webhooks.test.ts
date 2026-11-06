@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as store from "@trace/db";
 import { TEST_DATABASE_URL } from "@trace/db/testing";
-import { decideLine, handleWebhook, release, WebhookRejected } from "../src/index.ts";
+import { decideLine, handleWebhook, release, retryFailedWebhooks, WebhookRejected } from "../src/index.ts";
 import { testEngine, type TestEngine } from "../src/testing.ts";
 import { heldJob, lineStatus, prove } from "./helpers.ts";
 
@@ -86,6 +86,27 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: webhooks", () => {
     // Resolved: the job is no longer under dispute, so its money can move again.
     await handleWebhook(e, event("CUSTOMER.DISPUTE.RESOLVED", { dispute_id: d.dispute_id, status: "RESOLVED", disputed_transactions: d.disputed_transactions }), header);
     expect((await store.mustGetJob(e.db, h.jobId)).disputed).toBe(false);
+    // A late or retried update can't reopen it.
+    await handleWebhook(e, event("CUSTOMER.DISPUTE.UPDATED", { dispute_id: d.dispute_id, status: "UNDER_REVIEW", disputed_transactions: d.disputed_transactions }), header);
+    expect((await e.db.query("select status from disputes where paypal_dispute_id = $1", [d.dispute_id])).rows[0]).toEqual({ status: "RESOLVED" });
+  });
+
+  it("answers 'busy' to a delivery that overlaps another, and the worker re-runs one that failed", async () => {
+    const h = await oneCaptured();
+    e.paypal.loseNextResponse("captureAuthorization");
+    await release(e, h.jobId);
+    const pp = [...e.paypal.captures.values()][0]!;
+    const raw = event("PAYMENT.CAPTURE.COMPLETED", { id: pp.id, status: "COMPLETED", invoice_id: pp.invoice_id, amount: pp.amount });
+    const id = JSON.parse(raw).id as string;
+    // A delivery holds the claim right now.
+    await e.db.tx((q) => store.claimWebhook(q, { id, type: "PAYMENT.CAPTURE.COMPLETED", payload: JSON.parse(raw) }));
+    expect(await handleWebhook(e, raw, header)).toMatchObject({ result: "busy" });
+    // That delivery failed: its claim is freed and the event is left for a retry.
+    await store.finishWebhookEvent(e.db, id, "boom");
+    await e.db.query("update webhook_events set received_at = now() - interval '5 minutes' where paypal_event_id = $1", [id]);
+    expect(await retryFailedWebhooks(e)).toBe(1);
+    expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
+    expect(await retryFailedWebhooks(e)).toBe(0);
   });
 
   it("closes an open job when PayPal voids its hold", async () => {

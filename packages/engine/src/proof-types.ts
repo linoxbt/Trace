@@ -39,6 +39,7 @@ import {
 } from "@trace/core";
 import * as store from "@trace/db";
 import { spendBudget } from "./budget.ts";
+import { assertTriesLeft, MAX_TRIES, onLastTry, type TryKind } from "./tries.ts";
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { compareCells, dHash, normalizePhoto } from "./image.ts";
@@ -55,11 +56,13 @@ const proofPath = (jobId: string, id: string, ext: string) => `job/${jobId}/proo
 interface Ctx {
   job: store.JobRow;
   line: store.LineRow;
+  /** Tries this line had before this one, and which cap applies; null for sample proofs and sign-offs. */
+  tries: { before: number; kind: TryKind } | null;
 }
 
 /** Load a line to prove with `type`, check who and when, and move it to PROVING. */
 /** Checks a document or link proof gets per line. */
-export const MAX_FILE_PROOF_TRIES = 5;
+export const MAX_FILE_PROOF_TRIES = MAX_TRIES.file;
 
 async function begin(e: Engine, lineId: string, tradesId: string, type: store.LineRow["proof_type"], opts: { token?: string; sample?: boolean } = {}): Promise<Ctx> {
   const line = await store.getLine(e.db, lineId);
@@ -68,12 +71,9 @@ async function begin(e: Engine, lineId: string, tradesId: string, type: store.Li
   if (job.trades_id !== tradesId) throw forbidden();
   if (!PROVABLE_JOB.includes(job.status)) throw conflict("not_held", "work can be proved once the money is held");
   if (line.proof_type !== type) throw conflict("wrong_proof_type", `${line.code} is proved by ${line.proof_type}, not ${type}`);
-  // A document or link can be sent again without going back to the site: cap the tries, so a line
-  // can't be fished until the checker gives in. After that the client looks at it.
-  if ((type === "document" || type === "deliverable") && !opts.sample) {
-    const tries = (await e.db.query<{ n: number }>("select count(*)::int as n from verdicts where line_id = $1", [line.id])).rows[0]!.n;
-    if (tries >= MAX_FILE_PROOF_TRIES) throw conflict("too_many_tries", `${line.code} has been checked ${tries} times; the client reviews it from here`);
-  }
+  // Every try is another model call and another chance for the checker to slip: capped per line.
+  const kind: TryKind | null = opts.sample || type === "attestation" ? null : type === "document" || type === "deliverable" ? "file" : "camera";
+  const before = kind ? await assertTriesLeft(e.db, line, kind) : 0;
   // A sign-off request makes no model call; every other proof type does.
   if (type !== "attestation") await spendBudget(e, tradesId, job.demo ? "demo_proof" : "proof", { guest: job.demo });
   const camera = type === "video" || type === "reading";
@@ -87,7 +87,19 @@ async function begin(e: Engine, lineId: string, tradesId: string, type: store.Li
     if (!PROVABLE_LINE.includes(line.status)) throw conflict("not_provable", `${line.code} is ${line.status}`);
     if (line.status !== "PROVING") await store.updateLine(e.db, line.id, { status: nextLineStatus(line.status, "TOKEN_ISSUED") });
   }
-  return { job, line: (await store.getLine(e.db, line.id))! };
+  return { job, line: (await store.getLine(e.db, line.id))!, tries: kind ? { before, kind } : null };
+}
+
+async function racedPhoto(e: Engine, c: Ctx, photoId: string): Promise<boolean> {
+  const p = (await e.db.query<{ dhash: string }>("select dhash from photos where id = $1", [photoId])).rows[0];
+  if (!p) return false;
+  const own = (await store.ownPhotos(e.db, c.job.id, c.line.id)).map((x) => x.id);
+  return store.earlierNearPhoto(e.db, photoId, p.dhash, own, SAME_IMAGE_HAMMING);
+}
+
+async function racedFile(e: Engine, c: Ctx, itemId: string): Promise<boolean> {
+  const it = (await e.db.query<{ sha256: string | null }>("select sha256 from proof_items where id = $1", [itemId])).rows[0];
+  return !!it?.sha256 && store.earlierSameFile(e.db, itemId, it.sha256, c.line.id);
 }
 
 /** Record the verdict and move the line on, as a photo proof does. */
@@ -96,6 +108,12 @@ async function finish(
   c: Ctx,
   r: { decision: { verdict: Verdict; reasons: string[] }; observation: ProofObservation | null; integrity: IntegrityReport; photoId: string | null; proofItemId: string | null; model: string; sample: boolean; data?: Record<string, unknown>; injectionExcerpt?: string | null },
 ): Promise<ProofResult> {
+  // Re-checked once saved: the same image or file sent to two lines at once passes both first checks.
+  if (!r.sample && r.decision.verdict !== "FAILED") {
+    const copy = r.photoId ? await racedPhoto(e, c, r.photoId) : r.proofItemId ? await racedFile(e, c, r.proofItemId) : false;
+    if (copy) r = { ...r, decision: { verdict: "FAILED", reasons: [r.photoId ? "photo already used" : "this file was already used as proof"] } };
+  }
+  if (c.tries) r = { ...r, decision: onLastTry(r.decision, c.tries.before, c.tries.kind) };
   await e.db.tx(async (q) => {
     const j = await store.mustGetJob(q, c.job.id, { lock: true });
     const locked = await store.getLine(q, c.line.id, { lock: true });
@@ -188,7 +206,9 @@ async function cameraPhoto(e: Engine, c: Ctx, raw: Uint8Array, opts: { gps: Proo
   }
   const before = await store.beforePhotoFor(e.db, c.line);
   const hash = await dHash(jpeg);
-  const nearest = await store.nearestOtherHamming(e.db, hash, before ? [before.id] : [], opts.sample ? { jobId: c.job.id } : {});
+  // This line's own earlier tries (a retake) and the job's before-photos are expected to look alike.
+  const own = (await store.ownPhotos(e.db, c.job.id, c.line.id)).map((p) => p.id);
+  const nearest = await store.nearestOtherHamming(e.db, hash, own, { lineId: c.line.id, ...(opts.sample ? { jobId: c.job.id } : {}) });
   const near = before && hamming(hash, before.dhash) <= EDIT_CHECK_HAMMING ? await compareCells(await e.storage.get(before.storage_path), jpeg) : null;
   const cellDiff = near && before && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? near.max : null;
   const report = evaluateIntegrity({
@@ -250,7 +270,8 @@ export async function submitVideoProof(
     // Every frame, not just the first: none may be another proof's image, and the clip has to move.
     const hash = await dHash(jpeg);
     if (hamming(hash, firstHash) > SAME_IMAGE_HAMMING) still = false;
-    const reused = await store.nearestOtherHamming(e.db, hash, [first.photo.id, ...(before ? [before.id] : [])], sample ? { jobId: c.job.id } : {});
+    const ownIds = (await store.ownPhotos(e.db, c.job.id, c.line.id)).map((p) => p.id);
+    const reused = await store.nearestOtherHamming(e.db, hash, [first.photo.id, ...ownIds], { lineId: c.line.id, ...(sample ? { jobId: c.job.id } : {}) });
     if (reused !== null && reused <= SAME_IMAGE_HAMMING && !frameChecks.some((x) => x.name === "frame_reused")) {
       frameChecks.push({ name: "frame_reused", result: "fail", detail: `the frame at ${f.atS.toFixed(1)} s is an image already used as proof` });
     }
@@ -259,7 +280,7 @@ export async function submitVideoProof(
     }
     const id = randomUUID();
     await e.storage.put(proofPath(c.job.id, id, "jpg"), jpeg, "image/jpeg");
-    await store.insertProofItem(e.db, { jobId: c.job.id, lineId: c.line.id, kind: "video_frame", storagePath: proofPath(c.job.id, id, "jpg"), sha256: sha256(jpeg), meta: { at_s: f.atS }, sample });
+    await store.insertProofItem(e.db, { jobId: c.job.id, lineId: c.line.id, kind: "video_frame", storagePath: proofPath(c.job.id, id, "jpg"), sha256: sha256(jpeg), meta: { at_s: f.atS, dhash: hash }, sample });
     frames.push({ atS: f.atS, jpeg });
   }
   const length: ProofCheck =
@@ -410,6 +431,14 @@ export async function submitDocumentProof(
           ? { name: "document_date", result: "pass", detail: `dated ${x.date}` }
           : { name: "document_date", result: "fail", detail: `dated ${x.date}, outside this job's dates` },
     );
+    // The same receipt re-saved or photographed again has new bytes but the same vendor, date and total.
+    if (x.vendor && x.date && x.total_cents !== null) {
+      const receipt = `${x.vendor.toLowerCase().replace(/[^a-z0-9]+/g, "")}|${x.date}|${x.total_cents}`;
+      await store.setProofItemMeta(e.db, item.id, { receipt });
+      if (!sample && (await store.sameReceiptElsewhere(e.db, receipt, c.line.id))) {
+        checks.push({ name: "duplicate_file", result: "review", detail: `a document from ${x.vendor.slice(0, 40)} dated ${x.date} for the same total was used on another line` });
+      }
+    }
     integrity = proofIntegrity([...integrity.checks, ...checks, ...instructionsCheck(obs), ...scanChecks], { sample });
     decision = verdictFrom(c, obs, integrity, e);
   }
@@ -502,7 +531,7 @@ export async function fetchPublic(url: string, opts: { maxBytes?: number; timeou
           path: `${current.pathname}${current.search}`,
           method: "GET",
           servername: isIP(current.hostname.replace(/^\[|\]$/g, "")) ? undefined : current.hostname,
-          headers: { Host: current.host, "User-Agent": "TraceProofCheck/1.0", Accept: "text/html,application/pdf,image/*,text/plain;q=0.9,*/*;q=0.5" },
+          headers: { Host: current.host, "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36", Accept: "text/html,application/pdf,image/*,text/plain;q=0.9,*/*;q=0.5" },
         },
         (r) => {
           const peer = r.socket.remoteAddress;
@@ -625,7 +654,16 @@ export async function submitDeliverableProof(
     }
   }
   const reused = await store.sha256UsedElsewhere(e.db, hash, c.line.id);
-  checks.push(reused ? { name: "duplicate_file", result: "fail", detail: "this deliverable was already used as proof" } : { name: "duplicate_file", result: "pass", detail: "not used before" });
+  // A page's bytes change on every fetch, so the same link is matched by its final address too.
+  const finalUrl = typeof meta.final_url === "string" ? meta.final_url : null;
+  const sameLink = !reused && finalUrl && !sample ? await store.sameUrlElsewhere(e.db, finalUrl, c.line.id) : false;
+  checks.push(
+    reused
+      ? { name: "duplicate_file", result: "fail", detail: "this deliverable was already used as proof" }
+      : sameLink
+        ? { name: "duplicate_file", result: "review", detail: "this link was already given as proof on another line" }
+        : { name: "duplicate_file", result: "pass", detail: "not used before" },
+  );
   const id = randomUUID();
   const path = proofPath(c.job.id, id, stored.ext);
   await e.storage.put(path, stored.bytes, stored.mime);
@@ -660,6 +698,8 @@ const tokenHash = (t: string) => createHash("sha256").update(t).digest("hex");
  */
 export async function requestAttestation(e: Engine, lineId: string, tradesId: string): Promise<{ token: string; email: string; statement: string; expiresAt: Date }> {
   const c = await begin(e, lineId, tradesId, "attestation");
+  // Each request can email someone outside Trace: capped per hour, so it can't be used to send mail at will.
+  await spendBudget(e, tradesId, "attest_email");
   const spec = c.line.proof_spec as { email: string; statement: string };
   const token = randomBytes(24).toString("base64url");
   const expiresAt = new Date(e.now().getTime() + ATTESTATION_TTL_DAYS * 86_400_000);
@@ -747,7 +787,7 @@ export async function signAttestation(e: Engine, token: string, input: { name: s
     instructions_found: null,
   };
   const integrity = proofIntegrity([{ name: "signature", result: "pass", detail: `signed by ${name} (${att.email}) on ${signedAt.toISOString()}` }]);
-  return finish(e, { job, line }, {
+  return finish(e, { job, line, tries: null }, {
     decision: { verdict: "NEEDS_REVIEW", reasons: [`signed by ${name} (${att.email}); approve it to release payment`] },
     observation,
     integrity,

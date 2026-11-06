@@ -3,6 +3,7 @@
 // anyone's (a free guest session is enough), so they also share one global
 // allowance: a script opening guest sessions can't run up the bill.
 
+import { createHash } from "node:crypto";
 import type { Engine } from "./deps.ts";
 import { EngineError } from "./errors.ts";
 
@@ -14,6 +15,16 @@ export const HOURLY_LIMITS = {
   scope_draft: 20,
   dispute_draft: 20,
   rule_compile: 30,
+  /** A before-photo's text scan. */
+  before_photo: 40,
+  /** The scope's check for notes aimed at the AI, when it's sent. */
+  scope_check: 20,
+  /** New (non-demo) jobs: each can carry six scanned photos. */
+  new_job: 15,
+  /** Sign-off emails asked for. */
+  attest_email: 10,
+  /** New demo jobs from one network (keyed by a hash of the address), however many guest sessions it opens. */
+  demo_job_network: 8,
 } as const;
 export type BudgetKind = keyof typeof HOURLY_LIMITS;
 
@@ -27,6 +38,11 @@ const WORDS: Record<BudgetKind, string> = {
   scope_draft: "AI drafts",
   dispute_draft: "dispute drafts",
   rule_compile: "rule checks",
+  before_photo: "before-photos",
+  scope_check: "scope sends",
+  new_job: "new jobs",
+  attest_email: "sign-off emails",
+  demo_job_network: "demo jobs from this network",
 };
 
 /**
@@ -54,4 +70,13 @@ export async function spendBudget(e: Engine, userId: string, kind: BudgetKind, o
     }
     await q.query("insert into model_usage (user_id, kind, guest) values ($1, $2, $3)", [userId, kind, guest]);
   });
+}
+
+/**
+ * A stable id for a network address, for per-network allowances. The address
+ * itself is never stored: only a salted hash, shaped as a UUID.
+ */
+export function networkKey(ip: string, salt: string): string {
+  const h = createHash("sha256").update(`${salt}:${ip}`).digest("hex");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 }

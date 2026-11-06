@@ -1,4 +1,4 @@
-import { autoRelease, checkPendingHolds, purgeExpiredProof, expireApprovals, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
+import { autoRelease, checkPendingHolds, purgeExpiredProof, retryFailedWebhooks, expireApprovals, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
 
 export interface TickReport {
   approved: number;
@@ -9,6 +9,7 @@ export interface TickReport {
   approvalsExpired: number;
   pendingHoldsSettled: number;
   proofDeleted: number;
+  webhooksRetried: number;
 }
 
 /** One pass of the worker's periodic jobs. Each step is idempotent. */
@@ -19,6 +20,7 @@ export async function tick(e: Engine): Promise<TickReport> {
   const approvalsExpired = await expireApprovals(e);
   const pendingHoldsSettled = await checkPendingHolds(e);
   const proofDeleted = (await purgeExpiredProof(e)).length;
+  const webhooksRetried = await retryFailedWebhooks(e);
   return {
     approved: auto.approved,
     released: auto.released.filter((r) => r.kind === "captured").length,
@@ -28,5 +30,6 @@ export async function tick(e: Engine): Promise<TickReport> {
     approvalsExpired,
     pendingHoldsSettled,
     proofDeleted,
+    webhooksRetried,
   };
 }

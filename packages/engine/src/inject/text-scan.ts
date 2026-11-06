@@ -22,6 +22,8 @@ export interface ScopeLineText {
   code: string;
   title: string;
   acceptance: Acceptance;
+  /** The rest of what the tradesperson wrote: the proof type's details (motion, units, document kind, things to match). */
+  extra?: string[];
 }
 
 export interface TextScanner {
@@ -165,6 +167,7 @@ export class ClaudeTextScanner implements TextScanner {
           `Must show: ${l.acceptance.must_show.join("; ")}`,
           `Must not show: ${l.acceptance.must_not_show.join("; ") || "(none)"}`,
           `Framing: ${l.acceptance.framing}`,
+          ...(l.extra?.length ? [`Proof details: ${l.extra.join("; ")}`] : []),
           `</line>`,
         ].join("\n"),
       )

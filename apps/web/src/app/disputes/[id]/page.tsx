@@ -13,6 +13,7 @@ export const metadata = { title: "Dispute" };
 
 export default async function DisputePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) notFound();
   const user = await currentUser();
   if (!user) redirect(`/sign-in?next=/disputes/${id}`);
   const e = engine();

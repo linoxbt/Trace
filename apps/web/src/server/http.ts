@@ -28,13 +28,20 @@ export function route<P = Record<string, string>>(
       if (req.method !== "GET" && !sameOrigin(req)) throw new HttpError(403, "bad_origin", "cross-site request refused");
       const user = await currentUser();
       if (!user) throw new HttpError(401, "signed_out", "sign in first");
-      const out = await fn(req, { params: await ctx.params, user });
-      return out instanceof Response ? out : NextResponse.json(out ?? { ok: true });
+      const params = await ctx.params;
+      const out = await fn(req, { params, user });
+      const res = out instanceof Response ? out : NextResponse.json(out ?? { ok: true });
+      // A signed-in person's data: never kept by a browser or a shared cache.
+      if (!res.headers.has("cache-control")) res.headers.set("cache-control", "private, no-store");
+      return res;
     } catch (err) {
-      return errorResponse(err);
+      const res = errorResponse(err);
+      res.headers.set("cache-control", "private, no-store");
+      return res;
     }
   };
 }
+
 
 export function errorResponse(err: unknown): NextResponse {
   if (err instanceof HttpError) return NextResponse.json({ error: err.code, message: err.message }, { status: err.status });
@@ -43,8 +50,11 @@ export function errorResponse(err: unknown): NextResponse {
   if (err instanceof IllegalTransition) return NextResponse.json({ error: "illegal_transition", message: "that step isn't allowed now" }, { status: 409 });
   if (err instanceof OverCapture) return NextResponse.json({ error: "over_capture", message: "that would capture more than is held" }, { status: 409 });
   if (err instanceof z.ZodError) return NextResponse.json({ error: "bad_request", message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") }, { status: 400 });
+  // Postgres: a malformed id or value in a query (22P02) means there is nothing by that name.
+  if (typeof err === "object" && err && (err as { code?: unknown }).code === "22P02") return NextResponse.json({ error: "not_found", message: "not found" }, { status: 404 });
   console.error(JSON.stringify({ level: "error", msg: "unhandled route error", err: String(err), stack: err instanceof Error ? err.stack : undefined }));
-  return NextResponse.json({ error: "internal", message: "something went wrong; nothing was charged" }, { status: 500 });
+  // Not "nothing was charged": an error can come after PayPal has acted. The page shows what did happen.
+  return NextResponse.json({ error: "internal", message: "something went wrong; refresh to see where things stand" }, { status: 500 });
 }
 
 function sameOrigin(req: NextRequest): boolean {
