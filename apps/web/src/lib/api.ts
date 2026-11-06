@@ -15,7 +15,14 @@ export async function api<T = unknown>(path: string, init: { method?: string; js
     credentials: "same-origin",
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error ?? "error", data.message ?? `request failed (${res.status})`);
+  if (!res.ok) {
+    // Answers that didn't come from Trace's routes (the host's own limits) still get plain words.
+    const fallback =
+      res.status === 413 ? "That upload is too large: send a smaller file or photo."
+      : res.status === 504 || res.status === 502 ? "The server took too long to answer. Refresh to see where things stand."
+      : `request failed (${res.status})`;
+    throw new ApiError(res.status, data.error ?? "error", data.message ?? fallback);
+  }
   return data as T;
 }
 

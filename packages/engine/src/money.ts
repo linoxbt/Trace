@@ -409,9 +409,14 @@ export async function reauthorizeDue(e: Engine): Promise<{ reauthorized: string[
   for (const auth of await store.authorizationsToReauthorize(e.db, e.now())) {
     const inflight = await e.db.query("select 1 from captures where authorization_id = $1 and status = 'SENDING'", [auth.id]);
     if (inflight.rowCount) continue;
-    const r = await guardedReauthorize(e, auth);
-    if (r === "reauthorized") reauthorized.push(auth.id);
-    else if (r === "failed" || r === "blocked") failed.push(auth.id);
+    // One hold that throws doesn't stop the others being renewed.
+    try {
+      const r = await guardedReauthorize(e, auth);
+      if (r === "reauthorized") reauthorized.push(auth.id);
+      else if (r === "failed" || r === "blocked") failed.push(auth.id);
+    } catch (err) {
+      e.log.error("reauthorize failed", { authorization: auth.id, err: String(err) });
+    }
   }
   return { reauthorized, failed };
 }

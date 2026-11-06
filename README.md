@@ -59,7 +59,7 @@ Both run on the deployed site with its own model key: the scheduled worker calls
 
 AI reads the photos; it never moves the money. Every capture, void, reauthorization, refund and dispute filing goes through one function, `packages/engine/src/guard/execute.ts`, in the same five steps:
 
-1. **Check the action.** The amount is recomputed from the stored lines, never taken from a request or a model.
+1. **Check the action.** A capture's amount is recomputed from the stored lines, never taken from a request or a model. The one amount a person types is a refund's, which needs both sides' approval (B8) and can't exceed what was paid.
 2. **Read live facts.** The hold's status comes from PayPal, and disputes are listed at PayPal too, not just when a webhook arrives. If PayPal can't be read, the answer is deny: nothing moves.
 3. **Trace the inputs.** Every input is labelled with how far it can be trusted. Photos and anything a model read from them are never trusted as instructions.
 4. **Apply the rules.** The twelve built-in rules (B1 to B12) come first, then the presets and people's own rules. Deny beats ask-first, and ask-first beats allow.

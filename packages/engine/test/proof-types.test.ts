@@ -101,6 +101,12 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof types", () => {
     expect(short).toMatchObject({ verdict: "FAILED", reasons: expect.arrayContaining([expect.stringContaining("clips run 5 to 20 seconds")]) });
   });
 
+  it("video: a burst of photos claiming to be a 10 s clip fails on its frame times", async () => {
+    const frames = await Promise.all([0, 1, 2, 3, 4, 5, 6, 7].map(async (i) => ({ atS: i * 0.1, bytes: await testPhoto(840 + i) })));
+    const r = await submitVideoProof(e, { lineId: h.lines.L1!.id, tradesId: h.trades, frames, durationS: 10, deviceId: DEVICE, gps: ANCHOR, token: await token("L1") });
+    expect(r).toMatchObject({ verdict: "FAILED", reasons: expect.arrayContaining([expect.stringContaining("this one shows")]) });
+  });
+
   it("video: checks every frame, not just the first", async () => {
     // A still photo sent eight times isn't a clip.
     const one = await testPhoto(760);

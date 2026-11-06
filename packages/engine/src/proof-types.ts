@@ -300,10 +300,15 @@ export async function submitVideoProof(
     await store.insertProofItem(e.db, { jobId: c.job.id, lineId: c.line.id, kind: "video_frame", storagePath: proofPath(c.job.id, id, "jpg"), sha256: sha256(jpeg), meta: { at_s: f.atS, dhash: hash }, sample });
     frames.push({ atS: f.atS, jpeg });
   }
+  // The phone reports the clip's length; the frames' own times bound it too (8 frames spread across the clip),
+  // so a claimed 10 s clip whose frames span half a second is a burst of photos, not a clip.
+  const times = input.frames.map((f) => f.atS).filter((t) => Number.isFinite(t));
+  const span = times.length > 1 ? Math.max(...times) - Math.min(...times) : 0;
+  const shown = Math.min(input.durationS, span * (times.length / Math.max(1, times.length - 1)) + 0.5);
   const length: ProofCheck =
-    input.durationS >= CLIP_MIN_S && input.durationS <= CLIP_MAX_S
+    shown >= CLIP_MIN_S && input.durationS <= CLIP_MAX_S
       ? { name: "clip_length", result: "pass", detail: `${input.durationS.toFixed(1)} s clip` }
-      : { name: "clip_length", result: "fail", detail: `clips run ${CLIP_MIN_S} to ${CLIP_MAX_S} seconds; this one is ${input.durationS.toFixed(1)} s` };
+      : { name: "clip_length", result: "fail", detail: `clips run ${CLIP_MIN_S} to ${CLIP_MAX_S} seconds; this one shows ${shown.toFixed(1)} s` };
   const enough: ProofCheck[] = frames.length >= 4 ? [] : [{ name: "clip_length", result: "fail", detail: "too few frames from the clip" }];
   if (frames.length > 1 && still) frameChecks.push({ name: "clip_moves", result: "review", detail: "every frame is the same image: this may be a still photo, not a clip" });
   let integrity = proofIntegrity([...first.checks, length, ...enough, ...frameChecks], { sample });
@@ -440,13 +445,15 @@ export async function submitDocumentProof(
             : { name: "document_total", result: "fail", detail: `total ${(x.total_cents / 100).toFixed(2)} is more than the line price ${(c.line.price_cents / 100).toFixed(2)}` },
       );
     }
-    const inWindow = inJobWindow(x.date, c.job.created_at, e.now());
+    // From the client's approval (the hold), less a fortnight for materials bought ahead.
+    const approvedAt = (await store.getBaseAuthorization(e.db, c.job.id))?.created_at ?? c.job.created_at;
+    const inWindow = inJobWindow(x.date, approvedAt, e.now());
     checks.push(
       inWindow === null
         ? { name: "document_date", result: "review", detail: "no readable date on the document" }
         : inWindow
           ? { name: "document_date", result: "pass", detail: `dated ${x.date}` }
-          : { name: "document_date", result: "fail", detail: `dated ${x.date}, outside this job's dates` },
+          : { name: "document_date", result: "review", detail: `dated ${x.date}, outside this job's dates: the client decides` },
     );
     // The same receipt re-saved or photographed again has new bytes but the same vendor, date and total.
     if (x.vendor && x.date && x.total_cents !== null) {
@@ -706,7 +713,8 @@ export async function submitDeliverableProof(
 
 // ---------- attestation ----------
 
-export const ATTESTATION_TTL_DAYS = 14;
+/** A sign-off link lasts 72 hours: long enough to answer, short enough that a forwarded link goes stale. */
+export const ATTESTATION_TTL_DAYS = 3;
 const tokenHash = (t: string) => createHash("sha256").update(t).digest("hex");
 
 /**

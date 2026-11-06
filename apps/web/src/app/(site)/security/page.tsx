@@ -9,9 +9,9 @@ export const metadata: Metadata = { title: "Security", description: "Proof you c
 const CHECKS = [
   { icon: <IconPin />, title: "Taken here", body: "The phone's location must be within 150 m of where the first before-photo was taken. GPS worse than 100 m goes to review, never straight through." },
   { icon: <IconClock />, title: "Taken now", body: "Opening the camera issues a one-time token. The photo must arrive with it within 120 seconds. The app has no gallery upload." },
-  { icon: <IconFingerprint />, title: "Never reused", body: "A 64-bit perceptual hash of every after-photo is compared with its own before-photo and every photo Trace has stored." },
+  { icon: <IconFingerprint />, title: "Never reused", body: "A 64-bit perceptual hash of every after-photo and video frame is compared with every photo Trace has stored, and confirmed on the pixels. An exact copy fails; one that only looks alike goes to the client. An edited copy of the before-photo is caught too." },
   { icon: <IconScreen />, title: "Not a screen", body: "The verifier is asked whether the image is a photo of a screen or a printout. Moiré, bezels or glare send the line to review." },
-  { icon: <IconLayers />, title: "Same place", body: "The before-photo is overlaid on the viewfinder, and the verifier must agree both photos show the same place, or the line fails." },
+  { icon: <IconLayers />, title: "Same place", body: "The before-photo is overlaid on the viewfinder, and the verifier must agree both photos show the same place: if it says no, the line fails; if it isn't sure, the client decides." },
   { icon: <IconShield />, title: "Notes to the AI hidden", body: "Text in a photo is found, painted out, and the line judged again without it. If the verdict changes, or the text speaks to the inspector, the homeowner decides." },
 ];
 
@@ -25,8 +25,8 @@ const GUARD = [
 ];
 
 const MONEY = [
-  { title: "No custody", body: "Captures settle straight into the tradesperson's own PayPal business account. Trace never holds funds." },
-  { title: "Amounts from the server", body: "The PayPal secret lives only on the server. No request from the app or the model carries an amount; every capture is recomputed from the database and checked against the hold." },
+  { title: "No custody", body: "Captures settle straight into the tradesperson's own PayPal business account. Trace never holds funds. (The sandbox demo job, where you play both sides, pays Trace's own test account, since it has no tradesperson.)" },
+  { title: "Amounts from the server", body: "The PayPal secret lives only on the server. No model ever sets an amount, and no capture amount comes from the app: every capture is recomputed from the database and checked against the hold. A refund's amount is the one figure a person types, and it needs both sides' approval and can't exceed what was paid." },
   { title: "Idempotent by design", body: "Every capture, void and reauthorization sends a stored PayPal-Request-Id. Webhooks are de-duplicated on PayPal's event ID." },
   { title: "Verified webhooks", body: "Each webhook is checked with PayPal against its original body before anything is processed. Unverified ones are rejected." },
   { title: "Parties only", body: "Postgres row-level security lets each job's two parties read it; only the server can write. Photos sit in a private table only the server can read, and are shown to the job's two parties only." },

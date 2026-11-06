@@ -109,10 +109,13 @@ export function proofIntegrity(checks: ProofCheck[], opts: { sample?: boolean } 
   return { status, checks: checks as IntegrityReport["checks"], distanceM: null, beforeHamming: null, reuseHamming: null, sample: !!opts.sample };
 }
 
-/** Is a document's date inside the job's window (from 30 days before it was created to tomorrow)? */
-export function inJobWindow(date: string | null, jobCreated: Date, now: Date): boolean | null {
+/** Days before the client approved the job that a receipt may be dated (materials bought ahead). */
+export const DOCUMENT_LEAD_DAYS = 14;
+
+/** Is a document's date inside the job's window: from 14 days before the client approved it to tomorrow? */
+export function inJobWindow(date: string | null, approvedAt: Date, now: Date): boolean | null {
   if (!date) return null;
   const t = Date.parse(date);
   if (Number.isNaN(t)) return null;
-  return t >= jobCreated.getTime() - 30 * 86_400_000 && t <= now.getTime() + 86_400_000;
+  return t >= approvedAt.getTime() - DOCUMENT_LEAD_DAYS * 86_400_000 && t <= now.getTime() + 86_400_000;
 }

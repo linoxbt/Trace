@@ -12,15 +12,23 @@ export interface TickReport {
   webhooksRetried: number;
 }
 
-/** One pass of the worker's periodic jobs. Each step is idempotent. */
-export async function tick(e: Engine): Promise<TickReport> {
+/**
+ * One pass of the worker's periodic jobs. Each step is idempotent. Money steps
+ * run first; the rest stop once the pass has used its time (a scheduled
+ * function has 30 s), and simply run on the next pass. The retention scan runs
+ * once an hour, not every minute.
+ */
+export async function tick(e: Engine, opts: { budgetMs?: number; now?: () => number } = {}): Promise<TickReport> {
+  const now = opts.now ?? Date.now;
+  const started = now();
+  const time = () => now() - started < (opts.budgetMs ?? 20_000);
   const retried = await retrySendingCaptures(e);
   const auto = await autoRelease(e);
-  const re = await reauthorizeDue(e);
-  const approvalsExpired = await expireApprovals(e);
-  const pendingHoldsSettled = await checkPendingHolds(e);
-  const proofDeleted = (await purgeExpiredProof(e)).length;
-  const webhooksRetried = await retryFailedWebhooks(e);
+  const re = time() ? await reauthorizeDue(e) : { reauthorized: [], failed: [] };
+  const approvalsExpired = time() ? await expireApprovals(e) : 0;
+  const pendingHoldsSettled = time() ? await checkPendingHolds(e) : 0;
+  const webhooksRetried = time() ? await retryFailedWebhooks(e) : 0;
+  const proofDeleted = time() && e.now().getUTCMinutes() === 17 ? (await purgeExpiredProof(e)).length : 0;
   return {
     approved: auto.approved,
     released: auto.released.filter((r) => r.kind === "captured").length,

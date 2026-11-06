@@ -147,7 +147,9 @@ export const LIVE_CAPTURE_STATUSES: CaptureStatus[] = ["SENDING", "COMPLETED", "
 export async function upsertProfile(q: Queryable, p: { id: string; displayName: string; paypalEmail?: string | null }): Promise<void> {
   await q.query(
     `insert into profiles (id, display_name, paypal_email) values ($1, $2, $3)
-     on conflict (id) do update set paypal_email = coalesce(excluded.paypal_email, profiles.paypal_email)`,
+     on conflict (id) do update set paypal_email = excluded.paypal_email
+       -- Only when there's something to change: signing in doesn't rewrite the row every request.
+       where excluded.paypal_email is not null and excluded.paypal_email is distinct from profiles.paypal_email`,
     [p.id, p.displayName, p.paypalEmail ?? null],
   );
 }

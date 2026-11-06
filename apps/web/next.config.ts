@@ -9,8 +9,9 @@ const turnstile = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ? "https://challeng
 const directives = (frameAncestors: string) => [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval'" : ""} ${paypal} ${turnstile}`,
-  `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com`,
-  `font-src 'self' https://fonts.gstatic.com`,
+  `style-src 'self' 'unsafe-inline'`,
+  // Fonts are self-hosted (src/app/fonts).
+  `font-src 'self'`,
   `img-src 'self' data: blob: ${supabase} ${paypal}`,
   `connect-src 'self' ${supabase} ${supabase.replace("https://", "wss://")} ${paypal} ${turnstile}`,
   // 'self': the dispute screen previews its evidence PDF in a frame.

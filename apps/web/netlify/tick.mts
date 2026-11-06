@@ -4,8 +4,8 @@
 // applied (the build can't reach the database, so a deploy's migrations land
 // here within a minute), retry captures whose outcome is unknown, release
 // lines whose review window lapsed, reauthorize holds past their honor
-// period, and record a heartbeat. A Postgres advisory lock keeps overlapping
-// runs from doing the same work.
+// period, and record a heartbeat. A lease row in the database (worker_leases)
+// keeps overlapping runs from doing the same work.
 //
 // The build bundles this file, workspace packages and all, into
 // netlify/functions/tick.mjs: Netlify's own packager left the workspace's
@@ -23,6 +23,8 @@ import { MIGRATIONS } from "./migrations.gen.ts";
 const REQUIRED = ["DATABASE_URL", "PAYPAL_CLIENT_ID", "PAYPAL_CLIENT_SECRET", "PAYPAL_WEBHOOK_ID"] as const;
 
 export default async () => {
+  // A scheduled function gets 30 s: the money steps first, then the eval nudge with whatever time is left.
+  const started = Date.now();
   const env = (k: string) => Netlify.env.get(k) ?? undefined;
   const missing = REQUIRED.filter((k) => !env(k));
   if (missing.length) {
@@ -66,7 +68,8 @@ export default async () => {
   } finally {
     await db.end();
   }
-  await stepEvals(env("URL"), env("EVAL_STEP_SECRET") ?? env("PAYPAL_CLIENT_SECRET")!);
+  const left = 27_000 - (Date.now() - started);
+  if (left > 3_000) await stepEvals(env("URL"), env("EVAL_STEP_SECRET") ?? env("PAYPAL_CLIENT_SECRET")!, Math.min(20_000, left));
 };
 
 /**
@@ -74,11 +77,11 @@ export default async () => {
  * with the production models, and stops once each run is done. It runs in the
  * site's function (60 s limit, with the model key and image tools), not here.
  */
-async function stepEvals(site: string | undefined, secret: string): Promise<void> {
+async function stepEvals(site: string | undefined, secret: string, timeoutMs: number): Promise<void> {
   if (!site) return;
   const key = createHmac("sha256", secret).update("trace-eval-step").digest("hex");
   try {
-    const res = await fetch(new URL("/api/eval/step", site), { method: "POST", headers: { "x-trace-eval": key }, signal: AbortSignal.timeout(20_000) });
+    const res = await fetch(new URL("/api/eval/step", site), { method: "POST", headers: { "x-trace-eval": key }, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) consoleLogger.warn("eval step answered", { status: res.status });
   } catch (err) {
     // A slow step keeps running on the site after this gives up waiting.

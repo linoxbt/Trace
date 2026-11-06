@@ -32,7 +32,7 @@ const SECTIONS: LegalSection[] = [
   {
     title: "How long it is kept",
     paras: [
-      "Photos, clips, documents and photo locations are deleted automatically 180 days after a job closes, the window in which a payment can be disputed, unless a dispute is still open; a demo job's after 30 days.",
+      "Photos, clips, documents and photo locations are deleted automatically 180 days after a job closes, the window in which a payment can be disputed, unless a dispute is still open; a demo job's after 30 days; a job that never went ahead (a draft, or never approved) 90 days after it was last touched. Job locations and sign-off network addresses go at the same time.",
       "The record of the job (lines, prices, verdicts, checks and payment decisions) is kept after that, because it is the payment record.",
     ],
   },

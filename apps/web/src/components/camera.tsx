@@ -80,10 +80,12 @@ export function Camera(props: {
   const grab = async (quality = 0.9): Promise<Blob | null> => {
     const v = video.current;
     if (!v || !v.videoWidth) return null;
+    // The server works at 1568 px on the long edge; sending more only risks the host's ~6 MB upload limit (8 clip frames).
+    const scale = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
     const canvas = document.createElement("canvas");
-    canvas.width = v.videoWidth;
-    canvas.height = v.videoHeight;
-    canvas.getContext("2d")!.drawImage(v, 0, 0);
+    canvas.width = Math.round(v.videoWidth * scale);
+    canvas.height = Math.round(v.videoHeight * scale);
+    canvas.getContext("2d")!.drawImage(v, 0, 0, canvas.width, canvas.height);
     return new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", quality));
   };
 

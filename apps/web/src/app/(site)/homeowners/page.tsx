@@ -49,7 +49,7 @@ export default function Homeowners() {
       }}
       faq={[
         ["Is my money taken when I approve?", "No. PayPal authorizes the total and holds it on your account. Money is captured line by line, only after the work is verified and you've had the chance to review it."],
-        ["Who holds the money?", "PayPal. Payments go straight to the tradesperson's own PayPal business account. Trace never takes custody of funds."],
+        ["Who holds the money?", "PayPal. Payments go straight to the tradesperson's own PayPal business account. Trace never takes custody of funds. (The sandbox demo job, which has no tradesperson, pays Trace's test account.)"],
         ["What if I disagree with a verdict?", "Flag the line with a note. It stays held until the tradesperson fixes and re-proves it, or you both agree to drop it."],
         ["Can I still dispute with PayPal?", "Yes. Your PayPal buyer rights don't change. Trace keeps the photo record either side can point to."],
         ["What kinds of job can I use it for?", "Anything where the result can be shown: home repairs, cleaning and turnovers, car repair and detailing, garden work, removals and clear-outs, installations, and event set-up. Work hidden inside a wall can be proved by a photo during the job or a signed note from an inspector."],

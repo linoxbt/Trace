@@ -77,7 +77,7 @@ export function JobScreen({
   const live = useLiveEvents(refresh, job.id);
   useEffect(() => {
     if (job.status === "COMPLETED" || job.status === "CLOSED_VOIDED") return;
-    const t = setInterval(() => document.visibilityState === "visible" && refresh(), live ? 30_000 : 5000);
+    const t = setInterval(() => document.visibilityState === "visible" && refresh(), live ? 30_000 : 10_000);
     return () => clearInterval(t);
   }, [refresh, job.status, live]);
 
@@ -803,10 +803,30 @@ function ProofDetails({ line: l }: { line: Line }) {
 }
 
 /** Proving a line without the camera: upload a document or file, send a link, or ask for a sign-off. */
+/** Under the host's request limit (about 6 MB), with room for the rest of the form. */
+const UPLOAD_LIMIT = 5 * 1024 * 1024;
+
+/** A photo of a document, re-encoded at 2400 px on the long edge: legible, and well under the limit. */
+async function shrinkImage(f: File): Promise<File> {
+  try {
+    const bmp = await createImageBitmap(f);
+    const scale = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * scale);
+    c.height = Math.round(bmp.height * scale);
+    c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/jpeg", 0.85));
+    return blob ? new File([blob], f.name.replace(/\.\w+$/, ".jpg"), { type: "image/jpeg" }) : f;
+  } catch {
+    return f;
+  }
+}
+
 function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: boolean; onSubmit: (form: FormData) => Promise<void>; onSignOff: () => Promise<{ link: string | null; email: string } | null> }) {
   const [url, setUrl] = useState("");
   const [link, setLink] = useState<{ link: string | null; email: string } | null>(null);
   const [copied, setCopied] = useState(false);
+  const [tooBig, setTooBig] = useState<string | null>(null);
   const spec = l.proof.spec as { kind?: string; mime?: string; email?: string; statement?: string } | null;
   const upload = (accept: string, label: string) => (
     <label className={`press btn-ink mt-4 flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-full text-[14px] font-medium ${busy ? "pointer-events-none opacity-60" : ""}`}>
@@ -815,22 +835,38 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
         type="file"
         accept={accept}
         className="sr-only"
-        onChange={(e) => {
+        onChange={async (e) => {
           const f = e.target.files?.[0];
           e.target.value = "";
           if (!f) return;
+          setTooBig(null);
+          // The host refuses uploads over about 6 MB before Trace sees them: shrink photos, and say so for other files.
+          const file = f.size > UPLOAD_LIMIT && f.type.startsWith("image/") ? await shrinkImage(f) : f;
+          if (file.size > UPLOAD_LIMIT) return setTooBig(`That file is ${(f.size / 1_048_576).toFixed(1)} MB; files up to 5 MB can be sent. Try a smaller copy.`);
           const form = new FormData();
-          form.append("file", f, f.name);
+          form.append("file", file, f.name);
           onSubmit(form);
         }}
       />
+      {tooBig && <span role="alert" className="sr-only">{tooBig}</span>}
     </label>
   );
 
-  if (l.proof.type === "document") return upload("application/pdf,image/*", l.status === "FAILED" ? "Upload another document" : "Upload the document");
+  if (l.proof.type === "document")
+    return (
+      <>
+        {upload("application/pdf,image/*", l.status === "FAILED" ? "Upload another document" : "Upload the document")}
+        {tooBig && <p className="mt-2 text-[13px] text-bad">{tooBig}</p>}
+      </>
+    );
   if (l.proof.type === "deliverable" && spec?.kind !== "url") {
     const accept = spec?.mime === "pdf" ? "application/pdf" : spec?.mime === "image" ? "image/*" : spec?.mime === "text" ? "text/*,.md,.csv,.json" : "*/*";
-    return upload(accept, "Upload the file");
+    return (
+      <>
+        {upload(accept, "Upload the file")}
+        {tooBig && <p className="mt-2 text-[13px] text-bad">{tooBig}</p>}
+      </>
+    );
   }
   if (l.proof.type === "deliverable") {
     return (
@@ -856,7 +892,7 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
       {link && !link.link ? (
         <div className="rounded-2xl bg-paper p-3.5 text-[13.5px]">
           <div className="font-medium">Emailed to {link.email}</div>
-          <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. The link works once, for 14 days, and replaces any earlier one. The client then approves the line.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. The link works once, for 72 hours, and replaces any earlier one. The client then approves the line.</p>
           <button disabled={busy} onClick={async () => setLink(await onSignOff())} className="press mt-2 text-[13px] font-medium text-violet">
             Send it again
           </button>
@@ -864,7 +900,7 @@ function ProveOther({ line: l, busy, onSubmit, onSignOff }: { line: Line; busy: 
       ) : link?.link ? (
         <div className="rounded-2xl bg-paper p-3.5 text-[13.5px]">
           <div className="font-medium">Send this link to {link.email}</div>
-          <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. It works once, for 14 days, and replaces any earlier link. The client then approves the line.</p>
+          <p className="mt-0.5 text-[12.5px] text-muted">Only {link.email} can sign it: they confirm that email first. It works once, for 72 hours, and replaces any earlier link. The client then approves the line.</p>
           <div className="mt-2 flex gap-2">
             <input readOnly value={link.link!} className="field min-w-0 flex-1 text-[12.5px]" onFocus={(e) => e.target.select()} />
             <button

@@ -46,6 +46,14 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof retention", () => {
     expect(await purgeExpiredProof(e)).toEqual([]);
   });
 
+  it("clears a job that never went ahead after 90 days, with its location", async () => {
+    const h = await heldJob(e);
+    await e.db.query("update jobs set status = 'AWAITING_APPROVAL' where id = $1", [h.jobId]);
+    e.clock.t = new Date(Date.now() + 91 * DAY);
+    expect(await purgeExpiredProof(e)).toEqual([h.jobId]);
+    expect((await store.mustGetJob(e.db, h.jobId)).anchor_lat).toBeNull();
+  });
+
   it("keeps an open job's photos, and a closed job's while a dispute on it is open", async () => {
     const open = await heldJob(e);
     const h = await closedJob();

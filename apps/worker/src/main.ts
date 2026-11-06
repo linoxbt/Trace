@@ -1,7 +1,7 @@
 // The background worker (spec section 10): every 30 s it releases lines whose
 // review window lapsed, retries captures whose outcome is unknown, and
-// reauthorizes holds past their honor period. A Postgres advisory lock keeps it
-// to one running copy; /healthz reports its last tick.
+// reauthorizes holds past their honor period. A lease row in the database
+// (worker_leases) keeps it to one running copy; /healthz reports its last tick.
 
 import { createServer } from "node:http";
 import { Db, migrate, recordHeartbeat } from "@trace/db";

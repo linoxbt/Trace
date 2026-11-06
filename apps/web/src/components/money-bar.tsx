@@ -1,6 +1,7 @@
 "use client";
 
 import type { MoneyView } from "@/server/view";
+import { When } from "./when";
 import { Money } from "@/components/ui/count";
 
 /**
@@ -18,7 +19,16 @@ export function MoneyCard({ m, totalCents, badge, client = "homeowner" }: { m: M
         {badge}
       </div>
       <Money cents={placed ? held : totalCents} currency={m.currency} className={`mt-1 block text-[40px] font-semibold tracking-[-0.035em] sm:text-[44px] ${placed ? "" : "text-muted"}`} />
-      {placed && m.authorizationStatus !== "VOIDED" && m.authorizationStatus !== "CAPTURED" && <p className="mt-1 text-[13px] text-muted">Not charged until each line is proved.</p>}
+      {placed && m.authorizationStatus !== "VOIDED" && m.authorizationStatus !== "CAPTURED" && (
+        <p className="mt-1 text-[13px] text-muted">
+          Not charged until each line is proved.
+          {m.expiresAt && (
+            <>
+              {" "}PayPal holds it until <When iso={m.expiresAt} />.
+            </>
+          )}
+        </p>
+      )}
       {placed && (
         <>
           <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#ececf2]">

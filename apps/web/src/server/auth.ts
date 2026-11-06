@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { upsertProfile } from "@trace/db";
@@ -28,8 +29,11 @@ export async function supabaseServer() {
   });
 }
 
-/** The signed-in user, checked with Supabase Auth (not just read from the cookie). */
-export async function currentUser(): Promise<SessionUser | null> {
+/**
+ * The signed-in user, checked with Supabase Auth (not just read from the
+ * cookie). Asked once per request however many places need it.
+ */
+export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const supabase = await supabaseServer();
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) return null;
@@ -37,7 +41,7 @@ export async function currentUser(): Promise<SessionUser | null> {
   const user = { id: u.id, email: u.email?.toLowerCase() ?? null, anonymous: !!u.is_anonymous };
   await upsertProfile(engine().db, { id: user.id, displayName: displayName(u.user_metadata, user.email) });
   return user;
-}
+});
 
 function displayName(meta: Record<string, unknown> | undefined, email: string | null): string {
   const name = typeof meta?.name === "string" ? meta.name : null;
