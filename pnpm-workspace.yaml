@@ -6,3 +6,6 @@ onlyBuiltDependencies:
   - sharp
   - esbuild
   - "@tailwindcss/oxide"
+# A cached install made under different settings is rebuilt without asking:
+# on a build server there's nobody to answer the prompt, and the install stops.
+confirmModulesPurge: false
