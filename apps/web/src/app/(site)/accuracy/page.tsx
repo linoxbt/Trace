@@ -57,6 +57,11 @@ function Verifier({ view }: { view: EvalView }) {
         <Stat value={String(s.wronglyReleased.length)} label="unfinished jobs wrongly verified: the error that costs a client money" tone={s.wronglyReleased.length ? "bad" : "ok"} />
         <Stat value={String(s.sentToReview.length)} label="finished jobs sent to the client to look at, rather than paid straight away" />
       </div>
+      {s.errors > 0 && (
+        <p className="mt-4 text-[14px] text-muted">
+          {s.errors} case{s.errors === 1 ? "" : "s"} couldn&apos;t be checked (the model didn&apos;t answer). They count as misses above, not as left out.
+        </p>
+      )}
       <div className="mt-10 grid gap-4 md:grid-cols-2">
         {CASES.map((c) => {
           const r = byId.get(c.id);

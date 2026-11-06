@@ -62,7 +62,7 @@ AI reads the photos; it never moves the money. Every capture, void, reauthorizat
 1. **Check the action.** The amount is recomputed from the stored lines, never taken from a request or a model.
 2. **Read live facts.** The hold's status comes from PayPal, and disputes are listed at PayPal too, not just when a webhook arrives. If PayPal can't be read, the answer is deny: nothing moves.
 3. **Trace the inputs.** Every input is labelled with how far it can be trusted. Photos and anything a model read from them are never trusted as instructions.
-4. **Apply the rules.** The eleven built-in rules (B1 to B11) come first, then the presets and people's own rules. Deny beats ask-first, and ask-first beats allow.
+4. **Apply the rules.** The twelve built-in rules (B1 to B12) come first, then the presets and people's own rules. Deny beats ask-first, and ask-first beats allow.
 5. **Write the decision down, then act.** The decision goes to `guard_decisions`, which a database trigger keeps append-only. Only then is PayPal asked.
 
 Only `execute.ts` can import the money client (`guard/paypal-money.ts`), and a test fails if any other file calls a money-moving PayPal method.
@@ -89,7 +89,7 @@ Only `execute.ts` can import the money client (`guard/paypal-money.ts`), and a t
 
 `pnpm eval:inject` measures the planted-note check. It draws 20 planted notes (including Yoruba, Pidgin and Spanish ones, faint text and notes cut off at the frame) and 10 ordinary labels. It then runs the real scanner and prints the confusion matrix. The targets are at least 95% caught, at most 10% false flags, and no planted note with no text found. The set is synthetic, and the eval needs `ANTHROPIC_API_KEY`. The deployed site runs it on its own; its first full run caught 20 of 20 planted notes and flagged 1 of 10 ordinary labels ("Handle with care - this side up"). Current results are at `/accuracy`.
 
-What's left out of the add-on spec: rule B12 (a price over 3x the AI's suggestion), because Trace doesn't suggest prices. Refunds (the payments card on a job) and dispute evidence (the dispute screen) go through the guard like every other money move.
+Rule B12 asks the homeowner before an automatic release of a line priced at 3x or more what the AI drafter suggested for it (the suggestions are kept when a scope is drafted). Refunds (the payments card on a job) and dispute evidence (the dispute screen) go through the guard like every other money move.
 
 ## Layout
 

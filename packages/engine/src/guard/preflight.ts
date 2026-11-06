@@ -164,6 +164,7 @@ export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
     hours_since_authorization: window.hours,
     device_changed: (devices.rowCount ?? 0) > 0,
     request_reused: earlier.some((d) => payloadKey(d.action) !== key),
+    price_vs_suggestion: await store.priceVsSuggestion(e.db, job.id, mine),
     approved_by: await approvalsFor(e, a),
   };
 }

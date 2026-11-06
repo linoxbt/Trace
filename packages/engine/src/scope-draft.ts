@@ -169,5 +169,7 @@ export async function draftScope(e: Engine, jobId: string, tradesId: string, des
   const out = await e.scopeDrafter.draft({ trade: categoryOf(job.category).label, currency: job.currency, description: text, photos: bytes });
   if (!out.lines.length) throw new EngineError("empty_draft", "the draft had no usable lines; add more detail and try again", 422);
   await store.appendEvent(e.db, { jobId, actor: "system", type: "SCOPE_DRAFTED", data: { lines: out.lines.length, model: e.scopeDrafter.model } });
+  // Kept so a line later priced far above this can be asked about before money moves (B12).
+  await store.savePriceSuggestions(e.db, jobId, out.lines.map((l) => ({ title: l.title, suggestedCents: l.suggestedPriceCents })));
   return { ...out, model: e.scopeDrafter.model };
 }

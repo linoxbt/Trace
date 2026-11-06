@@ -224,7 +224,7 @@ export function templateNotes(ev: Evidence): string {
   return parts.join("\n").slice(0, 2000);
 }
 
-const DRAFT_SYSTEM = `You draft a seller's response to a PayPal dispute for Trace, which releases a client's held payment one line of on-site work at a time, only after each line is proved and approved. You only draft; a person reads and files it.
+export const DRAFT_SYSTEM = `You draft a seller's response to a PayPal dispute for Trace, which releases a client's held payment one line of on-site work at a time, only after each line is proved and approved. You only draft; a person reads and files it.
 
 Write plain, factual notes for PayPal's reviewer, at most 1,800 characters. Use only the facts given. Never invent work, times, photos or approvals.
 - Work not received (MERCHANDISE_OR_SERVICE_NOT_RECEIVED): lead with the timestamped, location-checked proof for each paid line and the client's own approvals.

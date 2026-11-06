@@ -94,8 +94,8 @@ describe("guard: built-in rules", () => {
     expect(evaluate(action({ type: "VOID", line_ids: [], amount_cents: 0 }), facts({ approved_uncaptured_count: 0 })).outcome).toBe("ALLOW");
   });
 
-  it("has every rule B1 to B11 exactly once", () => {
-    expect(BUILTIN_RULES.map((r) => r.id)).toEqual(["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11"]);
+  it("has every rule B1 to B12 exactly once", () => {
+    expect(BUILTIN_RULES.map((r) => r.id)).toEqual(["B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10", "B11", "B12"]);
   });
 });
 
@@ -175,6 +175,17 @@ describe("guard: backtest", () => {
     const r = backtest(past, unsure);
     expect(r.total).toBe(3);
     expect(r.changed).toEqual([{ id: 2, decided_at: "2026-10-02T10:00:00Z", type: "CAPTURE", amount_cents: 21000, from: "ALLOW", to: "REQUIRE_APPROVAL" }]);
+  });
+});
+
+describe("guard: B12, a price far above the AI's estimate", () => {
+  it("asks the homeowner before an automatic release of a line priced at 3x the suggestion or more", () => {
+    const worker = action({ initiator: { kind: "worker" } });
+    expect(ids(evaluate(worker, facts({ price_vs_suggestion: 3.4 }), []))).toContain("B12");
+    expect(ids(evaluate(worker, facts({ price_vs_suggestion: 1.2 }), []))).not.toContain("B12");
+    // The homeowner starting the release is their OK.
+    expect(ids(evaluate(action(), facts({ price_vs_suggestion: 5 }), []))).not.toContain("B12");
+    expect(BUILTIN_RULES.map((r) => r.id)).toContain("B12");
   });
 });
 

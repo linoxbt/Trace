@@ -79,6 +79,7 @@ describe.skipIf(!TEST_DATABASE_URL)("evals on the server", () => {
       { caseId: "c", expected: "hold", got: "NEEDS_REVIEW", error: null },
       { caseId: "d", expected: "release", got: null, error: "timeout" },
     ]);
-    expect(s).toMatchObject({ scored: 3, errors: 1, released: 1, held: 1, wronglyReleased: ["b"], accuracy: 2 / 3 });
+    // The errored case counts as a miss: 2 right of 4, not of the 3 that answered.
+    expect(s).toMatchObject({ scored: 3, errors: 1, released: 1, releaseCases: 2, held: 1, wronglyReleased: ["b"], accuracy: 2 / 4 });
   });
 });

@@ -179,7 +179,7 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
           jobId: auth.job_id,
           actor: "paypal",
           type: type === "CUSTOMER.DISPUTE.CREATED" ? "DISPUTE_OPENED" : type === "CUSTOMER.DISPUTE.RESOLVED" ? "DISPUTE_RESOLVED" : "DISPUTE_UPDATED",
-          data: { dispute: row.paypal_dispute_id, reason: row.reason, status: row.status, ...(created ? { draft: "queued", notify: "tradesperson" } : {}) },
+          data: { dispute: row.paypal_dispute_id, reason: row.reason, status: row.status, ...(created ? { next: "draft_response", notify: "tradesperson" } : {}) },
         });
         return auth.job_id;
       });

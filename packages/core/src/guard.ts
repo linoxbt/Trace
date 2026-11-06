@@ -75,6 +75,8 @@ export const Facts = z.object({
   device_changed: z.boolean(),
   /** This request id was used before for a different payload (B11). */
   request_reused: z.boolean(),
+  /** For the lines in this action: the highest price as a multiple of the AI drafter's suggestion, if it made one (B12). */
+  price_vs_suggestion: z.number().nullable().optional(),
   /** Who has explicitly approved this exact action. */
   approved_by: z.object({ homeowner: z.boolean(), tradesperson: z.boolean() }),
 });
@@ -235,7 +237,18 @@ export const BUILTIN_RULES: BuiltinRule[] = [
     label: "A request id is never reused for something else",
     check: (_a, f) => (f.request_reused ? { effect: "deny", why: "this request id was already used for a different action" } : null),
   },
+  {
+    id: "B12",
+    label: "A price far above the AI's estimate needs the homeowner's OK",
+    check: (a, f) =>
+      CAPTURE_TYPES.includes(a.type) && a.initiator.kind !== "homeowner" && f.price_vs_suggestion != null && f.price_vs_suggestion >= PRICE_JUMP
+        ? { effect: "require_approval", approver: "homeowner", why: `a line is priced at ${f.price_vs_suggestion.toFixed(1)}x what the AI drafter suggested` }
+        : null,
+  },
 ];
+
+/** B12: a line priced at this multiple of the drafter's suggestion, or more. */
+export const PRICE_JUMP = 3;
 
 // ---------- presets: user rules, on by default ----------
 

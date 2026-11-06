@@ -30,10 +30,11 @@ export interface VerifierSummary {
 /** Verifier results: `expected` is release or hold; `got` is the verdict. */
 export function summarizeVerifier(rows: CaseOutcome[]): VerifierSummary {
   const ok = rows.filter((r) => !r.error && r.got);
-  const rel = ok.filter((r) => r.expected === "release");
-  const hold = ok.filter((r) => r.expected === "hold");
-  const released = rel.filter((r) => r.got === "VERIFIED").length;
-  const held = hold.filter((r) => r.got !== "VERIFIED").length;
+  // Every case counts: one whose check errored is a miss, not left out of the percentage.
+  const rel = rows.filter((r) => r.expected === "release");
+  const hold = rows.filter((r) => r.expected === "hold");
+  const released = rel.filter((r) => !r.error && r.got === "VERIFIED").length;
+  const held = hold.filter((r) => !r.error && r.got && r.got !== "VERIFIED").length;
   return {
     cases: rows.length,
     scored: ok.length,
@@ -45,7 +46,7 @@ export function summarizeVerifier(rows: CaseOutcome[]): VerifierSummary {
     wronglyReleased: hold.filter((r) => r.got === "VERIFIED").map((r) => r.caseId),
     sentToReview: rel.filter((r) => r.got === "NEEDS_REVIEW").map((r) => r.caseId),
     wronglyFailed: rel.filter((r) => r.got === "FAILED").map((r) => r.caseId),
-    accuracy: ok.length ? (released + held) / ok.length : null,
+    accuracy: rows.length ? (released + held) / rows.length : null,
   };
 }
 

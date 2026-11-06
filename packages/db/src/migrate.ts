@@ -28,7 +28,7 @@ export async function readMigrations(dir = MIGRATIONS_DIR): Promise<Migration[]>
 export const LEDGER = "trace_schema_migrations";
 
 /** The newest migration in this build. A test keeps it equal to the last file; /api/health compares the database with it. */
-export const LATEST_MIGRATION = "018_worker_lease.sql";
+export const LATEST_MIGRATION = "019_price_suggestions.sql";
 
 /**
  * Apply every migration not yet recorded, in name order, in one transaction.

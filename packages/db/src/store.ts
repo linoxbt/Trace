@@ -925,3 +925,32 @@ export async function latestEvalRuns(q: Queryable): Promise<EvalRunRow[]> {
   const { rows } = await q.query<EvalRunRow>("select distinct on (kind) * from eval_runs order by kind, started_at desc");
   return rows;
 }
+
+// ---------- price suggestions (B12) ----------
+
+/** A line's title as suggestions are matched by: case and punctuation don't matter. */
+export const titleKey = (title: string) => title.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().slice(0, 120);
+
+export async function savePriceSuggestions(q: Queryable, jobId: string, lines: { title: string; suggestedCents: number }[]): Promise<void> {
+  for (const l of lines) {
+    if (!(l.suggestedCents > 0)) continue;
+    await q.query(
+      `insert into price_suggestions (job_id, title_key, suggested_cents) values ($1, $2, $3)
+       on conflict (job_id, title_key) do update set suggested_cents = excluded.suggested_cents, created_at = now()`,
+      [jobId, titleKey(l.title), Math.round(l.suggestedCents)],
+    );
+  }
+}
+
+/** The highest price/suggestion ratio among these lines, or null when none had a suggestion. */
+export async function priceVsSuggestion(q: Queryable, jobId: string, lines: { title: string; price_cents: number }[]): Promise<number | null> {
+  if (!lines.length) return null;
+  const { rows } = await q.query<{ title_key: string; suggested_cents: number }>("select title_key, suggested_cents from price_suggestions where job_id = $1", [jobId]);
+  const by = new Map(rows.map((r) => [r.title_key, r.suggested_cents]));
+  let max: number | null = null;
+  for (const l of lines) {
+    const s = by.get(titleKey(l.title));
+    if (s) max = Math.max(max ?? 0, l.price_cents / s);
+  }
+  return max;
+}

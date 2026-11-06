@@ -3,6 +3,7 @@ import { Db } from "@trace/db";
 import { ClaudeDisputeDrafter, ClaudeScopeDrafter, ClaudeRuleCompiler, ClaudeTextScanner, ClaudeVerifier, consoleLogger, EngineError, PostgresStorage, ResendMailer, type Engine, type Verifier } from "@trace/engine";
 import { createPayPalClient, type PayPalApi } from "@trace/paypal";
 import { env } from "./env";
+import { FirstThatWorks, ToolkitDisputeDrafter } from "./dispute-agent";
 
 /** Without an Anthropic key, proofs are refused rather than judged by anything else. */
 const notYet: Verifier = {
@@ -45,7 +46,14 @@ export function engine(): Engine {
       ? {
           scanner: new ClaudeTextScanner({ apiKey: e.ANTHROPIC_API_KEY }),
           compiler: new ClaudeRuleCompiler({ apiKey: e.ANTHROPIC_API_KEY }),
-          drafter: new ClaudeDisputeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
+          // PayPal's Agent Toolkit reads the dispute from PayPal first; the plain drafter is the fallback.
+          drafter:
+            e.PAYPAL_CLIENT_ID && e.PAYPAL_CLIENT_SECRET
+              ? new FirstThatWorks([
+                  new ToolkitDisputeDrafter({ anthropicKey: e.ANTHROPIC_API_KEY, paypalClientId: e.PAYPAL_CLIENT_ID, paypalClientSecret: e.PAYPAL_CLIENT_SECRET, sandbox: e.PAYPAL_API_BASE.includes("sandbox") }),
+                  new ClaudeDisputeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
+                ])
+              : new ClaudeDisputeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
           scopeDrafter: new ClaudeScopeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
         }
       : {}),
