@@ -67,7 +67,8 @@ export interface JobView {
     beforeUrl: string | null;
     afterUrl: string | null;
     /** Text in the latest proof was aimed at the inspector, or steered the verdict (Tripwire). */
-    injection: { excerpt: string | null; maskedUrl: string | null; boxes: { x: number; y: number; w: number; h: number }[] } | null;
+    /** aimed: text in the proof spoke to the inspector; otherwise the check only depended on ordinary text (a label). */
+    injection: { excerpt: string | null; maskedUrl: string | null; boxes: { x: number; y: number; w: number; h: number }[]; aimed: boolean } | null;
     /** How the line is proved, and what its latest proof showed. */
     proof: ProofView;
     /** The change order that added this line, if one did. */
@@ -276,7 +277,12 @@ export async function jobView(jobId: string, userId: string): Promise<JobView> {
           beforeUrl: await sign(before),
           afterUrl: await sign(after),
           injection: l.injection_flag
-            ? { excerpt: l.injection_excerpt, maskedUrl: await sign(masked), boxes: (scan?.texts ?? []).map((t) => t.box) }
+            ? {
+                excerpt: l.injection_excerpt,
+                maskedUrl: await sign(masked),
+                boxes: (scan?.texts ?? []).map((t) => t.box),
+                aimed: events.filter((ev) => ev.type === "INJECTION_FLAGGED" && ev.data?.line === l.code).at(-1)?.data?.aimed !== false,
+              }
             : null,
           proof: await proofView(l, after, v?.observation.extracted ?? null),
           changeOrder: l.change_order_id ? (changeOrders.find((c) => c.id === l.change_order_id)?.code ?? null) : null,

@@ -616,18 +616,23 @@ export async function ownPhotos(q: Queryable, jobId: string, lineId: string): Pr
  * copy holds the same sample photos, so a sample is only "reused" within its job.
  */
 export async function nearestOtherHamming(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string; lineId?: string } = {}): Promise<number | null> {
+  return (await nearestOther(q, dhash, excludePhotoIds, opts))?.d ?? null;
+}
+
+/** The nearest stored image, with where its bytes are, so a close hash can be confirmed on the pixels. */
+export async function nearestOther(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string; lineId?: string } = {}): Promise<{ d: number; path: string | null } | null> {
   // Photos, and the other images proof is made of (video frames, photographed documents).
-  const { rows } = await q.query<{ d: number | null }>(
-    `select min(d)::int8 as d from (
-       select bit_count(('x' || dhash)::bit(64) # ('x' || $1)::bit(64)) as d
+  const { rows } = await q.query<{ d: number; path: string | null }>(
+    `select d::int8 as d, path from (
+       select bit_count(('x' || dhash)::bit(64) # ('x' || $1)::bit(64)) as d, storage_path as path
          from photos where kind <> 'masked' and not (id = any($2::uuid[])) and ($3::uuid is null or job_id = $3)
        union all
-       select bit_count(('x' || (meta->>'dhash'))::bit(64) # ('x' || $1)::bit(64))
+       select bit_count(('x' || (meta->>'dhash'))::bit(64) # ('x' || $1)::bit(64)), storage_path
          from proof_items where meta ? 'dhash' and ($3::uuid is null or job_id = $3) and ($4::uuid is null or line_id <> $4)
-     ) m`,
+     ) m order by d limit 1`,
     [dhash, excludePhotoIds, opts.jobId ?? null, opts.lineId ?? null],
   );
-  return rows[0]?.d ?? null;
+  return rows[0] ?? null;
 }
 
 /**
@@ -635,16 +640,19 @@ export async function nearestOtherHamming(q: Queryable, dhash: string, excludePh
  * either is saved. Checked again once saved: an earlier near-identical photo
  * from somewhere else means this one is the copy.
  */
-export async function earlierNearPhoto(q: Queryable, photoId: string, dhash: string, excludePhotoIds: string[], hamming: number): Promise<boolean> {
-  const { rowCount } = await q.query(
-    `select 1 from photos p, (select taken_at, id from photos where id = $1) me
+export async function earlierNearPhoto(q: Queryable, photoId: string, dhash: string, excludePhotoIds: string[], hamming: number): Promise<{ d: number; path: string | null } | null> {
+  // Only the race window matters here: anything older was already there for the first check.
+  const { rows } = await q.query<{ d: number; path: string }>(
+    `select bit_count(('x' || p.dhash)::bit(64) # ('x' || $3)::bit(64))::int8 as d, p.storage_path as path
+       from photos p, (select taken_at, id from photos where id = $1) me
       where p.id <> $1 and p.kind <> 'masked' and not (p.id = any($2::uuid[]))
+        and p.taken_at > me.taken_at - interval '2 minutes'
         and bit_count(('x' || p.dhash)::bit(64) # ('x' || $3)::bit(64)) <= $4
         and (p.taken_at, p.id) < (me.taken_at, me.id)
-      limit 1`,
+      order by d limit 1`,
     [photoId, excludePhotoIds, dhash, hamming],
   );
-  return (rowCount ?? 0) > 0;
+  return rows[0] ?? null;
 }
 
 /** The same for files: an earlier proof item with the same bytes on another line. */

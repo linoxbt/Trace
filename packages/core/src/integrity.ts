@@ -40,6 +40,12 @@ export interface IntegrityInput {
   beforeDhash: string;
   /** Smallest Hamming distance to any other photo stored in Trace, or null if there are none. */
   nearestOtherHamming: number | null;
+  /**
+   * Whether the pixels confirm that near match (a re-saved copy, not just a
+   * similar scene). False sends a near match to review instead of failing it:
+   * same-angle shots of identical flats or gauges hash alike. Absent: the hash decides.
+   */
+  reuseConfirmed?: boolean;
   sameDevice: boolean;
   /**
    * Largest per-cell pixel difference from the before-photo (0 to 255), when
@@ -147,7 +153,9 @@ export function evaluateIntegrity(input: IntegrityInput): IntegrityReport {
   const reuseHamming = input.nearestOtherHamming;
   checks.push(
     reuseHamming !== null && reuseHamming <= SAME_IMAGE_HAMMING
-      ? { name: "reuse", result: "fail", detail: "photo already used" }
+      ? input.reuseConfirmed === false
+        ? { name: "reuse", result: "review", detail: "looks very like a photo used on another job, though not the same image" }
+        : { name: "reuse", result: "fail", detail: "photo already used" }
       : { name: "reuse", result: "pass", detail: reuseHamming === null ? "no other photos to compare" : `nearest other photo at distance ${reuseHamming}` },
   );
 

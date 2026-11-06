@@ -113,10 +113,15 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
   // and this line's earlier attempts are expected to look alike, so they're
   // left out, except that sending the very same image again still counts.
   const own = await store.ownPhotos(e.db, job.id, line.id);
-  let nearest = await store.nearestOtherHamming(e.db, hash, own.map((p) => p.id), input.sample ? { jobId: job.id } : {});
+  const closest = await store.nearestOther(e.db, hash, own.map((p) => p.id), input.sample ? { jobId: job.id } : {});
+  let nearest = closest?.d ?? null;
+  let reuseConfirmed = await confirmSameImage(e, closest, after);
   if (!input.sample) {
     for (const p of own.filter((x) => x.line_id === line.id && x.kind !== "before" && hamming(hash, x.dhash) <= SAME_IMAGE_HAMMING)) {
-      if ((await maxCellDiff(await e.storage.get(p.storage_path), after)) <= SAME_IMAGE_CELL_DIFF) nearest = 0;
+      if ((await maxCellDiff(await e.storage.get(p.storage_path), after)) <= SAME_IMAGE_CELL_DIFF) {
+        nearest = 0;
+        reuseConfirmed = true;
+      }
     }
   }
   // A close hash alone can't tell a small fix from a re-used photo; the pixels can.
@@ -132,6 +137,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
     dhash: hash,
     beforeDhash: before.dhash,
     nearestOtherHamming: nearest,
+    reuseConfirmed,
     sameDevice: !!input.deviceId && input.deviceId === job.trades_device_id,
   });
 
@@ -199,7 +205,7 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
 
   if (!input.sample) {
     // Re-checked once saved: the same photo sent to two lines at once passes both first checks.
-    if (decision.verdict !== "FAILED" && (await store.earlierNearPhoto(e.db, photo.id, hash, own.map((p) => p.id), SAME_IMAGE_HAMMING))) {
+    if (decision.verdict !== "FAILED" && (await confirmSameImage(e, await store.earlierNearPhoto(e.db, photo.id, hash, own.map((p) => p.id), SAME_IMAGE_HAMMING), after))) {
       decision = { verdict: "FAILED", reasons: ["photo already used"] };
     }
     decision = onLastTry(decision, triesBefore, "camera");
@@ -222,7 +228,9 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
       masked_of: photo.id,
     });
   }
+  // Marked on the line either way; only text actually aimed at the inspector is called that to the client.
   const steered = !!injection && (injection.flagged || injection.depended);
+  const aimed = !!injection?.flagged;
 
   await e.db.tx(async (q) => {
     const j = await store.mustGetJob(q, job.id, { lock: true });
@@ -292,16 +300,32 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
           boxes: (scan?.texts ?? []).map((t) => t.box),
           depended: injection!.depended,
           alert: "homeowner",
-          homeowner_message: injection!.masked
-            ? "Text in this proof was addressed to the inspector. We hid it and re-checked the work. Please look before releasing."
-            : "Text in this proof was addressed to the inspector. It was ignored.",
-          tradesperson_message: "Text in your proof was ignored. This line needs the homeowner's review.",
+          aimed,
+          homeowner_message: !aimed
+            ? "The check of this proof depended on text in the photo (a label or sign). We hid it and checked again, and the result changed. Please look before releasing."
+            : injection!.masked
+              ? "Text in this proof was addressed to the inspector. We hid it and re-checked the work. Please look before releasing."
+              : "Text in this proof was addressed to the inspector. It was ignored.",
+          tradesperson_message: aimed ? "Text in your proof was ignored. This line needs the homeowner's review." : "The check couldn't be sure without the text in your photo, so the client reviews this line.",
         },
       });
     }
   });
 
   return { verdict: decision.verdict, reasons: decision.reasons, photoId: photo.id, integrity, observation };
+}
+
+/**
+ * A close hash is only a resemblance: same-angle shots of identical flats or
+ * gauges hash alike. The pixels tell a re-used photo (a re-saved copy) from a
+ * similar one. A copy that can't be read any more (deleted) isn't confirmed.
+ */
+export async function confirmSameImage(e: Engine, near: { d: number; path: string | null } | null, img: Uint8Array): Promise<boolean | undefined> {
+  if (!near || near.d > SAME_IMAGE_HAMMING) return undefined;
+  if (!near.path) return false;
+  const other = await e.storage.get(near.path).catch(() => null);
+  if (!other) return false;
+  return (await maxCellDiff(other, img)) <= SAME_IMAGE_CELL_DIFF;
 }
 
 const MAX_BEFORE_PHOTOS = 6;
@@ -431,7 +455,16 @@ async function rejudgeWithoutText(
     const after = await maskText(p.after, p.scan.texts);
     const before = beforeScan?.texts.length ? await maskText(p.base.before, beforeScan.texts) : p.base.before;
     const observation = await e.verifier.inspect({ ...p.base, before, after, masked: true });
-    masked = { after, observation, verdict: decideVerdict(p.base.acceptance, observation, p.integrity, e.settings.confidenceThreshold).verdict };
+    let verdict = decideVerdict(p.base.acceptance, observation, p.integrity, e.settings.confidenceThreshold).verdict;
+    // The same two looks as the original: a borderline masked look gets its second, cropped look too,
+    // so "the verdict changed without the text" isn't just one borderline look against two.
+    if (needsSecondPass(observation, e.settings.confidenceThreshold) && observation.region) {
+      const second = await cropRegion(after, observation.region)
+        .then((crop) => e.verifier.inspect({ ...p.base, before, after, crop, masked: true }))
+        .catch(() => null);
+      if (second) verdict = combinePasses(p.base.acceptance, observation, second, p.integrity, e.settings.confidenceThreshold).verdict;
+    }
+    masked = { after, observation, verdict };
   } catch (err) {
     e.log.warn("masked re-judge failed", { line: p.base.lineId, err: String(err) });
     return {

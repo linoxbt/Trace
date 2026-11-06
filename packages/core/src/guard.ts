@@ -515,8 +515,13 @@ export const TextScan = z.object({
 });
 export type TextScan = z.infer<typeof TextScan>;
 
-/** Belt and braces beside the model's own judgement (spec section 7). */
-export const INJECTION_KEYWORDS = /verif|approv|inspect|ignore|system|mark .*(done|complete)|\bAI\b|assistant|\bpass\b/i;
+/**
+ * Belt and braces beside the model's own judgement (spec section 7): words a
+ * note to the checker uses. Kept to phrases, not bare words that ordinary site
+ * text carries ("heating system", a "PASS" sticker, "approved" on a label).
+ */
+export const INJECTION_KEYWORDS =
+  /verif(y|ied)|inspector|reviewer|ignore (the|all|previous|any)|system prompt|mark (this|it|line|all|everything)?\s*(as )?(done|complete|verified|passed|approved)|\bAI\b|assistant|approve (this|all|every|the line)|(this|line|work) (passes|passed)|all checks|confidence/i;
 
 /** Flagged if any text is an instruction, is aimed at a reviewer, or trips the keyword check. Brand marks don't flag. */
 export function isFlagged(scan: TextScan): { flagged: boolean; excerpt?: string } {

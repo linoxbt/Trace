@@ -140,7 +140,9 @@ async function route(e: Engine, event: WebhookEvent): Promise<WebhookOutcome> {
       const jobId = await e.db.tx(async (q) => {
         const auth = (await q.query<store.AuthorizationRow>("select * from authorizations where id = $1", [cap.authorization_id])).rows[0]!;
         await store.mustGetJob(q, auth.job_id, { lock: true });
-        const counted = await store.recordRefund(q, cap.id, String(r.id ?? ""), cents ?? cap.amount_cents - cap.refunded_cents);
+        // No amount on the event: the rest of the capture, if any is left. Nothing left means nothing to record.
+        const amountCents = cents ?? cap.amount_cents - cap.refunded_cents;
+        const counted = amountCents > 0 ? await store.recordRefund(q, cap.id, String(r.id ?? ""), amountCents) : null;
         if (counted) await store.appendEvent(q, { jobId: auth.job_id, actor: "paypal", type: "REFUNDED", data: { capture: cap.id, paypal_capture_id: captureId, refund: r.id ?? null, amount_cents: cents } });
         return auth.job_id;
       });

@@ -177,7 +177,12 @@ export async function closeChangeOrder(e: Engine, changeOrderId: string, userId:
   if (co.status !== "AWAITING_APPROVAL") throw conflict("not_awaiting_approval", "only a change order waiting for approval can be declined or withdrawn");
   if (co.authorization_id) throw conflict("hold_pending", "PayPal is still reviewing this change order's payment; it can be withdrawn once PayPal answers");
   const status = side === "homeowner" ? "DECLINED" : "CANCELLED";
-  const { rows } = await e.db.query<store.ChangeOrderRow>("update change_orders set status = $2, updated_at = now() where id = $1 returning *", [co.id, status]);
+  // Only while it's still waiting and no hold is on its way: a decline can't race an authorization.
+  const { rows } = await e.db.query<store.ChangeOrderRow>(
+    "update change_orders set status = $2, updated_at = now() where id = $1 and status = 'AWAITING_APPROVAL' and authorization_id is null returning *",
+    [co.id, status],
+  );
+  if (!rows[0]) throw conflict("not_awaiting_approval", "this change order changed meanwhile; refresh");
   await store.appendEvent(e.db, { jobId: job.id, actor: side, type: side === "homeowner" ? "CHANGE_ORDER_DECLINED" : "CHANGE_ORDER_WITHDRAWN", data: { change_order: co.code } });
   return rows[0]!;
 }

@@ -287,7 +287,8 @@ export async function guardedReauthorize(e: Engine, auth: store.AuthorizationRow
   const openCents = sum(lines.filter((l) => !isResolvedLine(l.status)).map((l) => l.price_cents));
   const { provenance } = await buildProvenance(e, job.id, []);
   const a = action("REAUTHORIZE", job, { kind: "worker" }, provenance, {
-    request_id: `reauthorize-${auth.paypal_auth_id}`,
+    // The amount is part of the id: if what's open changes between tries, the retry is a new request, not a mismatch.
+    request_id: `reauthorize-${auth.paypal_auth_id}-${openCents}`,
     authorization_id: auth.id,
     paypal_authorization_id: auth.paypal_auth_id,
     amount_cents: openCents,

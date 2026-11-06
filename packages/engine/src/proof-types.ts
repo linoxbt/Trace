@@ -43,6 +43,7 @@ import { assertTriesLeft, MAX_TRIES, onLastTry, type TryKind } from "./tries.ts"
 import type { Engine } from "./deps.ts";
 import { badRequest, conflict, EngineError, forbidden } from "./errors.ts";
 import { compareCells, dHash, normalizePhoto } from "./image.ts";
+import { confirmSameImage } from "./proof.ts";
 import { TokenRejected, type ProofResult } from "./proof.ts";
 import { photoPath } from "./storage.ts";
 import type { ProofInspectInput, ProofObservation } from "./verifier.ts";
@@ -91,10 +92,12 @@ async function begin(e: Engine, lineId: string, tradesId: string, type: store.Li
 }
 
 async function racedPhoto(e: Engine, c: Ctx, photoId: string): Promise<boolean> {
-  const p = (await e.db.query<{ dhash: string }>("select dhash from photos where id = $1", [photoId])).rows[0];
+  const p = (await e.db.query<{ dhash: string; storage_path: string }>("select dhash, storage_path from photos where id = $1", [photoId])).rows[0];
   if (!p) return false;
   const own = (await store.ownPhotos(e.db, c.job.id, c.line.id)).map((x) => x.id);
-  return store.earlierNearPhoto(e.db, photoId, p.dhash, own, SAME_IMAGE_HAMMING);
+  const near = await store.earlierNearPhoto(e.db, photoId, p.dhash, own, SAME_IMAGE_HAMMING);
+  if (!near) return false;
+  return (await confirmSameImage(e, near, await e.storage.get(p.storage_path))) === true;
 }
 
 async function racedFile(e: Engine, c: Ctx, itemId: string): Promise<boolean> {
@@ -158,7 +161,13 @@ async function finish(
 /** The model's look, or a refusal when no verifier can judge this proof type. */
 async function inspect(e: Engine, input: ProofInspectInput): Promise<ProofObservation> {
   if (!e.verifier.inspectProof) throw new EngineError("verifier_unavailable", "the AI check for this proof type isn't configured yet", 503);
-  return e.verifier.inspectProof(input);
+  try {
+    return await e.verifier.inspectProof(input);
+  } catch (err) {
+    // A clear "try again", never a raw 500. The line stays open for another try, which this one doesn't use up.
+    e.log.error("verifier failed", { line: input.lineId, err: String(err) });
+    throw new EngineError("verifier_unavailable", "the AI check is unavailable right now; send the proof again in a minute", 503);
+  }
 }
 
 /** Text aimed at a reviewer sends the line to a person, whatever else it shows. */
@@ -208,7 +217,9 @@ async function cameraPhoto(e: Engine, c: Ctx, raw: Uint8Array, opts: { gps: Proo
   const hash = await dHash(jpeg);
   // This line's own earlier tries (a retake) and the job's before-photos are expected to look alike.
   const own = (await store.ownPhotos(e.db, c.job.id, c.line.id)).map((p) => p.id);
-  const nearest = await store.nearestOtherHamming(e.db, hash, own, { lineId: c.line.id, ...(opts.sample ? { jobId: c.job.id } : {}) });
+  const closest = await store.nearestOther(e.db, hash, own, { lineId: c.line.id, ...(opts.sample ? { jobId: c.job.id } : {}) });
+  const nearest = closest?.d ?? null;
+  const reuseConfirmed = await confirmSameImage(e, closest, jpeg);
   const near = before && hamming(hash, before.dhash) <= EDIT_CHECK_HAMMING ? await compareCells(await e.storage.get(before.storage_path), jpeg) : null;
   const cellDiff = near && before && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING ? near.max : null;
   const report = evaluateIntegrity({
@@ -222,6 +233,7 @@ async function cameraPhoto(e: Engine, c: Ctx, raw: Uint8Array, opts: { gps: Proo
     beforeCellDiff: cellDiff,
     beforeIdenticalShare: near?.identicalShare ?? null,
     nearestOtherHamming: nearest,
+    reuseConfirmed,
     sameDevice: !!opts.deviceId && opts.deviceId === c.job.trades_device_id,
   });
   const checks = report.checks.filter((x) => before || x.name !== "no_change");
@@ -271,9 +283,14 @@ export async function submitVideoProof(
     const hash = await dHash(jpeg);
     if (hamming(hash, firstHash) > SAME_IMAGE_HAMMING) still = false;
     const ownIds = (await store.ownPhotos(e.db, c.job.id, c.line.id)).map((p) => p.id);
-    const reused = await store.nearestOtherHamming(e.db, hash, [first.photo.id, ...ownIds], { lineId: c.line.id, ...(sample ? { jobId: c.job.id } : {}) });
-    if (reused !== null && reused <= SAME_IMAGE_HAMMING && !frameChecks.some((x) => x.name === "frame_reused")) {
-      frameChecks.push({ name: "frame_reused", result: "fail", detail: `the frame at ${f.atS.toFixed(1)} s is an image already used as proof` });
+    const near = await store.nearestOther(e.db, hash, [first.photo.id, ...ownIds], { lineId: c.line.id, ...(sample ? { jobId: c.job.id } : {}) });
+    const confirmed = await confirmSameImage(e, near, jpeg);
+    if (confirmed !== undefined && !frameChecks.some((x) => x.name === "frame_reused")) {
+      frameChecks.push(
+        confirmed
+          ? { name: "frame_reused", result: "fail", detail: `the frame at ${f.atS.toFixed(1)} s is an image already used as proof` }
+          : { name: "frame_reused", result: "review", detail: `the frame at ${f.atS.toFixed(1)} s looks very like an image used elsewhere` },
+      );
     }
     if (before && hamming(hash, before.dhash) <= SAME_IMAGE_HAMMING && !frameChecks.some((x) => x.name === "frame_is_before")) {
       frameChecks.push({ name: "frame_is_before", result: "review", detail: `the frame at ${f.atS.toFixed(1)} s matches the before-photo` });

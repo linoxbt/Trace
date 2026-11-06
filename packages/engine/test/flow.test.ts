@@ -442,6 +442,18 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof integrity", () => {
     expect([a.verdict, b.verdict].sort()).toEqual(["FAILED", "VERIFIED"]);
   });
 
+  it("a photo that only looks like one from another job goes to the client, not to Failed", async () => {
+    const h = await heldJob(e);
+    const photo = await testPhoto();
+    expect((await prove(e, h, "L1", { photo })).verdict).toBe("VERIFIED");
+    // Another job's honest, similar shot: same hash, different pixels.
+    const h2 = await heldJob(e);
+    const similar = await sharp(photo).modulate({ brightness: 1.25 }).jpeg().toBuffer();
+    const r = await prove(e, h2, "L1", { photo: similar });
+    expect(r.integrity.checks.find((c) => c.name === "reuse")).toMatchObject({ result: "review" });
+    expect(r.verdict).toBe("NEEDS_REVIEW");
+  });
+
   it("fails a photo already used on another line", async () => {
     const h = await heldJob(e);
     const photo = await testPhoto();

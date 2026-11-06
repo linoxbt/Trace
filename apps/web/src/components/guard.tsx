@@ -142,11 +142,14 @@ function Sheet({ title, children, onClose }: { title: string; children: React.Re
 /* --------------------------------------------------------- approval card */
 
 function useCountdown(iso: string): string {
-  const [now, setNow] = useState(() => Date.now());
+  // Unknown until the page is live in the browser, so the server's render and the first one match.
+  const [now, setNow] = useState<number | null>(null);
   useEffect(() => {
+    setNow(Date.now());
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
+  if (now === null) return "";
   const ms = Math.max(0, new Date(iso).getTime() - now);
   const h = Math.floor(ms / 3_600_000);
   const m = Math.floor((ms % 3_600_000) / 60_000);
@@ -207,14 +210,19 @@ export function InjectionAlert({ line, role, client = "homeowner" }: { line: Lin
   return (
     <div className="mt-4 rounded-2xl bg-warn-soft p-3.5">
       <div className="flex items-center gap-2 text-[13.5px] font-semibold text-warn">
-        <ShieldIcon className="h-4 w-4" /> {trades ? "Text in your proof was ignored" : "Text in this proof was addressed to the inspector"}
+        <ShieldIcon className="h-4 w-4" />{" "}
+        {!inj.aimed ? "The check depended on text in the photo" : trades ? "Text in your proof was ignored" : "Text in this proof was addressed to the inspector"}
       </div>
       <p className="mt-1 text-[13px] leading-relaxed text-ink-2">
-        {trades
-          ? `This line needs the ${client}'s review.`
-          : inj.maskedUrl
-            ? "We hid it and re-checked the work. Please look before releasing."
-            : "It was ignored. Please look before releasing."}
+        {!inj.aimed
+          ? trades
+            ? `A label or sign in the photo changed the check, so the ${client} reviews this line.`
+            : "A label or sign in the photo changed the result, so we hid it and checked again. Please look before releasing."
+          : trades
+            ? `This line needs the ${client}'s review.`
+            : inj.maskedUrl
+              ? "We hid it and re-checked the work. Please look before releasing."
+              : "It was ignored. Please look before releasing."}
       </p>
       {inj.excerpt && <p className="mt-2 rounded-lg bg-card/70 px-2.5 py-1.5 font-mono text-[12px] text-ink-2">&ldquo;{inj.excerpt}&rdquo;</p>}
       {(line.afterUrl || inj.maskedUrl) && (
