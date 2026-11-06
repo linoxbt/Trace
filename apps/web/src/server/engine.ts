@@ -49,7 +49,7 @@ export function engine(): Engine {
           scopeDrafter: new ClaudeScopeDrafter({ apiKey: e.ANTHROPIC_API_KEY }),
         }
       : {}),
-    ...(e.RESEND_API_KEY && e.MAIL_FROM ? { mailer: new ResendMailer(e.RESEND_API_KEY, e.MAIL_FROM) } : {}),
+    ...(e.RESEND_API_KEY && e.MAIL_FROM ? { mailer: new ResendMailer(e.RESEND_API_KEY, e.MAIL_FROM.includes("<") ? e.MAIL_FROM : `Trace <${e.MAIL_FROM.trim()}>`) } : {}),
     settings: { webhookId: e.PAYPAL_WEBHOOK_ID ?? "", demoMode: e.DEMO_MODE === "true", sandbox: e.PAYPAL_API_BASE.includes("sandbox"), confidenceThreshold: 0.8, brandName: "Trace" },
     now: () => new Date(),
     log: consoleLogger,

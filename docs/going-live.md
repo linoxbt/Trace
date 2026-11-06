@@ -71,7 +71,7 @@ Set these, then redeploy. Mark secrets as secret.
     Supabase (Authentication, Emails, SMTP settings) so sign-in links reach
     anyone.
   - For Trace's own emails (job links, sign-off links), set `RESEND_API_KEY`
-    and `MAIL_FROM` on a domain verified with Resend.
+    and `MAIL_FROM` (just the address, such as `jobs@example.com`) on a domain verified with Resend.
 - **Bot check.** Create a Cloudflare Turnstile widget for the domain. Set
   `NEXT_PUBLIC_TURNSTILE_SITE_KEY` on Netlify, and put the secret in Supabase
   (Authentication, Attack Protection, captcha: Turnstile).
