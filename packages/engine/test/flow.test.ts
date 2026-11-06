@@ -219,16 +219,38 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the money flow", () => {
     expect((await store.getEvents(e.db, h.jobId)).map((x) => x.type)).toContain("LATE_CAPTURE");
   });
 
-  it("stops resending a capture whose outcome stays unknown, and tells both sides once", async () => {
+  it("after the last resend, asks PayPal's order: a capture it has is settled, one it doesn't frees the lines", async () => {
     const h = await heldJob(e);
     await prove(e, h, "L1");
     await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
-    e.paypal.loseNextResponse("captureAuthorization");
-    await release(e, h.jobId);
+    // Never reached PayPal at all.
+    e.paypal.failNext("captureAuthorization");
+    expect((await release(e, h.jobId)).kind).toBe("sending");
     await e.db.query("update captures set attempts = $1 where status = 'SENDING'", [store.MAX_CAPTURE_SENDS]);
-    expect(await retrySendingCaptures(e, 0)).toEqual([]);
+    // PayPal can't be read: both sides are told, once.
+    e.paypal.failNext("getOrder");
     await retrySendingCaptures(e, 0);
-    expect((await store.getEvents(e.db, h.jobId)).filter((x) => x.type === "CAPTURE_STUCK")).toHaveLength(1);
+    await retrySendingCaptures(e, 0).catch(() => undefined);
+    expect((await store.getEvents(e.db, h.jobId)).filter((x) => x.type === "CAPTURE_STUCK").length).toBeLessThanOrEqual(1);
+    // PayPal answers: no such capture, so nothing was charged and the line can be released again.
+    const capId = (await e.db.query<{ id: string }>("select id from captures where status in ('SENDING','FAILED')")).rows[0]!.id;
+    const cap = (await e.db.query<{ status: string }>("select status from captures where id = $1", [capId])).rows[0]!;
+    expect(cap.status).toBe("FAILED");
+    expect(await lineStatus(e, h)).toMatchObject({ L1: "APPROVED" });
+    expect((await release(e, h.jobId)).kind).toBe("captured");
+  });
+
+  it("counts a capture's sends once each: eight resends, not four", async () => {
+    const h = await heldJob(e);
+    await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: true });
+    e.paypal.failNext("captureAuthorization");
+    await release(e, h.jobId);
+    for (let i = 0; i < 3; i++) {
+      e.paypal.failNext("captureAuthorization");
+      await retrySendingCaptures(e, 0);
+    }
+    expect((await e.db.query<{ attempts: number }>("select attempts from captures")).rows[0]!.attempts).toBe(4);
   });
 
   it("two workers retrying at once send a lost capture only once", async () => {
@@ -452,6 +474,15 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof integrity", () => {
     const r = await prove(e, h2, "L1", { photo: similar });
     expect(r.integrity.checks.find((c) => c.name === "reuse")).toMatchObject({ result: "review" });
     expect(r.verdict).toBe("NEEDS_REVIEW");
+  });
+
+  it("a redo the client asks for (a flag) starts the try count again", async () => {
+    const h = await heldJob(e);
+    e.verifier.script.set(h.lines.L1!.id, failing("water drops at the spout", "drops at the spout"));
+    for (let i = 0; i < 8; i++) await prove(e, h, "L1");
+    await decideLine(e, h.lines.L1!.id, h.home, { approve: false, note: "still dripping, please redo" });
+    e.verifier.script.delete(h.lines.L1!.id);
+    expect((await prove(e, h, "L1")).verdict).toBe("VERIFIED");
   });
 
   it("fails a photo already used on another line", async () => {

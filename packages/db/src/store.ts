@@ -547,7 +547,8 @@ export const MAX_CAPTURE_SENDS = 8;
 
 export async function claimStaleCapture(q: Queryable, captureId: string, staleS: number): Promise<CaptureRow | null> {
   const { rows } = await q.query<CaptureRow>(
-    `update captures set updated_at = now(), attempts = attempts + 1 where id = $1 and status = 'SENDING' and updated_at <= now() - make_interval(secs => $2) and attempts < $3 returning *`,
+    // The send itself counts the attempt (sendCapture); claiming only marks it taken.
+    `update captures set updated_at = now() where id = $1 and status = 'SENDING' and updated_at <= now() - make_interval(secs => $2) and attempts < $3 returning *`,
     [captureId, staleS, MAX_CAPTURE_SENDS],
   );
   return rows[0] ?? null;
@@ -621,8 +622,13 @@ export async function nearestOtherHamming(q: Queryable, dhash: string, excludePh
   return (await nearestOther(q, dhash, excludePhotoIds, opts))?.d ?? null;
 }
 
-/** The nearest stored image, with where its bytes are, so a close hash can be confirmed on the pixels. */
-export async function nearestOther(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string; lineId?: string } = {}): Promise<{ d: number; path: string | null } | null> {
+/** The nearest stored image, with the next closest, so a close hash can be confirmed on the pixels. */
+export async function nearestOther(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string; lineId?: string } = {}): Promise<{ d: number; path: string | null; others: { d: number; path: string | null }[] } | null> {
+  const all = await nearestOthers(q, dhash, excludePhotoIds, opts, 3);
+  return all[0] ? { ...all[0], others: all.slice(1) } : null;
+}
+
+async function nearestOthers(q: Queryable, dhash: string, excludePhotoIds: string[], opts: { jobId?: string; lineId?: string }, limit: number): Promise<{ d: number; path: string | null }[]> {
   // Photos, and the other images proof is made of (video frames, photographed documents).
   const { rows } = await q.query<{ d: number; path: string | null }>(
     `select d::int8 as d, path from (
@@ -631,10 +637,10 @@ export async function nearestOther(q: Queryable, dhash: string, excludePhotoIds:
        union all
        select bit_count(('x' || (meta->>'dhash'))::bit(64) # ('x' || $1)::bit(64)), storage_path
          from proof_items where meta ? 'dhash' and ($3::uuid is null or job_id = $3) and ($4::uuid is null or line_id <> $4)
-     ) m order by d limit 1`,
-    [dhash, excludePhotoIds, opts.jobId ?? null, opts.lineId ?? null],
+     ) m order by d limit $5`,
+    [dhash, excludePhotoIds, opts.jobId ?? null, opts.lineId ?? null, limit],
   );
-  return rows[0] ?? null;
+  return rows;
 }
 
 /**
@@ -841,8 +847,16 @@ export async function finishWebhookEvent(q: Queryable, id: string, error: string
     `update webhook_events set processed_at = case when $2::text is null then now() else null end, error = $2 where paypal_event_id = $1`,
     [id, error],
   );
-  // A failed run gives up its claim, so PayPal's retry can run it again.
-  if (error !== null) await q.query("delete from webhook_claims where paypal_event_id = $1", [id]);
+  // A failed run hands the event back after a pause that doubles each time (1 min, 2, 4, ... up to an
+  // hour), so PayPal's retry or the worker can run it again without one bad event being tried every minute.
+  if (error !== null) {
+    await q.query(
+      `insert into webhook_claims (paypal_event_id, claimed_until, attempts) values ($1, now() + interval '1 minute', 1)
+       on conflict (paypal_event_id) do update set attempts = webhook_claims.attempts + 1,
+         claimed_until = now() + make_interval(secs => least(3600, 60 * power(2, webhook_claims.attempts)::int))`,
+      [id],
+    );
+  }
 }
 
 export class NotFound extends Error {

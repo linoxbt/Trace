@@ -71,9 +71,9 @@ export async function demoJobFor(e: Engine, user: { id: string; email: string | 
     [user.id, HISTORY_ADDRESS],
   );
   if (rows[0]) return rows[0];
-  // Many guest sessions from one network still share one allowance.
-  if (opts.network) await spendBudget(e, opts.network, "demo_job_network", { guest: false });
   await spendBudget(e, user.id, "demo_job", { guest: true });
+  // Many guest sessions from one network share a (generous) allowance too: judges at one venue share an address.
+  if (opts.network) await spendBudget(e, opts.network, "demo_job_network", { guest: false });
   return createDemoJob(e, user, await assets());
 }
 

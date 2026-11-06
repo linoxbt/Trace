@@ -24,7 +24,7 @@ export const HOURLY_LIMITS = {
   /** Sign-off emails asked for. */
   attest_email: 10,
   /** New demo jobs from one network (keyed by a hash of the address), however many guest sessions it opens. */
-  demo_job_network: 8,
+  demo_job_network: 40,
 } as const;
 export type BudgetKind = keyof typeof HOURLY_LIMITS;
 

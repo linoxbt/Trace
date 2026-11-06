@@ -41,6 +41,7 @@ export const LABELS: Record<string, string> = {
   CAPTURE_STUCK: "A release needs checking in PayPal",
   EMAIL_SENT: "Email sent",
   PROOF_DELETED: "Photos and proof files deleted",
+  JOB_EXPIRED: "Closed: it never went ahead",
   GUARD_ALLOWED: "Guard: allowed",
   GUARD_BLOCKED: "Guard: blocked",
   GUARD_APPROVAL_NEEDED: "Guard: waiting for approval",

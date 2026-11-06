@@ -51,7 +51,8 @@ export class ToolkitDisputeDrafter implements DisputeDrafter {
       tools,
       maxSteps: 6,
       maxTokens: 3000,
-      abortSignal: AbortSignal.timeout(50_000),
+      // Leaves room for the plain drafter in the same 60 s request if this one gives up.
+      abortSignal: AbortSignal.timeout(25_000),
     });
     const notes = res.text.trim();
     if (!notes) throw new Error("the dispute assistant returned nothing");
@@ -75,17 +76,16 @@ export class ToolkitDisputeDrafter implements DisputeDrafter {
 
 /** The toolkit assistant first; if PayPal's tools or the agent fail, the plain drafter from Trace's evidence alone. */
 export class FirstThatWorks implements DisputeDrafter {
-  model: string;
+  /** Fixed, so concurrent drafts on the shared engine never read each other's: the log line says which one ran. */
+  readonly model: string;
   constructor(private readonly drafters: DisputeDrafter[]) {
-    this.model = drafters[0]!.model;
+    this.model = drafters.map((d) => d.model).join(", else ");
   }
   async draft(ev: Evidence): Promise<string> {
     let last: unknown;
     for (const d of this.drafters) {
       try {
-        const notes = await d.draft(ev);
-        this.model = d.model;
-        return notes;
+        return await d.draft(ev);
       } catch (err) {
         last = err;
         console.warn(JSON.stringify({ level: "warn", msg: "dispute drafter failed, trying the next", drafter: d.model, err: String(err) }));

@@ -52,6 +52,8 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: proof retention", () => {
     e.clock.t = new Date(Date.now() + 91 * DAY);
     expect(await purgeExpiredProof(e)).toEqual([h.jobId]);
     expect((await store.mustGetJob(e.db, h.jobId)).anchor_lat).toBeNull();
+    // Closed, so it can't be approved later without its photos.
+    expect((await store.mustGetJob(e.db, h.jobId)).status).toBe("CLOSED_VOIDED");
   });
 
   it("keeps an open job's photos, and a closed job's while a dispute on it is open", async () => {

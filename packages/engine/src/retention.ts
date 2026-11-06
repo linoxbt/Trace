@@ -5,6 +5,7 @@
 // history still reads; the images, files and photo locations don't.
 
 import * as store from "@trace/db";
+import { nextJobStatus } from "@trace/core";
 import type { Engine } from "./deps.ts";
 
 export const RETENTION_DAYS = 180;
@@ -35,7 +36,12 @@ export async function purgeExpiredProof(e: Engine, limit = 5): Promise<string[]>
     try {
       const files = await e.storage.removeUnder(`job/${id}/`);
       await e.db.tx(async (q) => {
-        await store.mustGetJob(q, id, { lock: true });
+        const job = await store.mustGetJob(q, id, { lock: true });
+        // A job that never went ahead is closed with its photos gone: it can't be sent or approved later without them.
+        if (job.status === "DRAFT" || job.status === "AWAITING_APPROVAL") {
+          await store.updateJob(q, id, { status: nextJobStatus(job.status, "VOIDED") });
+          await store.appendEvent(q, { jobId: id, actor: "system", type: "JOB_EXPIRED", data: { after_days: STALE_OPEN_DAYS } });
+        }
         // Locations and the sign-off's network address go with the photos.
         await q.query("update photos set lat = null, lng = null where job_id = $1", [id]);
         await q.query("update jobs set anchor_lat = null, anchor_lng = null where id = $1", [id]);

@@ -320,12 +320,19 @@ export async function submitProof(e: Engine, input: ProofInput): Promise<ProofRe
  * gauges hash alike. The pixels tell a re-used photo (a re-saved copy) from a
  * similar one. A copy that can't be read any more (deleted) isn't confirmed.
  */
-export async function confirmSameImage(e: Engine, near: { d: number; path: string | null } | null, img: Uint8Array): Promise<boolean | undefined> {
+export async function confirmSameImage(
+  e: Engine,
+  near: { d: number; path: string | null; others?: { d: number; path: string | null }[] } | null,
+  img: Uint8Array,
+): Promise<boolean | undefined> {
   if (!near || near.d > SAME_IMAGE_HAMMING) return undefined;
-  if (!near.path) return false;
-  const other = await e.storage.get(near.path).catch(() => null);
-  if (!other) return false;
-  return (await maxCellDiff(other, img)) <= SAME_IMAGE_CELL_DIFF;
+  // The closest hash isn't always the copy: check each close one (up to three) on the pixels.
+  for (const c of [near, ...(near.others ?? [])].filter((x) => x.d <= SAME_IMAGE_HAMMING)) {
+    if (!c.path) continue;
+    const other = await e.storage.get(c.path).catch(() => null);
+    if (other && (await maxCellDiff(other, img)) <= SAME_IMAGE_CELL_DIFF) return true;
+  }
+  return false;
 }
 
 const MAX_BEFORE_PHOTOS = 6;
@@ -341,7 +348,8 @@ export async function addBeforePhoto(
   const count = await e.db.query<{ n: number }>("select count(*)::int8 as n from photos where job_id = $1 and kind = 'before'", [job.id]);
   if (count.rows[0]!.n >= MAX_BEFORE_PHOTOS) throw conflict("too_many_photos", "a job takes up to 6 before-photos");
   // Each before-photo is scanned by a model: it counts toward the person's hourly allowance.
-  await spendBudget(e, input.tradesId, "before_photo", { guest: job.demo });
+  // A demo job's are the site's own sample photos, already counted once as the demo job.
+  if (!job.demo) await spendBudget(e, input.tradesId, "before_photo");
   let bytes: Buffer;
   try {
     bytes = await normalizePhoto(input.photo);

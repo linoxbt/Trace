@@ -10,18 +10,29 @@ import { conflict } from "./errors.ts";
 export const MAX_TRIES = { camera: 8, file: 5 } as const;
 export type TryKind = keyof typeof MAX_TRIES;
 
-/** Tries so far: one per proof checked (its passes and masked re-judge count once). */
-export async function triesSoFar(q: Queryable, lineId: string): Promise<number> {
+/**
+ * Tries so far: one per proof checked (its passes and masked re-judge count
+ * once). Sample proofs (the demo's) don't count, and the count starts again
+ * when the client flags the line: a redo they asked for is a fresh start.
+ */
+export async function triesSoFar(q: Queryable, line: { id: string; code: string; job_id: string }): Promise<number> {
   const { rows } = await q.query<{ n: number }>(
-    "select count(distinct coalesce(photo_id, proof_item_id))::int as n from verdicts where line_id = $1 and not masked",
-    [lineId],
+    `select count(distinct coalesce(v.photo_id, v.proof_item_id))::int as n
+       from verdicts v
+       left join photos p on p.id = v.photo_id
+       left join proof_items i on i.id = v.proof_item_id
+      where v.line_id = $1 and not v.masked
+        and not coalesce(p.sample, i.sample, false)
+        and v.created_at > coalesce(
+          (select max(at) from events where job_id = $2 and type = 'LINE_FLAGGED' and data->>'line' = $3), '-infinity')`,
+    [line.id, line.job_id, line.code],
   );
   return rows[0]!.n;
 }
 
 /** Refuse another try once a line has had its last. */
-export async function assertTriesLeft(q: Queryable, line: { id: string; code: string }, kind: TryKind): Promise<number> {
-  const n = await triesSoFar(q, line.id);
+export async function assertTriesLeft(q: Queryable, line: { id: string; code: string; job_id: string }, kind: TryKind): Promise<number> {
+  const n = await triesSoFar(q, line);
   if (n >= MAX_TRIES[kind]) throw conflict("too_many_tries", `${line.code} has been checked ${n} times; the client reviews it from here`);
   return n;
 }

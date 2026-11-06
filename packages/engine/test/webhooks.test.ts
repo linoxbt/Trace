@@ -103,7 +103,9 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: webhooks", () => {
     expect(await handleWebhook(e, raw, header)).toMatchObject({ result: "busy" });
     // That delivery failed: its claim is freed and the event is left for a retry.
     await store.finishWebhookEvent(e.db, id, "boom");
-    await e.db.query("update webhook_events set received_at = now() - interval '5 minutes' where paypal_event_id = $1", [id]);
+    // Not before its pause is over.
+    expect(await retryFailedWebhooks(e)).toBe(0);
+    await e.db.query("update webhook_claims set claimed_until = now() - interval '1 second' where paypal_event_id = $1", [id]);
     expect(await retryFailedWebhooks(e)).toBe(1);
     expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED" });
     expect(await retryFailedWebhooks(e)).toBe(0);
@@ -129,6 +131,9 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: webhooks", () => {
     }) as typeof e.db.tx;
     await expect(handleWebhook(e, raw, header)).rejects.toThrow("database hiccup");
     e.db.tx = orig;
+    // PayPal's next retry comes minutes later, after the failed run's pause.
+    expect(await handleWebhook(e, raw, header)).toMatchObject({ result: "busy" });
+    await e.db.query("update webhook_claims set claimed_until = now() - interval '1 second'");
     expect(await handleWebhook(e, raw, header)).toMatchObject({ result: "processed" });
   });
 });

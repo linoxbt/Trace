@@ -42,14 +42,14 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
   it("migrates once and is idempotent", async () => {
     expect(await migrate(db)).toEqual([]);
     const { rows } = await db.query("select name from trace_schema_migrations");
-    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql", "014_capture_balances.sql", "015_webhook_claims.sql", "016_rule_drafts.sql", "017_proof_retention.sql", "018_worker_lease.sql", "019_price_suggestions.sql", "020_indexes.sql"]);
+    expect(rows.map((r) => r.name).sort()).toEqual(["001_init.sql", "002_photo_blobs.sql", "003_tripwire.sql", "004_payee.sql", "005_job_category.sql", "006_proof_types.sql", "007_change_orders.sql", "008_realtime.sql", "009_heartbeat.sql", "010_eval.sql", "011_lock_down.sql", "012_model_usage.sql", "013_refunds.sql", "014_capture_balances.sql", "015_webhook_claims.sql", "016_rule_drafts.sql", "017_proof_retention.sql", "018_worker_lease.sql", "019_price_suggestions.sql", "020_indexes.sql", "021_webhook_backoff.sql"]);
   });
 
   it("takes migrations as data too, as the scheduled function carries them, and records the worker's heartbeat", async () => {
     expect(await migrate(db, await readMigrations())).toEqual([]);
     await store.recordHeartbeat(db, { released: 1 });
     const s = await store.systemStatus(db);
-    expect(s.migration).toBe("020_indexes.sql");
+    expect(s.migration).toBe("021_webhook_backoff.sql");
     expect(Date.now() - s.lastTickAt!.getTime()).toBeLessThan(60_000);
   });
 
@@ -124,6 +124,8 @@ describe.skipIf(!TEST_DATABASE_URL)("database", () => {
     const e = { id: "WH-1", type: "T", payload: { a: 1 } };
     expect(await db.tx((q) => store.claimWebhookEvent(q, e))).toBe(true);
     await store.finishWebhookEvent(db, "WH-1", "boom");
+    // A failed run hands it back after a pause.
+    await db.query("update webhook_claims set claimed_until = now() - interval '1 second' where paypal_event_id = 'WH-1'");
     expect(await db.tx((q) => store.claimWebhookEvent(q, e))).toBe(true);
     await store.finishWebhookEvent(db, "WH-1", null);
     expect(await db.tx((q) => store.claimWebhookEvent(q, e))).toBe(false);

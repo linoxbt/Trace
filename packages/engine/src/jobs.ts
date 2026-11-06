@@ -146,8 +146,9 @@ export async function sendScope(e: Engine, jobId: string, tradesId: string): Pro
   await payeeForJob(e.db, before).catch(() => {
     throw conflict("payee_not_ready", "Connect your PayPal in Settings before sending. That's where the money for this job goes.");
   });
-  if (e.scanner) await spendBudget(e, tradesId, "scope_check", { guest: before.demo });
-  const flags = await checkScope(e, checked);
+  // A demo job's lines are Trace's own fixed text: nothing to check, and a scanner outage can't strand the demo.
+  if (e.scanner && !before.demo) await spendBudget(e, tradesId, "scope_check");
+  const flags = before.demo ? null : await checkScope(e, checked);
   return e.db.tx(async (q) => {
     const job = await store.mustGetJob(q, jobId, { lock: true });
     if (job.trades_id !== tradesId) throw forbidden();

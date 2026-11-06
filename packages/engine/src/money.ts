@@ -378,16 +378,23 @@ export const CAPTURE_STALE_S = 90;
 
 export async function retrySendingCaptures(e: Engine, staleS = CAPTURE_STALE_S): Promise<ReleaseResult[]> {
   const out: ReleaseResult[] = [];
-  // Resent as often as is safe and still unknown: stop, and tell both sides once, so a person checks PayPal.
-  const { rows: stuck } = await e.db.query<{ id: string; job_id: string; amount_cents: number }>(
-    `select c.id, a.job_id, c.amount_cents from captures c join authorizations a on a.id = c.authorization_id
-      where c.status = 'SENDING' and c.attempts >= $1
-        and not exists (select 1 from events ev where ev.job_id = a.job_id and ev.type = 'CAPTURE_STUCK' and ev.data->>'capture' = c.id::text)`,
-    [store.MAX_CAPTURE_SENDS],
+  // Resent as often as is useful and still unknown: ask PayPal's own copy of the order. A capture it
+  // has is settled; one it doesn't have never happened (every resend reused its request id), so the
+  // lines are freed to release or drop again. If PayPal can't be read either, both sides are told once.
+  const { rows: stuck } = await e.db.query<store.CaptureRow & { job_id: string; paypal_order_id: string }>(
+    `select c.*, a.job_id, a.paypal_order_id from captures c join authorizations a on a.id = c.authorization_id
+      where c.status = 'SENDING' and c.attempts >= $1 and c.updated_at <= now() - make_interval(secs => $2)`,
+    [store.MAX_CAPTURE_SENDS, staleS],
   );
   for (const s of stuck) {
-    await store.appendEvent(e.db, { jobId: s.job_id, actor: "system", type: "CAPTURE_STUCK", data: { capture: s.id, amount_cents: s.amount_cents, alert: "both" } });
-    e.log.error("capture outcome still unknown after the last resend", { capture: s.id });
+    try {
+      const found = await findCaptureOnOrder(e, s.paypal_order_id, s.invoice_id);
+      out.push(found ? await settleCapture(e, s.id, found) : await failCapture(e, s, "PayPal has no record of this capture after repeated tries; nothing was charged"));
+    } catch (err) {
+      const told = await e.db.query("select 1 from events where job_id = $1 and type = 'CAPTURE_STUCK' and data->>'capture' = $2", [s.job_id, s.id]);
+      if (!told.rowCount) await store.appendEvent(e.db, { jobId: s.job_id, actor: "system", type: "CAPTURE_STUCK", data: { capture: s.id, amount_cents: s.amount_cents, alert: "both" } });
+      e.log.error("capture outcome still unknown and PayPal can't be read", { capture: s.id, err: String(err) });
+    }
   }
   for (const cap of await store.sendingCaptures(e.db, staleS)) {
     try {

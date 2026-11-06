@@ -61,10 +61,11 @@ async function runClaimed(e: Engine, event: WebhookEvent): Promise<WebhookOutcom
  */
 export async function retryFailedWebhooks(e: Engine, limit = 10): Promise<number> {
   const { rows } = await e.db.query<{ paypal_event_id: string; payload: WebhookEvent }>(
-    `select paypal_event_id, payload from webhook_events
-      where processed_at is null and error is not null and received_at > now() - interval '3 days'
-        and received_at < now() - interval '2 minutes'
-      order by received_at limit $1`,
+    `select w.paypal_event_id, w.payload from webhook_events w
+       left join webhook_claims c on c.paypal_event_id = w.paypal_event_id
+      where w.processed_at is null and w.error is not null and w.received_at > now() - interval '3 days'
+        and coalesce(c.claimed_until, '-infinity') < now() and coalesce(c.attempts, 0) < 12
+      order by coalesce(c.attempts, 0), w.received_at limit $1`,
     [limit],
   );
   let n = 0;

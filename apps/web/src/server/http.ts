@@ -35,7 +35,12 @@ export function route<P = Record<string, string>>(
       if (!res.headers.has("cache-control")) res.headers.set("cache-control", "private, no-store");
       return res;
     } catch (err) {
-      const res = errorResponse(err);
+      // A malformed id in the address (Postgres 22P02 on it) names nothing: 404. Any other 22P02 is a real bug, so a 500.
+      const params = (await ctx.params.catch(() => ({}))) as Record<string, unknown>;
+      const badId = Object.values(params ?? {}).some((v) => typeof v === "string" && !UUID.test(v));
+      const res = typeof err === "object" && err && (err as { code?: unknown }).code === "22P02" && badId
+        ? NextResponse.json({ error: "not_found", message: "not found" }, { status: 404 })
+        : errorResponse(err);
       res.headers.set("cache-control", "private, no-store");
       return res;
     }
@@ -50,12 +55,12 @@ export function errorResponse(err: unknown): NextResponse {
   if (err instanceof IllegalTransition) return NextResponse.json({ error: "illegal_transition", message: "that step isn't allowed now" }, { status: 409 });
   if (err instanceof OverCapture) return NextResponse.json({ error: "over_capture", message: "that would capture more than is held" }, { status: 409 });
   if (err instanceof z.ZodError) return NextResponse.json({ error: "bad_request", message: err.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") }, { status: 400 });
-  // Postgres: a malformed id or value in a query (22P02) means there is nothing by that name.
-  if (typeof err === "object" && err && (err as { code?: unknown }).code === "22P02") return NextResponse.json({ error: "not_found", message: "not found" }, { status: 404 });
   console.error(JSON.stringify({ level: "error", msg: "unhandled route error", err: String(err), stack: err instanceof Error ? err.stack : undefined }));
   // Not "nothing was charged": an error can come after PayPal has acted. The page shows what did happen.
   return NextResponse.json({ error: "internal", message: "something went wrong; refresh to see where things stand" }, { status: 500 });
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function sameOrigin(req: NextRequest): boolean {
   const origin = req.headers.get("origin");

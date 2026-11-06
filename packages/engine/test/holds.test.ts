@@ -96,6 +96,9 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the same webhook delivered twice at
     expect([a, b].filter(Boolean)).toHaveLength(1);
     expect(await e.db.tx((q) => store.claimWebhookEvent(q, ev))).toBe(false);
     await store.finishWebhookEvent(e.db, ev.id, "boom");
+    // Handed back after a pause, not straight away.
+    expect(await e.db.tx((q) => store.claimWebhookEvent(q, ev))).toBe(false);
+    await e.db.query("update webhook_claims set claimed_until = now() - interval '1 second' where paypal_event_id = $1", [ev.id]);
     expect(await e.db.tx((q) => store.claimWebhookEvent(q, ev))).toBe(true);
     await store.finishWebhookEvent(e.db, ev.id, null);
     expect(await e.db.tx((q) => store.claimWebhookEvent(q, ev))).toBe(false);

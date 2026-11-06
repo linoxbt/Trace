@@ -60,6 +60,6 @@ describe("dispute assistant on PayPal's Agent Toolkit", () => {
     const plain = { model: "plain", draft: async () => "notes from Trace's evidence" };
     const d = new FirstThatWorks([broken, plain]);
     expect(await d.draft(ev)).toBe("notes from Trace's evidence");
-    expect(d.model).toBe("plain");
+    expect(d.model).toBe("toolkit, else plain");
   });
 });
