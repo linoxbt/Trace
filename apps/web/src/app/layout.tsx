@@ -9,12 +9,12 @@ const mono = localFont({ src: "./fonts/jetbrains-mono-latin-wght-normal.woff2", 
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.APP_URL ?? "https://trace-proof.netlify.app"),
-  title: { default: "Trace — Payment that follows proof", template: "%s · Trace" },
+  title: { default: "Trace — PayPal holds it. AI checks it. Proof releases it.", template: "%s · Trace" },
   description:
-    "Trace holds a homeowner's payment with PayPal and releases it line by line, only when AI confirms the work from photos taken on site.",
+    "Trace holds a client's payment with PayPal and releases it line by line, only when AI verifies a photo that proves each part of the job is done.",
   openGraph: {
-    title: "Trace — Payment that follows proof",
-    description: "Payments for on-site work held with PayPal and released line by line, only for work photos prove.",
+    title: "Trace — PayPal holds it. AI checks it. Proof releases it.",
+    description: "Trace holds a client's payment with PayPal and releases it line by line, only when AI verifies a photo that proves each part of the job is done.",
     type: "website",
   },
 };

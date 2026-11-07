@@ -1,6 +1,6 @@
 # Trace
 
-**Payment that follows proof.** Trace turns an on-site job (a home repair, a clean, car work, gardening, a removal, an install or an event set-up) into a contract a camera can check. The client's PayPal payment is authorized, not charged. Money is captured line by line, and only for work an AI has verified from photos.
+**PayPal holds it. AI checks it. Proof releases it.** Trace holds a client's payment with PayPal and releases it line by line, only when AI verifies a photo that proves each part of the job is done. It works for any on-site job a camera can check: a home repair, a clean, car work, gardening, a removal, an install or an event set-up.
 
 Built for the [PayPal AI Hackathon](https://paypalaihackathon.devpost.com/). MIT licensed.
 

@@ -59,7 +59,7 @@ function SignInForm() {
           <Logo />
         </div>
         <div className="relative">
-          <Eyebrow>Payment that follows proof</Eyebrow>
+          <Eyebrow>PayPal holds it · AI checks it · Proof releases it</Eyebrow>
           <p className="display mt-5 max-w-lg text-[60px] leading-[0.95]">
             Money that moves <span className="text-violet">when the work does.</span>
           </p>

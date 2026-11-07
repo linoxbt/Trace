@@ -31,7 +31,7 @@ sandbox. Target length 2:45, leaving 15 seconds of slack.
 | 1:50–2:05 | Tradesperson: re-prove L4 with **Grout redone**. Verified. Client releases; final capture of $110. | "Fixed and re-proved, the last $110 is released as the final capture." |
 | 2:05–2:20 | Quick cuts: a change order (extra line, its own PayPal approval); the refund button on a payment; the scope editor drafting lines from a photo with **Draft the lines**. | "Extra work becomes a change order with its own hold. Refunds go back through PayPal. And the scope itself can be drafted by AI from the before-photos, for cleaning, car work, gardens, moves, installs or events." |
 | 2:20–2:35 | `/accuracy`: the scores, scroll past a few cases with their photos, then the planted-note result. | "We don't just claim it works. The photo check is measured on finished and unfinished jobs, with every case shown, including notes planted in photos trying to talk their way to payment." |
-| 2:35–2:45 | Back to the landing hero, logo. | "Trace. Payment that follows proof, held by PayPal." |
+| 2:35–2:45 | Back to the landing hero, logo. | "Trace. PayPal holds it. AI checks it. Proof releases it. Try the demo job today." |
 
 ## Shot notes
 
@@ -43,5 +43,5 @@ sandbox. Target length 2:45, leaving 15 seconds of slack.
   money.
 - **PayPal window:** blur or crop the sandbox buyer's email if it shows.
 - **Captions:** add them on YouTube; judges often watch muted.
-- **Upload:** title "Trace: payment that follows proof (PayPal AI
+- **Upload:** title "Trace: PayPal holds it. AI checks it. Proof releases it. (PayPal AI
   Hackathon)", and put the live link and repo link in the description.
