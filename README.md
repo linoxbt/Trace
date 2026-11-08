@@ -47,7 +47,11 @@ A job has a type: home repair, cleaning and turnovers, car repair and detailing,
 5. A capture is recorded with its `PayPal-Request-Id` before it is sent. A lost response is retried with the same ID, so it can't become a second capture. If PayPal refuses, the lines go back to releasable and the timeline says nothing was charged.
 6. Closing needs both sides to agree which lines to drop. What is approved goes in a final capture; otherwise the remainder is voided.
 7. After the 3-day honor period, the worker reauthorizes once while lines are still open. A refusal is recorded and flagged for both sides, not retried.
-8. Webhooks are verified with PayPal against the raw body, de-duplicated on event ID, and reconcile captures, voids and disputes.
+8. **The end of the hold.** A PayPal authorization lasts 29 days from when it was placed, and renewing it doesn't extend that (`packages/engine/src/hold-expiry.ts`):
+   - Three days before, both sides are told which lines are still unpaid.
+   - In the last 24 hours, approved lines still unpaid are released through the guard. The $150 and $300 presets stop asking first, so verified work the homeowner never answered for is paid; every built-in rule still applies, so a dispute, a flagged line or a planted note still stops it. A refused try is repeated every 2 hours, not every minute.
+   - Once the date has passed, the worker asks PayPal. When PayPal reports the hold expired or voided, Trace records it and closes the job, even if PayPal's webhook never arrives. The rest of the client's money was never charged; PayPal simply stops holding it.
+9. Webhooks are verified with PayPal against the raw body, de-duplicated on event ID, and reconcile captures, voids and disputes.
 
 ## Accuracy
 
@@ -73,7 +77,7 @@ Only `execute.ts` can import the money client (`guard/paypal-money.ts`), and a t
   - More than $300 released in 24 hours needs a tap.
   - More than 3 releases in 10 minutes need a tap.
 
-  A release the homeowner started themselves doesn't need the first two.
+  A release the homeowner started themselves doesn't need the first two, and neither does one in the last 24 hours before PayPal's hold lapses (see step 8 under [How the money moves](#how-the-money-moves)).
 - **Your own rules.** People write rules in plain English.
   - Claude Sonnet 5.5 compiles them to rule JSON using only the fields the guard checks. It says "unsupported" rather than guessing when a rule can't be expressed.
   - Claude Haiku 5.5 reads the JSON back without seeing the person's words.

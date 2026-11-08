@@ -64,6 +64,7 @@ Fields you may use, and nothing else:
 - facts.auth_remaining_cents: cents left on the hold before this action (number).
 - facts.device_changed: whether a proof photo came from a different phone than the one that started the job (flag).
 - facts.dispute_open: whether a PayPal dispute is open (flag).
+- facts.hold_lapsing_soon: whether PayPal's hold on the money lapses within 24 hours (flag).
 
 Operators: gt, gte, lt, lte for numbers; eq and neq for anything; in for a list of text values. All conditions must hold together.
 Put each condition's value in the one slot that fits: number, flag, text or list; set the other three to null.

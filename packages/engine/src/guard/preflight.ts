@@ -3,7 +3,7 @@
 // snapshot, and the snapshot is saved with the decision as proof of what the
 // guard knew. If PayPal can't be read, the guard never guesses.
 
-import { CAPTURE_TYPES, fromPayPalValue, type Facts, type MoneyAction } from "@trace/core";
+import { CAPTURE_TYPES, fromPayPalValue, HOLD_LAPSE_WINDOW_H, type Facts, type MoneyAction } from "@trace/core";
 import * as store from "@trace/db";
 import type { Engine } from "../deps.ts";
 
@@ -142,6 +142,11 @@ export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
       )
     : { rowCount: 0 };
 
+  // When the hold lapses: PayPal's own answer first, then what was recorded when it was placed.
+  const expiry = live?.expiration_time ? new Date(live.expiration_time) : (auth?.expires_at ?? null);
+  const left = expiry ? expiry.getTime() - e.now().getTime() : null;
+  const hold_lapsing_soon = isCapture && left !== null && left > 0 && left <= HOLD_LAPSE_WINDOW_H * 3600_000;
+
   const earlier = await store.decisionsForRequest(e.db, a.request_id);
   const key = payloadKey(a);
 
@@ -162,6 +167,7 @@ export async function gatherFacts(e: Engine, a: MoneyAction): Promise<Facts> {
     released_24h_cents: window.c24 + (isCapture ? a.amount_cents : 0),
     releases_10m_count: window.n10 + (isCapture ? 1 : 0),
     hours_since_authorization: window.hours,
+    hold_lapsing_soon,
     device_changed: (devices.rowCount ?? 0) > 0,
     request_reused: earlier.some((d) => payloadKey(d.action) !== key),
     price_vs_suggestion: await store.priceVsSuggestion(e.db, job.id, mine),

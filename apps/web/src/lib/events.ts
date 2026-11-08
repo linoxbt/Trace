@@ -37,6 +37,9 @@ export const LABELS: Record<string, string> = {
   HOLD_PENDING: "PayPal is reviewing the payment",
   HOLD_DENIED: "PayPal declined the hold · nothing charged",
   HOLD_NOT_RELEASED: "An unused hold needs releasing in PayPal",
+  HOLD_EXPIRING: "PayPal's hold lapses soon · finish or release the open lines",
+  HOLD_LAPSE_RELEASE: "Releasing approved work before PayPal's hold lapses",
+  HOLD_EXPIRED: "PayPal's hold lapsed · the rest went back to the client, uncharged",
   LATE_CAPTURE: "A release landed after the job closed",
   CAPTURE_STUCK: "A release needs checking in PayPal",
   EMAIL_SENT: "Email sent",
@@ -74,6 +77,7 @@ export function eventLabel(e: EventLike): string {
   if (e.type === "AUTHORIZED" && d.change_order && typeof d.amount_cents === "number") return `${d.change_order} held by PayPal · ${money(d.amount_cents)}`;
   if ((e.type === "CAPTURED" || e.type === "RELEASE_STARTED" || e.type === "AUTHORIZED") && typeof d.amount_cents === "number") return `${base} · ${money(d.amount_cents)}`;
   if ((e.type === "LINE_APPROVED" || e.type === "LINE_FLAGGED" || e.type === "LINE_AUTO_APPROVED") && d.line) return `${base} · ${d.line}`;
+  if ((e.type === "HOLD_EXPIRING" || e.type === "HOLD_EXPIRED") && Array.isArray(d.lines) && d.lines.length) return `${base} · ${d.lines.join(", ")}`;
   return base;
 }
 

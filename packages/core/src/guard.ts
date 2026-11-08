@@ -72,6 +72,8 @@ export const Facts = z.object({
   /** Releases in the last 10 minutes, including this action. */
   releases_10m_count: z.number().int(),
   hours_since_authorization: z.number().nullable(),
+  /** PayPal's hold lapses within HOLD_LAPSE_WINDOW_H (capture actions only). Missing reads as false. */
+  hold_lapsing_soon: z.boolean().optional(),
   device_changed: z.boolean(),
   /** This request id was used before for a different payload (B11). */
   request_reused: z.boolean(),
@@ -98,6 +100,7 @@ export const ConditionField = z.enum([
   "facts.auth_remaining_cents",
   "facts.device_changed",
   "facts.dispute_open",
+  "facts.hold_lapsing_soon",
 ]);
 export type ConditionField = z.infer<typeof ConditionField>;
 
@@ -252,6 +255,14 @@ export const PRICE_JUMP = 3;
 
 // ---------- presets: user rules, on by default ----------
 
+/**
+ * The last hours of PayPal's hold. In them, the amount presets (P1, P2) stop
+ * asking first, so verified work the homeowner never answered for is paid
+ * before the hold lapses. Every built-in rule still applies: a dispute, a
+ * flagged line or a planted note still stops the release.
+ */
+export const HOLD_LAPSE_WINDOW_H = 24;
+
 const PRESET_BASE = { owner: "homeowner" as const, scope: "account" as const, applies_to: ["CAPTURE", "FINAL_CAPTURE"] as MoneyActionType[], effect: "require_approval" as const, approver: "homeowner" as const };
 
 export const PRESET_RULES: Rule[] = [
@@ -261,9 +272,10 @@ export const PRESET_RULES: Rule[] = [
     when: [
       { field: "action.amount_cents", op: "gt", value: 15000 },
       { field: "action.initiator.kind", op: "neq", value: "homeowner" },
+      { field: "facts.hold_lapsing_soon", op: "eq", value: false },
     ],
-    english: "Releases over $150 need my tap, unless I started them.",
-    readback: "When a release over $150.00 wasn't started by the homeowner, ask the homeowner first.",
+    english: "Releases over $150 need my tap, unless I started them or PayPal's hold is about to lapse.",
+    readback: "When a release over $150.00 wasn't started by the homeowner, ask the homeowner first, except in the last 24 hours before PayPal's hold lapses.",
   },
   {
     ...PRESET_BASE,
@@ -271,9 +283,10 @@ export const PRESET_RULES: Rule[] = [
     when: [
       { field: "facts.released_24h_cents", op: "gt", value: 30000 },
       { field: "action.initiator.kind", op: "neq", value: "homeowner" },
+      { field: "facts.hold_lapsing_soon", op: "eq", value: false },
     ],
-    english: "No more than $300 released in 24 hours without my tap.",
-    readback: "When more than $300.00 would go out within 24 hours, and the homeowner didn't start the release, ask the homeowner first.",
+    english: "No more than $300 released in 24 hours without my tap, unless PayPal's hold is about to lapse.",
+    readback: "When more than $300.00 would go out within 24 hours, and the homeowner didn't start the release, ask the homeowner first, except in the last 24 hours before PayPal's hold lapses.",
   },
   {
     ...PRESET_BASE,
@@ -316,6 +329,8 @@ export function fieldValue(field: ConditionField, a: MoneyAction, f: Facts): Val
       return f.device_changed;
     case "facts.dispute_open":
       return f.dispute_open;
+    case "facts.hold_lapsing_soon":
+      return f.hold_lapsing_soon ?? false;
   }
 }
 
@@ -350,7 +365,7 @@ const NUMBER_FIELDS: ConditionField[] = [
   "facts.hours_since_authorization",
   "facts.auth_remaining_cents",
 ];
-const BOOLEAN_FIELDS: ConditionField[] = ["verdict.any_second_pass", "injection.flagged", "facts.device_changed", "facts.dispute_open"];
+const BOOLEAN_FIELDS: ConditionField[] = ["verdict.any_second_pass", "injection.flagged", "facts.device_changed", "facts.dispute_open", "facts.hold_lapsing_soon"];
 const ENUM_FIELDS: Partial<Record<ConditionField, readonly string[]>> = {
   "action.type": MoneyActionType.options,
   "action.initiator.kind": InitiatorKind.options,

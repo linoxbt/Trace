@@ -162,6 +162,12 @@ export class FakePayPal implements PayPalApi {
     if (a) a.status = "VOIDED";
   }
 
+  /** Test helper: the hold reached its 29-day limit untouched, so PayPal reports it EXPIRED. */
+  lapse(authId: string): void {
+    const a = this.auths.get(authId);
+    if (a) a.status = "EXPIRED";
+  }
+
   private authView(a: FakeAuth): Authorization {
     const exp = new Date(a.createdAt.getTime() + 29 * 86_400_000);
     return {

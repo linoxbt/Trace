@@ -134,6 +134,16 @@ describe("guard: presets", () => {
     expect(evaluate(action({ initiator: { kind: "worker" }, amount_cents: 15000 }), facts({ released_24h_cents: 15000 }), PRESET_RULES).outcome).toBe("ALLOW");
   });
 
+  it("the amount presets stand aside in the hold's last day, but the built-in rules don't", () => {
+    const worker = action({ initiator: { kind: "worker" }, amount_cents: 40000 });
+    expect(evaluate(worker, facts({ released_24h_cents: 40000 }), PRESET_RULES).outcome).toBe("REQUIRE_APPROVAL");
+    expect(evaluate(worker, facts({ released_24h_cents: 40000, hold_lapsing_soon: false }), PRESET_RULES).outcome).toBe("REQUIRE_APPROVAL");
+    expect(evaluate(worker, facts({ released_24h_cents: 40000, hold_lapsing_soon: true }), PRESET_RULES).outcome).toBe("ALLOW");
+    // A dispute still stops it, and so does the velocity preset.
+    expect(evaluate(worker, facts({ released_24h_cents: 40000, hold_lapsing_soon: true, dispute_open: true }), PRESET_RULES).outcome).toBe("DENY");
+    expect(evaluate(worker, facts({ released_24h_cents: 40000, hold_lapsing_soon: true, releases_10m_count: 4 }), PRESET_RULES).outcome).toBe("REQUIRE_APPROVAL");
+  });
+
   it("velocity rule fires on the 4th release in 10 minutes", () => {
     expect(evaluate(action(), facts({ releases_10m_count: 4 }), PRESET_RULES).outcome).toBe("REQUIRE_APPROVAL");
     expect(evaluate(action(), facts({ releases_10m_count: 3 }), PRESET_RULES).outcome).toBe("ALLOW");

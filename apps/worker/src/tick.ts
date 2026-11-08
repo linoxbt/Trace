@@ -1,4 +1,16 @@
-import { autoRelease, checkPendingHolds, purgeExpiredProof, retryFailedWebhooks, expireApprovals, reauthorizeDue, retrySendingCaptures, type Engine } from "@trace/engine/worker";
+import {
+  autoRelease,
+  checkPendingHolds,
+  expireApprovals,
+  expireLapsedHolds,
+  purgeExpiredProof,
+  reauthorizeDue,
+  releaseBeforeHoldLapses,
+  retryFailedWebhooks,
+  retrySendingCaptures,
+  warnExpiringHolds,
+  type Engine,
+} from "@trace/engine/worker";
 
 export interface TickReport {
   approved: number;
@@ -8,6 +20,9 @@ export interface TickReport {
   reauthorizeFailed: string[];
   approvalsExpired: number;
   pendingHoldsSettled: number;
+  holdsWarned: number;
+  releasedBeforeLapse: number;
+  holdsExpired: number;
   proofDeleted: number;
   webhooksRetried: number;
 }
@@ -25,6 +40,9 @@ export async function tick(e: Engine, opts: { budgetMs?: number; now?: () => num
   const retried = await retrySendingCaptures(e);
   const auto = await autoRelease(e);
   const re = time() ? await reauthorizeDue(e) : { reauthorized: [], failed: [] };
+  const lapse = time() ? await releaseBeforeHoldLapses(e) : [];
+  const holdsExpired = time() ? await expireLapsedHolds(e) : 0;
+  const holdsWarned = time() ? await warnExpiringHolds(e) : 0;
   const approvalsExpired = time() ? await expireApprovals(e) : 0;
   const pendingHoldsSettled = time() ? await checkPendingHolds(e) : 0;
   const webhooksRetried = time() ? await retryFailedWebhooks(e) : 0;
@@ -37,6 +55,9 @@ export async function tick(e: Engine, opts: { budgetMs?: number; now?: () => num
     reauthorizeFailed: re.failed,
     approvalsExpired,
     pendingHoldsSettled,
+    holdsWarned,
+    releasedBeforeLapse: lapse.filter((r) => r.kind === "captured").length,
+    holdsExpired,
     proofDeleted,
     webhooksRetried,
   };
