@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import * as store from "@trace/db";
 import { TEST_DATABASE_URL } from "@trace/db/testing";
-import { autoRelease, decideLine, expireLapsedHolds, release, releaseBeforeHoldLapses, requestRelease, warnExpiringHolds } from "../src/index.ts";
+import { autoRelease, decideLine, expireApprovals, expireLapsedHolds, release, releaseBeforeHoldLapses, requestRelease, warnExpiringHolds } from "../src/index.ts";
 import { testEngine, type TestEngine } from "../src/testing.ts";
 import { BATHROOM, heldJob, lineStatus, prove } from "./helpers.ts";
 
@@ -73,6 +73,21 @@ describe.skipIf(!TEST_DATABASE_URL)("engine: the end of a PayPal hold", () => {
     expect(await lineStatus(e, h)).toMatchObject({ L1: "CAPTURED", L2: "PENDING" });
     const decisions = await e.db.query<{ outcome: string }>("select outcome from guard_decisions where job_id = $1 order by id", [h.jobId]);
     expect(decisions.rows.map((r) => r.outcome)).toEqual(["REQUIRE_APPROVAL", "ALLOW"]);
+  });
+
+  it("closes an approval request once its lines were paid another way", async () => {
+    const h = await heldJob(e, { lines: BIG });
+    await prove(e, h, "L1");
+    await requestRelease(e, h.jobId, h.trades);
+    e.clock.t = new Date(e.clock.t.getTime() + 13 * 3600_000);
+    expect((await autoRelease(e)).released[0]).toMatchObject({ kind: "needs_approval" });
+    // The homeowner releases it themselves instead of tapping the request.
+    expect(await release(e, h.jobId)).toMatchObject({ kind: "captured", amountCents: 20000 });
+    expect(await expireApprovals(e)).toBe(1);
+    const approvals = await e.db.query<{ status: string }>("select status from approval_requests where job_id = $1", [h.jobId]);
+    expect(approvals.rows.map((r) => r.status)).toEqual(["EXPIRED"]);
+    expect((await events(h.jobId, "GUARD_APPROVAL_EXPIRED")).map((x) => x.data?.reason)).toEqual(["settled"]);
+    expect(await expireApprovals(e)).toBe(0);
   });
 
   it("never pays a flagged line, even in the hold's last day", async () => {

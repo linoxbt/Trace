@@ -69,6 +69,7 @@ export const GUARD_EVENTS = new Set(["GUARD_ALLOWED", "GUARD_BLOCKED", "GUARD_AP
 export function eventLabel(e: EventLike): string {
   const base = LABELS[e.type] ?? e.type;
   const d = e.data ?? {};
+  if (e.type === "GUARD_APPROVAL_EXPIRED" && d.reason === "settled") return "Approval no longer needed: those lines were already paid";
   if (e.type.startsWith("GUARD_") && Array.isArray(d.reasons) && d.reasons.length) return String(d.reasons[0]);
   if (e.type === "INJECTION_FLAGGED" && d.line) return `${base} · ${d.line}`;
   if (e.type === "RULE_ADDED" && d.english) return `${base}: “${d.english}”`;

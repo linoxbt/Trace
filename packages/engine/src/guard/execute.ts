@@ -472,6 +472,26 @@ export async function expireApprovals(e: Engine): Promise<number> {
       n += 1;
     });
   }
+  // A release waiting for a tap whose lines were all paid or dropped another way meanwhile (the
+  // homeowner released them, or the hold's last day did): there is nothing left to approve.
+  const { rows: settled } = await e.db.query<{ id: string; job_id: string }>(
+    `select r.id, r.job_id from approval_requests r join guard_decisions d on d.id = r.decision_id
+      where r.status = 'PENDING' and d.action->>'type' in ('CAPTURE','FINAL_CAPTURE')
+        and jsonb_array_length(d.action->'line_ids') > 0
+        and not exists (select 1 from lines l
+                         where l.id::text in (select jsonb_array_elements_text(d.action->'line_ids'))
+                           and l.status not in ('CAPTURED','DROPPED'))`,
+  );
+  for (const a of settled) {
+    await e.db.tx(async (q) => {
+      await store.mustGetJob(q, a.job_id, { lock: true });
+      const locked = await store.getApproval(q, a.id, { lock: true });
+      if (!locked || locked.status !== "PENDING") return;
+      await store.updateApproval(q, a.id, { status: "EXPIRED" });
+      await store.appendEvent(q, { jobId: a.job_id, actor: "system", type: "GUARD_APPROVAL_EXPIRED", data: { approval: a.id, reason: "settled" } });
+      n += 1;
+    });
+  }
   return n;
 }
 
